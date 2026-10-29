@@ -279,3 +279,12 @@ async fn a_refused_save_keeps_what_was_entered() {
     assert!(page.body.contains(r#"<option value="v3" selected>"#), "the picked version");
     assert!(page.body.contains(r#"name="addon" value="aether" checked"#), "the added addon");
 }
+
+#[tokio::test]
+async fn a_fixed_version_says_when_a_newer_one_exists() {
+    let mut web = logged_in().await;
+    Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(editable_pack())).mount(&web.api).await;
+    let page = web.get("/packs/AbCdE12345/edit").await;
+    assert_eq!(page.body.matches("newer: ").count(), 1, "only odds, which stays on v1: {}", page.body);
+    assert!(page.body.contains("newer: v3"));
+}

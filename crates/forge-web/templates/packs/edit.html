@@ -16,7 +16,7 @@
     <p class="muted">Untick an addon to take it out. <em>Newest</em> moves the addon to each new checked version on its own; a version number keeps it there.</p>
     {% for e in entries %}
     <div class="check pick">
-      <label class="check"><input type="checkbox" name="keep" value="{{ e.slug }}"{% if e.kept %} checked{% endif %}> <span class="pick-name">{{ e.name }}</span></label>
+      <label class="check"><input type="checkbox" name="keep" value="{{ e.slug }}"{% if e.kept %} checked{% endif %}> <span class="pick-name">{{ e.name }}</span>{% if !e.latest %}{% if let Some(first) = e.versions.first() %}{% if first.as_str() != e.tag.as_str() %} <span class="muted">newer: {{ first }}</span>{% endif %}{% endif %}{% endif %}</label>
       <label class="sr-only" for="version-{{ e.slug }}">Version of {{ e.name }}</label>
       <select id="version-{{ e.slug }}" name="version.{{ e.slug }}">
         <option value="latest"{% if e.latest %} selected{% endif %}>Newest{% if let Some(first) = e.versions.first() %} (now {{ first }}){% endif %}</option>
