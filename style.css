@@ -1,12 +1,12 @@
 /* The look of the SurvivorsForge launcher and website: near-black warm ground, gold outlines and
-   lettering, deep red for the primary action, uncial display type. No shadows. */
+   lettering, deep red for the primary action, Morpheus display type. No shadows. */
 
 @font-face { font-family: "Marcellus"; src: url("assets/fonts/Marcellus-Regular.ttf") format("truetype"); font-display: swap; }
-@font-face { font-family: "Uncial Antiqua"; src: url("assets/fonts/UncialAntiqua-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Morpheus"; src: url("assets/fonts/Morpheus.ttf") format("truetype"); font-display: swap; }
 
 :root {
   color-scheme: dark;
-  --font-display: "Uncial Antiqua", Georgia, serif;
+  --font-display: "Morpheus", Georgia, serif;
   --font-body: "Marcellus", Georgia, serif;
 
   --bg: #0A0806;
@@ -81,7 +81,7 @@ img { max-width: 100%; height: auto; }
 .button.secondary { border-color: var(--outline); background: var(--control); color: var(--gold); }
 .button.secondary:hover { border-color: var(--outline-hover); }
 
-/* Section headings: uncial gold between two fading rules */
+/* Section headings: Morpheus gold between two fading rules */
 .heading {
   display: flex; align-items: center; gap: 16px; margin: 0 0 12px;
   font-family: var(--font-display); font-weight: 400; font-size: 30px; line-height: 1.2; color: var(--gold); text-align: center;

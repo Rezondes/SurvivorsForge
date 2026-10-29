@@ -20,6 +20,6 @@ The links to the platform website point at the official instance, `https://forge
 | `index.html` | The page |
 | `style.css` | The launcher's look: colours, fonts, buttons, headings |
 | `assets/icon.png` | App icon, also the favicon |
-| `assets/fonts/` | Uncial Antiqua and Marcellus with their SIL Open Font Licenses |
+| `assets/fonts/` | Morpheus (shareware by Kiwi Media, `README-morpheus.txt`) and Marcellus (SIL Open Font License) |
 
 Try it locally: `python -m http.server` in this folder, then http://localhost:8000.
