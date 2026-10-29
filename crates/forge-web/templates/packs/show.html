@@ -5,7 +5,7 @@
 {% block head %}<meta name="robots" content="noindex">{% endblock %}
 {% block content %}
 <h1>{% if name != "" %}{{ name }}{% else %}Addon pack{% endif %}</h1>
-<p class="muted">{{ entries.len() }} addon{% if entries.len() != 1 %}s{% endif %}{% if created_by != "" %} · by {{ created_by }}{% endif %} · {{ created }}{% if can_edit %} · <a href="/packs/{{ id }}/edit">Edit the pack</a>{% endif %}</p>
+<p class="muted">{{ entries.len() }} addon{% if entries.len() != 1 %}s{% endif %}{% if created_by != "" %} · by {{ created_by }}{% endif %} · {{ created }}</p>
 {% if let Some(m) = msg %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 
 <section class="panel download">
@@ -15,6 +15,7 @@
   {% else %}
     <div class="notice bad">An addon of this pack is no longer available, so the pack cannot be downloaded. <a href="{{ rebuild }}">Build a new one</a> without it.</div>
   {% endif %}
+  {% if can_edit %}<p><a class="button secondary" href="/packs/{{ id }}/edit">Edit the pack</a></p>{% endif %}
   <label for="link">Link to share</label>
   <div class="copy-row">
     <input id="link" value="{{ link }}" readonly>

@@ -228,7 +228,8 @@ async fn the_creator_edits_the_pack() {
     let mut web = logged_in().await;
     Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(editable_pack())).mount(&web.api).await;
     let page = web.get("/packs/AbCdE12345").await;
-    assert!(page.body.contains(r#"href="/packs/AbCdE12345/edit""#) && page.body.contains("v2 <span class=\"muted\">(newest)</span>"), "{}", page.body);
+    assert!(page.body.contains(r#"<a class="button secondary" href="/packs/AbCdE12345/edit">Edit the pack</a>"#), "a button by the download: {}", page.body);
+    assert!(page.body.contains("v2 <span class=\"muted\">(newest)</span>"), "{}", page.body);
 
     let edit = web.get("/packs/AbCdE12345/edit").await;
     assert_eq!(edit.status, StatusCode::OK, "{}", edit.body);
