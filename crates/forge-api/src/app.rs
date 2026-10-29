@@ -98,6 +98,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/addons/sync", post(routes::refresh::sync_all))
         .route("/v1/addons/{slug}/sync", post(routes::refresh::sync_one))
         .route("/v1/admin/addons/{slug}/owner", post(routes::admin_moderation::transfer_owner))
+        .route(
+            "/v1/scan",
+            post(routes::scan::scan).layer(axum::extract::DefaultBodyLimit::max(crate::scan_job::MAX_DOWNLOAD as usize + 64 * 1024)),
+        )
         .route("/v1/registry", get(routes::registry::registry))
         .route("/v1/packs", get(routes::packs::list).post(routes::packs::create))
         .route("/v1/packs/{id}", get(routes::packs::show))

@@ -587,3 +587,37 @@ async fn creators_force_an_update_check() {
     let refused = web.post_form("/addons/other/sync", &[]).await;
     assert!(refused.location().starts_with("/me/addons?error=") && refused.location().contains("3+minutes"), "{}", refused.location());
 }
+
+#[tokio::test]
+async fn creators_test_a_zip_before_publishing() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/scan").await;
+    assert!(page.body.contains(r#"action="/scan""#) && page.body.contains(r#"type="file""#), "{}", page.body);
+
+    Mock::given(method("POST"))
+        .and(path("/v1/scan"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "scanner_version": "0.2.2", "result": "flagged", "folders": ["Lucky"],
+            "findings": [
+                { "rule": "zip.toc_interface", "severity": "info", "file": "Lucky", "line": null, "message": "The .toc is not for interface 11200", "snippet": null },
+                { "rule": "lua.forbidden_global", "severity": "critical", "file": "Lucky/Lucky.lua", "line": 3, "message": "os is not allowed in addons", "snippet": "os.execute('x')" }
+            ]
+        })))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let result = web.post_multipart("/scan", &[], &[("file", "lucky.zip", b"PK")]).await;
+    assert!(result.body.contains("Result for lucky.zip") && result.body.contains("Flagged."), "{}", result.body);
+    let (critical, info) = (result.body.find("Lucky/Lucky.lua:3").unwrap(), result.body.find("zip.toc_interface").unwrap());
+    assert!(critical < info, "most severe first");
+
+    let empty = web.post_multipart("/scan", &[], &[]).await;
+    assert!(empty.body.contains("Pick a zip"), "{}", empty.body);
+}
+
+#[tokio::test]
+async fn scan_page_needs_login() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/scan").await;
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login"));
+}

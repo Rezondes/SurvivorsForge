@@ -15,6 +15,7 @@ pub mod packs;
 pub mod refresh;
 pub mod registry;
 pub mod reports;
+pub mod scan;
 pub mod search;
 pub mod versions;
 pub mod webhooks;

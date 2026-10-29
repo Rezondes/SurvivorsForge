@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Test a zip - SurvivorsForge{% endblock %}
+{% block content %}
+<p><a href="/me/addons">My addons</a></p>
+<h1>Test a zip</h1>
+<form class="panel" method="post" action="/scan" enctype="multipart/form-data"
+      hx-post="/scan" hx-encoding="multipart/form-data" hx-target="main" hx-select="main" hx-swap="outerHTML"
+      hx-disabled-elt="find button[type='submit']">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p class="muted">Runs the same checks as a new release on GitHub, before you publish it. The zip is not stored. A clean result means nothing was found, not that the addon is safe.</p>
+  <label for="file">Addon zip (at most 50 MB)</label>
+  <input id="file" type="file" name="file" accept=".zip,application/zip" required>
+  <p><button type="submit">Scan</button></p>
+</form>
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% if let Some(r) = result %}
+<section class="panel">
+  <h2>Result for {{ r.file_name }}</h2>
+  {% if r.flagged %}
+  <div class="notice bad" role="status"><strong>Flagged.</strong> A release like this would be marked as flagged until an admin reviews it.</div>
+  {% else %}
+  <div class="notice ok" role="status"><strong>Clean.</strong> Nothing that flags a release was found.</div>
+  {% endif %}
+  <p>Addon folders: {% if r.folders.is_empty() %}<span class="muted">none found</span>{% else %}{% for f in r.folders %}<code>{{ f }}</code>{% if !loop.last %}, {% endif %}{% endfor %}{% endif %} · Scanner {{ r.scanner_version }}</p>
+  {% if r.findings.is_empty() %}<p class="muted">No findings.</p>{% else %}
+  <ul class="findings">
+    {% for f in r.findings %}
+    <li><span class="badge {% if f.severity == "critical" %}bad{% else if f.severity == "info" %}{% else %}warn{% endif %}">{{ f.severity }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -276,6 +276,24 @@ pub struct MyAddon {
 }
 
 #[derive(Template)]
+#[template(path = "creator/scan.html")]
+pub struct ScanPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub result: Option<ScanResult>,
+    pub error: Option<String>,
+}
+
+/// A test scan of an uploaded zip, findings most severe first.
+pub struct ScanResult {
+    pub file_name: String,
+    pub flagged: bool,
+    pub folders: Vec<String>,
+    pub scanner_version: String,
+    pub findings: Vec<FindingRow>,
+}
+
+#[derive(Template)]
 #[template(path = "creator/my_addons.html")]
 pub struct MyAddonsPage {
     pub user: Option<Visitor>,

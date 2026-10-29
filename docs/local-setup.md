@@ -110,6 +110,8 @@ can be downloaded without a warning and go into addon packs.
   The first download builds the zip (a few seconds), later ones come straight from the file. Open
   the pack link in a private window: it works without login.
 - **Publish an addon**: *My addons → Publish an addon*, with the repo you installed the App on.
+- **Test a zip**: *My addons → Test a zip* (`/scan`) runs the scanner on an uploaded zip before you
+  publish it; nothing is stored.
 - **Admin**: *Admin* in the top bar: review queue, reports, users, categories, game versions,
   audit log.
 

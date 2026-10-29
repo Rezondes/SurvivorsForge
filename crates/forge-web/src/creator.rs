@@ -5,7 +5,7 @@ use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
 use crate::error::{WebError, WebResult};
 use crate::templates::{
-    DeleteAddonPage, DepsPage, EditAddonPage, Errors, ImagesPage, MembersPage, MyAddonsPage, NewAddonPage, Perms, RepoField, RepoFieldFragment, RepoSuggestionsFragment, VersionEditPage,
+    DeleteAddonPage, DepsPage, EditAddonPage, Errors, ImagesPage, MembersPage, MyAddonsPage, NewAddonPage, Perms, RepoField, RepoFieldFragment, RepoSuggestionsFragment, ScanPage, ScanResult, VersionEditPage,
     Visitor, render,
 };
 use axum::Extension;
@@ -146,6 +146,66 @@ pub async fn sync(State(state): State<AppState>, jar: PrivateCookieJar, Path(slu
     };
     let query = reqwest::Url::parse_with_params("http://x/", &[(key, text)]).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
     Ok(Redirect::to(&format!("/me/addons?{query}")).into_response())
+}
+
+/// `GET /scan`: creators test an addon zip before they publish it.
+pub async fn scan_page(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
+    let (user, _) = me(&state, &jar).await?;
+    Ok(render(&ScanPage { user: Some(user), csrf: csrf.0, result: None, error: None }))
+}
+
+/// `POST /scan`: hands the zip to the API scanner and shows the report. Nothing is stored.
+pub async fn scan(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, mut multipart: Multipart) -> WebResult<Html<String>> {
+    let (user, token) = me(&state, &jar).await?;
+    let page = |result, error| Ok(render(&ScanPage { user: Some(user.clone()), csrf: csrf.0.clone(), result, error }));
+    let mut file = None;
+    loop {
+        match multipart.next_field().await {
+            Ok(Some(field)) if field.name() == Some("file") => {
+                let name = field.file_name().unwrap_or("upload.zip").to_string();
+                let Ok(bytes) = field.bytes().await else { return page(None, Some("The zip may be at most 50 MB.".into())) };
+                file = Some((name, bytes.to_vec()));
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => break,
+            Err(_) => return page(None, Some("The zip may be at most 50 MB.".into())),
+        }
+    }
+    let Some((file_name, data)) = file.filter(|(_, d)| !d.is_empty()) else { return page(None, Some("Pick a zip to scan.".into())) };
+    let form = reqwest::multipart::Form::new().part("file", reqwest::multipart::Part::bytes(data).file_name(file_name.clone()));
+    let report = match state.api.post_multipart("/v1/scan", &token, form).await {
+        Ok(report) => report,
+        Err(ApiError::Api { message, .. }) => return page(None, Some(message)),
+        Err(e) => return Err(e.into()),
+    };
+    let mut findings: Vec<(u8, crate::templates::FindingRow)> = report["findings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|f| {
+            let rank = match f["severity"].as_str() { Some("critical") => 0, Some("warn") => 1, Some("notice") => 2, _ => 3 };
+            let row = crate::templates::FindingRow {
+                severity: s(&f["severity"]),
+                rule: s(&f["rule"]),
+                place: match f["line"].as_i64() {
+                    Some(line) => format!("{}:{line}", s(&f["file"])),
+                    None => s(&f["file"]),
+                },
+                message: s(&f["message"]),
+                snippet: s(&f["snippet"]),
+            };
+            (rank, row)
+        })
+        .collect();
+    findings.sort_by_key(|(rank, _)| *rank);
+    let result = ScanResult {
+        file_name,
+        flagged: report["result"] == "flagged",
+        folders: report["folders"].as_array().into_iter().flatten().map(s).collect(),
+        scanner_version: s(&report["scanner_version"]),
+        findings: findings.into_iter().map(|(_, row)| row).collect(),
+    };
+    page(Some(result), None)
 }
 
 #[derive(Deserialize, Default, Clone)]

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="title-row">
   <h1>My addons</h1>
-  <a class="button" href="/addons/new">Publish an addon</a>
+  <span><a class="button" href="/scan">Test a zip</a> <a class="button" href="/addons/new">Publish an addon</a></span>
 </div>
 {% if let Some(m) = msg %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}

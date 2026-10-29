@@ -98,6 +98,10 @@ pub fn router(state: AppState) -> Router {
         .route("/packs/{id}/download", get(crate::packs::download))
         .route("/me/addons", get(crate::creator::my_addons))
         .route(
+            "/scan",
+            get(crate::creator::scan_page).post(crate::creator::scan).layer(axum::extract::DefaultBodyLimit::max(crate::csrf::MAX_UPLOAD_FORM)),
+        )
+        .route(
             "/addons/new",
             get(crate::creator::new_addon)
                 .post(crate::creator::create_addon)
