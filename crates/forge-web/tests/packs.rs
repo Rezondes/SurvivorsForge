@@ -298,3 +298,16 @@ async fn unticked_addons_are_marked_for_removal() {
     let css = web.get("/static/app.css").await.body;
     assert!(css.contains(".pack-row:has(input[name=\"keep\"]:not(:checked)) .removed-note"), "shown once unticked");
 }
+
+#[tokio::test]
+async fn the_edit_page_shows_which_addon_blocks_the_pack() {
+    let mut web = logged_in().await;
+    let mut p = editable_pack();
+    p["addons"][1]["available"] = json!(false);
+    Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(p)).mount(&web.api).await;
+    let page = web.get("/packs/AbCdE12345/edit").await;
+    let odds = page.body.find(r#"value="odds""#).unwrap();
+    assert!(page.body[odds..].contains(r#"<span class="badge bad">Unavailable</span>"#), "{}", page.body);
+    let lucky = page.body.find(r#"name="keep" value="lucky""#).unwrap();
+    assert!(page.body[lucky..odds].contains(r#"<span class="badge"#) && !page.body[lucky..odds].contains("Unavailable"), "a check badge for lucky");
+}
