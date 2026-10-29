@@ -350,6 +350,12 @@ fieldset.picker legend { color: var(--gold); padding: 0 6px; }
 label.pick { flex-wrap: wrap; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
 label.pick:last-child { border-bottom: none; }
 .pick-name { color: var(--gold); }
+.pack-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.pack-row:last-child { border-bottom: none; }
+.pack-row select { margin-top: 6px; }
+.removed-note { display: none; color: var(--bad); }
+.pack-row:has(input[name="keep"]:not(:checked)) .removed-note { display: block; margin-top: 4px; }
+.pack-row:has(input[name="keep"]:not(:checked)) select { opacity: .5; }
 input[readonly] { color: var(--gold-bright); }
 .copy-row { display: flex; gap: 8px; }
 .copy-row input { flex: 1; min-width: 0; }

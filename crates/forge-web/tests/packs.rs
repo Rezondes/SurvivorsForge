@@ -288,3 +288,13 @@ async fn a_fixed_version_says_when_a_newer_one_exists() {
     assert_eq!(page.body.matches("newer: ").count(), 1, "only odds, which stays on v1: {}", page.body);
     assert!(page.body.contains("newer: v3"));
 }
+
+#[tokio::test]
+async fn unticked_addons_are_marked_for_removal() {
+    let mut web = logged_in().await;
+    Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(editable_pack())).mount(&web.api).await;
+    let page = web.get("/packs/AbCdE12345/edit").await;
+    assert_eq!(page.body.matches(r#"<span class="removed-note">will be removed</span>"#).count(), 2, "{}", page.body);
+    let css = web.get("/static/app.css").await.body;
+    assert!(css.contains(".pack-row:has(input[name=\"keep\"]:not(:checked)) .removed-note"), "shown once unticked");
+}
