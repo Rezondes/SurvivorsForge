@@ -184,6 +184,12 @@
     square.style.left = c.x * scale + "px";
     square.style.top = c.y * scale + "px";
     square.style.width = square.style.height = c.size * scale + "px";
+    var preview = box.querySelector("[data-crop-preview]");
+    if (preview) {
+      var pen = preview.getContext("2d");
+      pen.clearRect(0, 0, preview.width, preview.height);
+      pen.drawImage(img, c.x, c.y, c.size, c.size, 0, 0, preview.width, preview.height);
+    }
     box.querySelector('[name="crop_x"]').value = Math.round(c.x);
     box.querySelector('[name="crop_y"]').value = Math.round(c.y);
     box.querySelector('[name="crop_size"]').value = Math.floor(c.size);

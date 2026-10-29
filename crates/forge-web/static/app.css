@@ -277,6 +277,9 @@ pre { background: var(--field); border: 1px solid var(--line); border-radius: va
 
 /* Picking the icon's square on the picked image */
 .cropper { margin: 12px 0; }
+.cropper-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 8px; }
+.crop-preview { margin: 0; text-align: center; font-size: var(--meta); }
+.crop-preview canvas { display: block; width: 64px; height: 64px; margin-bottom: 4px; }
 .cropper-frame { position: relative; width: fit-content; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); }
 .cropper-frame img { display: block; max-width: min(420px, calc(100vw - 80px)); max-height: 420px; user-select: none; -webkit-user-drag: none; }
 .cropper input[type="range"] { max-width: 420px; }

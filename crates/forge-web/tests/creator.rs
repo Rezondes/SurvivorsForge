@@ -316,6 +316,13 @@ async fn touch_screens_get_no_drag_handle() {
 }
 
 #[tokio::test]
+async fn the_icon_square_shows_a_preview() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains(r#"<canvas class="icon" width="64" height="64" data-crop-preview>"#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))
