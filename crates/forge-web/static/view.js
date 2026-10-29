@@ -154,6 +154,19 @@
     box.crop.y = middle.y - box.crop.size / 2;
     drawCrop(box);
   });
+  // Arrow keys move the square by 2 % of the image, with Shift by 10 %.
+  document.addEventListener("keydown", function (event) {
+    var square = event.target.closest && event.target.closest(".cropper-square");
+    var steps = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (!square || !steps) return;
+    event.preventDefault();
+    var box = square.closest("[data-cropper]");
+    var img = box.querySelector("img");
+    var step = (Math.min(img.naturalWidth, img.naturalHeight) * (event.shiftKey ? 10 : 2)) / 100;
+    box.crop.x += steps[0] * step;
+    box.crop.y += steps[1] * step;
+    drawCrop(box);
+  });
   document.addEventListener("pointerdown", function (event) {
     var square = event.target.closest(".cropper-square");
     if (!square) return;

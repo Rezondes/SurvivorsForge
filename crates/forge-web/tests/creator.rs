@@ -250,6 +250,13 @@ async fn deleting_an_image_asks_first() {
 }
 
 #[tokio::test]
+async fn the_icon_square_moves_by_keyboard() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains(r#"<div class="cropper-square" tabindex="0" role="group" aria-label="Icon square: move it with the arrow keys""#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))

@@ -277,6 +277,7 @@ pre { background: var(--field); border: 1px solid var(--line); border-radius: va
 .cropper-frame { position: relative; width: fit-content; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); }
 .cropper-frame img { display: block; max-width: min(420px, calc(100vw - 80px)); max-height: 420px; user-select: none; -webkit-user-drag: none; }
 .cropper input[type="range"] { max-width: 420px; }
+.cropper-square:focus-visible { outline: 2px solid var(--outline-active); outline-offset: 2px; }
 .cropper-square { position: absolute; border: 2px solid var(--gold); box-shadow: 0 0 0 9999px rgba(5, 4, 3, .6); cursor: move; touch-action: none; }
 
 /* Screenshot viewer: the whole window, zoom with the wheel, the buttons or a double click, drag to move */

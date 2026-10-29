@@ -19,8 +19,8 @@
   <label for="caption">Caption (for every picked screenshot)</label>
   <input id="caption" name="caption" maxlength="200">
   <div class="cropper" data-cropper hidden>
-    <p class="muted">Drag the square over the part that becomes the icon; the slider sets its size.</p>
-    <div class="cropper-frame"><img alt="The picked image"><div class="cropper-square" title="Drag to move"></div></div>
+    <p class="muted">Drag the square over the part that becomes the icon, or move it with the arrow keys; the slider sets its size.</p>
+    <div class="cropper-frame"><img alt="The picked image"><div class="cropper-square" tabindex="0" role="group" aria-label="Icon square: move it with the arrow keys" title="Drag, or move with the arrow keys"></div></div>
     <label for="crop-zoom">Size of the square</label>
     <input id="crop-zoom" type="range" min="10" max="100" value="100" data-crop-zoom>
     <input type="hidden" name="crop_x"><input type="hidden" name="crop_y"><input type="hidden" name="crop_size">
