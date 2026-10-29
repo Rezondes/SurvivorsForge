@@ -125,14 +125,26 @@
     true
   );
 
-  // The upload form takes several screenshots but one icon: the file field follows "Use as".
-  document.addEventListener("change", function (event) {
-    var select = event.target.closest("select[data-single-file]");
-    if (!select) return;
+  // The upload form takes several screenshots but one icon: the file field, its label and the
+  // caption follow "Use as" ([data-for-kind] shows only for its kind).
+  function followKind(select) {
     var field = select.form.querySelector('input[type="file"]');
     field.multiple = select.value !== select.getAttribute("data-single-file");
     if (!field.multiple && field.files.length > 1) field.value = "";
+    select.form.querySelectorAll("[data-for-kind]").forEach(function (part) {
+      part.hidden = part.getAttribute("data-for-kind") !== select.value;
+    });
+  }
+  document.addEventListener("change", function (event) {
+    var select = event.target.closest("select[data-single-file]");
+    if (select) followKind(select);
   });
+  // A full screenshot list leaves Icon as the first choice, so set the form up on load and after uploads.
+  function followAllKinds() {
+    document.querySelectorAll("select[data-single-file]").forEach(followKind);
+  }
+  document.addEventListener("DOMContentLoaded", followAllKinds);
+  document.addEventListener("htmx:afterSwap", followAllKinds);
 
   // An icon is a square of the picked image: after picking a file with "Use as" Icon the image
   // shows with a square to drag and size. Its place goes along in pixels of the image (crop_x,

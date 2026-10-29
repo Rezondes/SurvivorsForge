@@ -282,6 +282,15 @@ async fn without_an_icon_the_page_says_how_to_add_one() {
 }
 
 #[tokio::test]
+async fn the_upload_form_starts_with_what_it_is_for() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    let kind = page.find(r#"<select id="kind""#).unwrap();
+    assert!(kind < page.find(r#"<input id="file""#).unwrap(), "Use as comes first");
+    assert!(page.contains(r#"<div data-for-kind="screenshot">"#) && page.contains(r#"data-for-kind="icon" hidden"#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))

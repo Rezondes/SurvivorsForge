@@ -9,15 +9,17 @@
 <form class="panel" method="post" action="/addons/{{ slug }}/images" enctype="multipart/form-data"
       hx-post="/addons/{{ slug }}/images" hx-encoding="multipart/form-data" hx-target="main" hx-select="main" hx-swap="outerHTML">
   <h2>Upload</h2>
-  <label for="file">Images (PNG, JPEG or WebP, at most 5 MB each; pick several at once for screenshots)</label>
-  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required>
   <label for="kind">Use as</label>
   <select id="kind" name="kind" data-single-file="icon">
     {% if images.len() >= 10 %}<option value="screenshot" disabled>Screenshot (all 10 used, delete one first)</option>{% else %}<option value="screenshot">Screenshot (up to 10, scaled to at most 1920 px)</option>{% endif %}
     <option value="icon">Icon (one, cropped to a 256 px square)</option>
   </select>
-  <label for="caption">Caption (for every picked screenshot)</label>
-  <input id="caption" name="caption" maxlength="200">
+  <label for="file"><span data-for-kind="screenshot">Images (PNG, JPEG or WebP, at most 5 MB each; pick several at once)</span><span data-for-kind="icon" hidden>Image (PNG, JPEG or WebP, at most 5 MB)</span></label>
+  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required>
+  <div data-for-kind="screenshot">
+    <label for="caption">Caption (for every picked screenshot)</label>
+    <input id="caption" name="caption" maxlength="200">
+  </div>
   <div class="cropper" data-cropper hidden>
     <p class="muted">Drag the square over the part that becomes the icon, or move it with the arrow keys; the slider sets its size.</p>
     <div class="cropper-frame"><img alt="The picked image"><div class="cropper-square" tabindex="0" role="group" aria-label="Icon square: move it with the arrow keys" title="Drag, or move with the arrow keys"></div></div>
