@@ -77,6 +77,15 @@
     }, 2000);
   });
 
+  // The upload form takes several screenshots but one icon: the file field follows "Use as".
+  document.addEventListener("change", function (event) {
+    var select = event.target.closest("select[data-single-file]");
+    if (!select) return;
+    var field = select.form.querySelector('input[type="file"]');
+    field.multiple = select.value !== select.getAttribute("data-single-file");
+    if (!field.multiple && field.files.length > 1) field.value = "";
+  });
+
   // Screenshots in the editor: dragged by their handle, the new order is saved at once. The arrow
   // buttons stay for the keyboard and without script.
   var dragged = null;

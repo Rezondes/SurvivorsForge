@@ -232,7 +232,10 @@ async fn several_screenshots_in_one_upload() {
         .unwrap();
     let page = web.request(request).await;
     assert!(page.body.contains("2 images uploaded."), "{}", page.body);
-    assert!(web.get("/addons/lucky/images").await.body.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" multiple"#));
+    let form = web.get("/addons/lucky/images").await.body;
+    assert!(form.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" multiple"#));
+    // Picking "Icon" turns the field into a single file one (view.js), the server keeps one anyway.
+    assert!(form.contains(r#"<select id="kind" name="kind" data-single-file="icon">"#), "{form}");
 }
 
 #[tokio::test]
