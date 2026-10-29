@@ -20,7 +20,7 @@ use sha2::Digest;
 use std::sync::Arc;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' https://avatars.githubusercontent.com; \
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob: https://avatars.githubusercontent.com; \
                        form-action 'self'; frame-ancestors 'none'; base-uri 'none'; connect-src 'self'";
 
 #[derive(Clone)]
@@ -113,6 +113,7 @@ pub fn router(state: AppState) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(crate::csrf::MAX_UPLOAD_FORM)),
         )
         .route("/addons/{slug}/images/order", post(crate::creator::order_images))
+        .route("/addons/{slug}/icon/delete", post(crate::creator::delete_icon))
         .route("/addons/{slug}/images/{id}/move", post(crate::creator::move_image))
         .route("/addons/{slug}/images/{id}/delete", post(crate::creator::delete_image))
         .route("/addons/{slug}/images/{id}/caption", post(crate::creator::caption_image))

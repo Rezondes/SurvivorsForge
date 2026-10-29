@@ -43,6 +43,16 @@ pub enum ImageError {
     /// Larger than the decode limits.
     TooLarge,
     Invalid,
+    /// The chosen icon square is empty or leaves the image.
+    BadCrop,
+}
+
+/// The square of the original image an icon is made from, in its pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Crop {
+    pub x: u32,
+    pub y: u32,
+    pub size: u32,
 }
 
 pub struct Processed {
@@ -70,7 +80,8 @@ pub fn sniff(bytes: &[u8]) -> Option<ImageFormat> {
     }
 }
 
-pub fn process(bytes: &[u8], kind: Kind) -> Result<Processed, ImageError> {
+/// `crop` picks the icon's square; without it the icon is the centered one. Screenshots ignore it.
+pub fn process(bytes: &[u8], kind: Kind, crop: Option<Crop>) -> Result<Processed, ImageError> {
     let format = sniff(bytes).ok_or(ImageError::Unsupported)?;
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_DECODE_EDGE);
@@ -88,7 +99,11 @@ pub fn process(bytes: &[u8], kind: Kind) -> Result<Processed, ImageError> {
         Kind::Screenshot => image,
         Kind::Icon => {
             let side = original.0.min(original.1);
-            let square = image.crop_imm((original.0 - side) / 2, (original.1 - side) / 2, side, side);
+            let c = crop.unwrap_or(Crop { x: (original.0 - side) / 2, y: (original.1 - side) / 2, size: side });
+            if c.size == 0 || c.x.saturating_add(c.size) > original.0 || c.y.saturating_add(c.size) > original.1 {
+                return Err(ImageError::BadCrop);
+            }
+            let square = image.crop_imm(c.x, c.y, c.size, c.size);
             square.resize_exact(ICON_EDGE, ICON_EDGE, image::imageops::FilterType::Lanczos3)
         }
     };
@@ -125,39 +140,52 @@ mod tests {
 
     #[test]
     fn rejects_by_magic_bytes() {
-        assert_eq!(process(b"GIF89a....", Kind::Screenshot).err(), Some(ImageError::Unsupported));
-        assert_eq!(process(b"<svg onload=alert(1)>", Kind::Screenshot).err(), Some(ImageError::Unsupported));
-        assert_eq!(process(b"<html>not a png</html>", Kind::Screenshot).err(), Some(ImageError::Unsupported));
-        assert_eq!(process(b"\x89PNG\r\n\x1a\nbroken", Kind::Screenshot).err(), Some(ImageError::Invalid));
-        assert!(process(&png(10, 10), Kind::Screenshot).is_ok());
+        assert_eq!(process(b"GIF89a....", Kind::Screenshot, None).err(), Some(ImageError::Unsupported));
+        assert_eq!(process(b"<svg onload=alert(1)>", Kind::Screenshot, None).err(), Some(ImageError::Unsupported));
+        assert_eq!(process(b"<html>not a png</html>", Kind::Screenshot, None).err(), Some(ImageError::Unsupported));
+        assert_eq!(process(b"\x89PNG\r\n\x1a\nbroken", Kind::Screenshot, None).err(), Some(ImageError::Invalid));
+        assert!(process(&png(10, 10), Kind::Screenshot, None).is_ok());
+    }
+
+    #[test]
+    fn icon_from_the_chosen_square() {
+        // The red channel counts x up, so the left edge of the icon tells where the square starts.
+        let red_at_left = |crop| {
+            let out = process(&png(300, 200), Kind::Icon, crop).unwrap();
+            webp::Decoder::new(&out.webp).decode().unwrap()[0]
+        };
+        assert!(red_at_left(Some(Crop { x: 200, y: 0, size: 100 })) > 170, "from x = 200");
+        assert!(red_at_left(None) < 80, "centered: from x = 50");
+        assert_eq!(process(&png(300, 200), Kind::Icon, Some(Crop { x: 250, y: 0, size: 100 })).err(), Some(ImageError::BadCrop));
+        assert_eq!(process(&png(300, 200), Kind::Icon, Some(Crop { x: 0, y: 0, size: 0 })).err(), Some(ImageError::BadCrop));
     }
 
     #[test]
     fn downscales_with_notice() {
-        let out = process(&png(3000, 1000), Kind::Screenshot).unwrap();
+        let out = process(&png(3000, 1000), Kind::Screenshot, None).unwrap();
         assert_eq!((out.original, out.stored), ((3000, 1000), (1920, 640)));
         assert!(out.resized());
         assert_eq!(sniff(&out.webp), Some(ImageFormat::WebP));
-        let small = process(&png(800, 600), Kind::Screenshot).unwrap();
+        let small = process(&png(800, 600), Kind::Screenshot, None).unwrap();
         assert!(!small.resized());
     }
 
     #[test]
     fn icon_is_a_centered_square() {
-        let out = process(&png(400, 300), Kind::Icon).unwrap();
+        let out = process(&png(400, 300), Kind::Icon, None).unwrap();
         assert_eq!(out.stored, (ICON_EDGE, ICON_EDGE));
     }
 
     #[test]
     fn decompression_bomb_rejected() {
-        assert_eq!(process(&png(12_000, 1), Kind::Screenshot).err(), Some(ImageError::TooLarge));
+        assert_eq!(process(&png(12_000, 1), Kind::Screenshot, None).err(), Some(ImageError::TooLarge));
     }
 
     #[test]
     fn exif_removed() {
         let input = jpeg_with_gps();
         assert!(input.windows(3).any(|w| w == b"GPS"));
-        let out = process(&input, Kind::Screenshot).unwrap();
+        let out = process(&input, Kind::Screenshot, None).unwrap();
         assert!(!out.webp.windows(3).any(|w| w == b"GPS"));
         assert!(!out.webp.windows(4).any(|w| w == b"Exif"));
     }

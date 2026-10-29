@@ -4,7 +4,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use common::{TestWeb, WEB, me};
 use serde_json::{Value, json};
-use wiremock::matchers::{body_partial_json, header, method, path};
+use wiremock::matchers::{body_partial_json, body_string_contains, header, method, path};
 use wiremock::{Mock, ResponseTemplate};
 
 async fn get_json(web: &TestWeb, route: &str, body: Value) {
@@ -203,6 +203,43 @@ async fn moving_a_screenshot_keeps_it_in_view() {
     assert!(images.contains(r#"<figure data-image-id="7" id="shot-7">"#) && images.contains("data-move"), "{images}");
     let page = web.post_form("/addons/lucky/images/7/move", &[("direction", "up")]).await;
     assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images#shot-7"));
+}
+
+#[tokio::test]
+async fn the_icon_is_cropped_replaced_and_deleted() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains("data-cropper") && page.contains(r#"name="crop_size""#), "a square to pick for the icon");
+    Mock::given(method("POST"))
+        .and(path("/v1/addons/lucky/images"))
+        .and(body_string_contains("crop_size"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "id": 9 })))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let token = web.csrf().await;
+    let boundary = "B0UND";
+    let field = |name: &str, value: &str| format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n");
+    let body = format!(
+        "{}{}{}{}--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"i.png\"\r\nContent-Type: image/png\r\n\r\nPNG\r\n--{boundary}--\r\n",
+        field("kind", "icon"),
+        field("crop_x", "10"),
+        field("crop_y", "0"),
+        field("crop_size", "50")
+    );
+    let cookie = web.cookies.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ");
+    let request = Request::post("/addons/lucky/images")
+        .header("cookie", cookie)
+        .header("origin", WEB)
+        .header("x-csrf-token", token)
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body))
+        .unwrap();
+    assert!(web.request(request).await.body.contains("Image uploaded."));
+
+    Mock::given(method("DELETE")).and(path("/v1/addons/lucky/icon")).respond_with(ResponseTemplate::new(204)).expect(1).mount(&web.api).await;
+    let page = web.post_form("/addons/lucky/icon/delete", &[]).await;
+    assert!(page.body.contains("Icon deleted."), "{}", page.body);
 }
 
 #[tokio::test]

@@ -86,6 +86,81 @@
     if (!field.multiple && field.files.length > 1) field.value = "";
   });
 
+  // An icon is a square of the picked image: after picking a file with "Use as" Icon the image
+  // shows with a square to drag and size. Its place goes along in pixels of the image (crop_x,
+  // crop_y, crop_size); without script the platform takes the centered square.
+  function cropState(form) {
+    var box = form.querySelector("[data-cropper]");
+    var select = form.querySelector("select[data-single-file]");
+    var file = form.querySelector('input[type="file"]').files[0];
+    if (!box || !select) return;
+    var on = select.value === select.getAttribute("data-single-file") && !!file;
+    box.hidden = !on;
+    box.querySelectorAll('input[type="hidden"]').forEach(function (i) {
+      i.disabled = !on;
+    });
+    if (!on) return;
+    var img = box.querySelector("img");
+    var key = file.name + ":" + file.size + ":" + file.lastModified;
+    if (img.getAttribute("data-file") === key) return;
+    img.setAttribute("data-file", key);
+    if (img.src) URL.revokeObjectURL(img.src);
+    img.onload = function () {
+      var side = Math.min(img.naturalWidth, img.naturalHeight);
+      box.crop = { x: (img.naturalWidth - side) / 2, y: (img.naturalHeight - side) / 2, size: side };
+      box.querySelector("[data-crop-zoom]").value = 100;
+      drawCrop(box);
+    };
+    img.src = URL.createObjectURL(file);
+  }
+  function drawCrop(box) {
+    var img = box.querySelector("img");
+    var c = box.crop;
+    c.size = Math.min(c.size, img.naturalWidth, img.naturalHeight);
+    c.x = Math.max(0, Math.min(c.x, img.naturalWidth - c.size));
+    c.y = Math.max(0, Math.min(c.y, img.naturalHeight - c.size));
+    var scale = img.clientWidth / img.naturalWidth;
+    var square = box.querySelector(".cropper-square");
+    square.style.left = c.x * scale + "px";
+    square.style.top = c.y * scale + "px";
+    square.style.width = square.style.height = c.size * scale + "px";
+    box.querySelector('[name="crop_x"]').value = Math.round(c.x);
+    box.querySelector('[name="crop_y"]').value = Math.round(c.y);
+    box.querySelector('[name="crop_size"]').value = Math.floor(c.size);
+  }
+  document.addEventListener("change", function (event) {
+    if (event.target.form && event.target.form.querySelector("[data-cropper]")) cropState(event.target.form);
+  });
+  document.addEventListener("input", function (event) {
+    if (!event.target.matches("[data-crop-zoom]")) return;
+    var box = event.target.closest("[data-cropper]");
+    var img = box.querySelector("img");
+    var middle = { x: box.crop.x + box.crop.size / 2, y: box.crop.y + box.crop.size / 2 };
+    box.crop.size = Math.max(1, (Math.min(img.naturalWidth, img.naturalHeight) * event.target.value) / 100);
+    box.crop.x = middle.x - box.crop.size / 2;
+    box.crop.y = middle.y - box.crop.size / 2;
+    drawCrop(box);
+  });
+  document.addEventListener("pointerdown", function (event) {
+    var square = event.target.closest(".cropper-square");
+    if (!square) return;
+    var box = square.closest("[data-cropper]");
+    var img = box.querySelector("img");
+    var start = { px: event.clientX, py: event.clientY, x: box.crop.x, y: box.crop.y, scale: img.clientWidth / img.naturalWidth };
+    square.setPointerCapture(event.pointerId);
+    function move(e) {
+      box.crop.x = start.x + (e.clientX - start.px) / start.scale;
+      box.crop.y = start.y + (e.clientY - start.py) / start.scale;
+      drawCrop(box);
+    }
+    function stop() {
+      square.removeEventListener("pointermove", move);
+      square.removeEventListener("pointerup", stop);
+    }
+    square.addEventListener("pointermove", move);
+    square.addEventListener("pointerup", stop);
+  });
+
   // Screenshots in the editor: dragged by their handle, the new order is saved at once. The arrow
   // buttons stay for the keyboard and without script.
   var dragged = null;

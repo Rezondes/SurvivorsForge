@@ -535,6 +535,8 @@ pub async fn upload_image(
 ) -> WebResult<Response> {
     let (user, token) = me(&state, &jar).await?;
     let (mut files, mut kind, mut caption) = (Vec::new(), String::new(), String::new());
+    // The square picked for an icon, in pixels of the picked image; empty without script.
+    let mut crop: Vec<(String, String)> = Vec::new();
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or_default().to_string();
         let file_name = field.file_name().unwrap_or("upload").to_string();
@@ -545,6 +547,7 @@ pub async fn upload_image(
             "file" if !bytes.is_empty() => files.push((file_name, bytes.to_vec())),
             "kind" => kind = String::from_utf8_lossy(&bytes).into_owned(),
             "caption" => caption = String::from_utf8_lossy(&bytes).into_owned(),
+            "crop_x" | "crop_y" | "crop_size" if !bytes.is_empty() => crop.push((name, String::from_utf8_lossy(&bytes).into_owned())),
             _ => {}
         }
     }
@@ -556,10 +559,13 @@ pub async fn upload_image(
     let (mut uploaded, mut notes, mut errors) = (0, Vec::new(), Vec::new());
     let several = files.len() > 1;
     for (file_name, data) in files {
-        let form = reqwest::multipart::Form::new()
-            .text("kind", kind.clone())
-            .text("caption", caption.clone())
-            .part("file", reqwest::multipart::Part::bytes(data).file_name(file_name.clone()));
+        let mut form = reqwest::multipart::Form::new().text("kind", kind.clone()).text("caption", caption.clone());
+        if kind == "icon" && crop.len() == 3 {
+            for (name, value) in &crop {
+                form = form.text(name.clone(), value.clone());
+            }
+        }
+        let form = form.part("file", reqwest::multipart::Part::bytes(data).file_name(file_name.clone()));
         let named = |text: String| if several { format!("{file_name}: {text}") } else { text };
         match state.api.post_multipart(&format!("/v1/addons/{slug}/images"), &token, form).await {
             Ok(answer) => {
@@ -659,6 +665,16 @@ pub async fn caption_image(
         Err(e) => return Err(e.into()),
     };
     Ok(images_page(&state, user, &token, csrf.0, &slug, message, error).await?.into_response())
+}
+
+/// Removes the icon; the addon shows its initial again.
+pub async fn delete_icon(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Response> {
+    let (user, token) = me(&state, &jar).await?;
+    let message = match state.api.call(Method::DELETE, &format!("/v1/addons/{slug}/icon"), Some(&token), None).await {
+        Ok(_) | Err(ApiError::Api { status: 404, .. }) => "Icon deleted.".to_string(),
+        Err(e) => return Err(e.into()),
+    };
+    Ok(images_page(&state, user, &token, csrf.0, &slug, Some(message), None).await?.into_response())
 }
 
 pub async fn delete_image(State(state): State<AppState>, jar: PrivateCookieJar, Path((slug, id)): Path<(String, i64)>) -> WebResult<Response> {

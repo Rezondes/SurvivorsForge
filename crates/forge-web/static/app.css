@@ -269,6 +269,15 @@ pre { background: var(--field); border: 1px solid var(--line); border-radius: va
 .drag-handle { display: inline-grid; place-items: center; width: 38px; height: 38px; color: var(--muted); cursor: grab; border: 1px dashed var(--line); border-radius: var(--radius); }
 .drag-handle:hover { color: var(--gold); border-color: var(--outline); }
 .shots figure.dragging { opacity: .4; }
+.icon-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.icon-row button svg { margin-right: 6px; }
+
+/* Picking the icon's square on the picked image */
+.cropper { margin: 12px 0; }
+.cropper-frame { position: relative; width: fit-content; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); }
+.cropper-frame img { display: block; max-width: min(420px, calc(100vw - 80px)); max-height: 420px; user-select: none; -webkit-user-drag: none; }
+.cropper input[type="range"] { max-width: 420px; }
+.cropper-square { position: absolute; border: 2px solid var(--gold); box-shadow: 0 0 0 9999px rgba(5, 4, 3, .6); cursor: move; touch-action: none; }
 
 /* Screenshot viewer: the whole window, zoom with the wheel, the buttons or a double click, drag to move */
 dialog.lightbox { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0; border: none; background: rgba(5, 4, 3, .95); color: var(--text); }

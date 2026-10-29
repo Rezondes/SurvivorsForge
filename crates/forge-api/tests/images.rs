@@ -16,9 +16,16 @@ fn png(w: u32, h: u32, shade: u8) -> Vec<u8> {
 }
 
 async fn upload(app: &TestApp, token: &str, bytes: &[u8], kind: &str) -> Reply {
+    upload_with(app, token, bytes, kind, &[]).await
+}
+
+async fn upload_with(app: &TestApp, token: &str, bytes: &[u8], kind: &str, fields: &[(&str, &str)]) -> Reply {
     let boundary = "XBOUNDARYX";
     let mut body = Vec::new();
     body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"kind\"\r\n\r\n{kind}\r\n").as_bytes());
+    for (name, value) in fields {
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes());
+    }
     body.extend_from_slice(
         format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").as_bytes(),
     );
@@ -75,13 +82,36 @@ async fn limits_and_icon_square(pool: PgPool) {
     let token = app.publish(1, "alice", "lucky").await;
     let icon = upload(&app, &token, &png(300, 200, 9), "icon").await;
     assert_eq!((icon.json()["width"].as_u64(), icon.json()["height"].as_u64()), (Some(256), Some(256)));
-    assert_eq!(upload(&app, &token, &png(300, 200, 8), "icon").await.error(), "image_limit");
+    let replaced = upload(&app, &token, &png(300, 200, 8), "icon").await;
+    assert_eq!(replaced.status, StatusCode::CREATED, "a new icon replaces the old one");
     for shade in 0..10 {
         assert_eq!(upload(&app, &token, &png(20, 20, shade), "screenshot").await.status, StatusCode::CREATED);
     }
     let eleventh = upload(&app, &token, &png(20, 20, 99), "screenshot").await;
     assert_eq!((eleventh.status, eleventh.error().as_str()), (StatusCode::CONFLICT, "image_limit"));
     assert!(app.get("/v1/addons/lucky", None).await.json()["icon_url"].is_string());
+}
+
+#[sqlx::test]
+async fn the_icon_is_replaced_cropped_and_deleted(pool: PgPool) {
+    let (app, dir) = app_with_dir(pool);
+    let token = app.publish(1, "alice", "lucky").await;
+    let first = upload(&app, &token, &png(300, 200, 1), "icon").await.json();
+    let second = upload_with(&app, &token, &png(300, 200, 2), "icon", &[("crop_x", "200"), ("crop_y", "0"), ("crop_size", "100")]).await;
+    assert_eq!((second.status, second.json()["width"].as_u64()), (StatusCode::CREATED, Some(256)));
+    assert_ne!(first["url"], second.json()["url"]);
+    assert_eq!(app.get("/v1/addons/lucky", None).await.json()["icon_url"], second.json()["url"], "the new icon is the one shown");
+    assert_eq!(files(&dir), 1, "the old icon file is gone");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM images WHERE kind = 'icon'").fetch_one(&app.pool).await.unwrap();
+    assert_eq!(count, 1);
+
+    let bad = upload_with(&app, &token, &png(300, 200, 3), "icon", &[("crop_x", "250"), ("crop_y", "0"), ("crop_size", "100")]).await;
+    assert_eq!((bad.status, bad.error().as_str()), (StatusCode::UNPROCESSABLE_ENTITY, "invalid_crop"), "outside the image");
+
+    assert_eq!(app.delete("/v1/addons/lucky/icon", Some(&token)).await.status, StatusCode::NO_CONTENT);
+    assert!(app.get("/v1/addons/lucky", None).await.json()["icon_url"].is_null());
+    assert_eq!(files(&dir), 0);
+    assert_eq!(app.delete("/v1/addons/lucky/icon", Some(&token)).await.status, StatusCode::NOT_FOUND, "no icon left");
 }
 
 #[sqlx::test]
