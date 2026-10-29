@@ -243,6 +243,13 @@ async fn the_icon_is_cropped_replaced_and_deleted() {
 }
 
 #[tokio::test]
+async fn deleting_an_image_asks_first() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains(r#"class="inline" data-confirm="Delete this screenshot? This cannot be undone.""#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))

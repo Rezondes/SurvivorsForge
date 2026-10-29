@@ -77,6 +77,19 @@
     }, 2000);
   });
 
+  // Forms that destroy something ask first; without script they act at once.
+  document.addEventListener(
+    "submit",
+    function (event) {
+      var form = event.target.closest("form[data-confirm]");
+      if (form && !window.confirm(form.getAttribute("data-confirm"))) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+
   // The upload form takes several screenshots but one icon: the file field follows "Use as".
   document.addEventListener("change", function (event) {
     var select = event.target.closest("select[data-single-file]");

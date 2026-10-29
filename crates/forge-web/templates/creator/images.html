@@ -35,7 +35,7 @@
     <img class="icon big" src="{{ icon }}" alt="Icon" width="96" height="96">
     <div>
       <p class="muted">To replace it, upload a new image as Icon above and pick its square.</p>
-      <form method="post" action="/addons/{{ slug }}/icon/delete" class="inline">
+      <form method="post" action="/addons/{{ slug }}/icon/delete" class="inline" data-confirm="Delete the icon? This cannot be undone.">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button type="submit" class="danger"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M4.5 4l.7 9.5h5.6l.7-9.5M7 6.5v5M9 6.5v5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg> Delete icon</button>
       </form>
@@ -68,7 +68,7 @@
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="direction" value="down">
           <button type="submit" class="secondary icon-button" aria-label="Move later" title="Move later" {% if loop.last %}disabled{% endif %}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
         </form>
-        <form method="post" action="/addons/{{ slug }}/images/{{ img.id }}/delete" class="inline">
+        <form method="post" action="/addons/{{ slug }}/images/{{ img.id }}/delete" class="inline" data-confirm="Delete this screenshot? This cannot be undone.">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <button type="submit" class="danger icon-button" aria-label="Delete screenshot" title="Delete"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M4.5 4l.7 9.5h5.6l.7-9.5M7 6.5v5M9 6.5v5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
         </form>
