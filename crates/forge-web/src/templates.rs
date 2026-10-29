@@ -667,6 +667,8 @@ pub struct PackEntry {
     pub folders: String,
     /// Follows the addon's newest checked version.
     pub latest: bool,
+    /// Ticked to stay on the edit page; false after a refused save that took it out.
+    pub kept: bool,
     /// Tags that can go into a pack, newest first.
     pub versions: Vec<String>,
 }

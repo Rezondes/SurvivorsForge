@@ -152,6 +152,7 @@ fn entries(p: &Value) -> Vec<PackEntry> {
             notice: notice(a["trust"].as_str().unwrap_or_default(), false, false),
             folders: a["folders"].as_array().into_iter().flatten().map(s).collect::<Vec<_>>().join(", "),
             latest: a["latest"] == true,
+            kept: a["kept"] != false,
             versions: a["versions"].as_array().into_iter().flatten().map(s).collect(),
         })
         .collect()
@@ -193,10 +194,10 @@ pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
     }))
 }
 
-/// The edit page of pack `id` as the API's `p` describes it.
-async fn edit_page(state: &AppState, user: Visitor, csrf: String, id: String, p: &Value, error: Option<String>) -> WebResult<PackEditPage> {
+/// The edit page of pack `id` as the API's `p` describes it; `added` are ticked among the others.
+async fn edit_page(state: &AppState, user: Visitor, csrf: String, id: String, p: &Value, added: &[String], error: Option<String>) -> WebResult<PackEditPage> {
     let entries = entries(p);
-    let mut others = choices(state, &[]).await?;
+    let mut others = choices(state, added).await?;
     others.retain(|c| !entries.iter().any(|e| e.slug.eq_ignore_ascii_case(&c.slug)));
     Ok(PackEditPage { user: Some(user), csrf, id, name: s(&p["name"]), listed: p["listed"] == true, entries, others, error })
 }
@@ -209,7 +210,7 @@ pub async fn edit_pack(State(state): State<AppState>, jar: PrivateCookieJar, Ext
     if !may_edit(Some(&user), &p) {
         return Err(WebError::Forbidden);
     }
-    Ok(render(&edit_page(&state, user, csrf.0, id, &p, None).await?))
+    Ok(render(&edit_page(&state, user, csrf.0, id, &p, &[], None).await?))
 }
 
 /// `POST /packs/{id}/edit`: `keep` lists the addons that stay, each with its `version.<slug>`
@@ -230,8 +231,21 @@ pub async fn save_pack(State(state): State<AppState>, jar: PrivateCookieJar, Ext
     match state.api.call(reqwest::Method::PATCH, &format!("/v1/packs/{id}"), Some(&token), Some(&change)).await {
         Ok(_) => Ok(Redirect::to(&format!("/packs/{id}")).into_response()),
         Err(ApiError::Api { status, message, .. }) if status == 422 || status == 403 => {
-            let p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
-            let page = edit_page(&state, user, csrf.0, id, &p, Some(message)).await?;
+            // The pack as it is, with what the visitor entered on top, so nothing is lost.
+            let mut p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
+            p["name"] = change["name"].clone();
+            p["listed"] = change["listed"].clone();
+            let kept = field("keep");
+            for a in p["addons"].as_array_mut().into_iter().flatten() {
+                let slug = s(&a["slug"]);
+                a["kept"] = json!(kept.contains(&slug));
+                match field(&format!("version.{slug}")).pop() {
+                    Some(v) if v == "latest" => a["latest"] = json!(true),
+                    Some(tag) => (a["latest"], a["tag"]) = (json!(false), json!(tag)),
+                    None => {}
+                }
+            }
+            let page = edit_page(&state, user, csrf.0, id, &p, &field("addon"), Some(message)).await?;
             Ok((StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST), render(&page)).into_response())
         }
         Err(e) => Err(e.into()),

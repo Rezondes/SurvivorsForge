@@ -257,3 +257,25 @@ async fn only_the_creator_edits_the_pack() {
     assert!(!web.get("/packs/AbCdE12345").await.body.contains("/edit\""), "no link for others");
     assert_eq!(web.get("/packs/AbCdE12345/edit").await.status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn a_refused_save_keeps_what_was_entered() {
+    let mut web = logged_in().await;
+    Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(editable_pack())).mount(&web.api).await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/packs/AbCdE12345"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({ "error": "too_large", "message": "The pack would be larger than 50 MB" })))
+        .mount(&web.api)
+        .await;
+    let page = web
+        .post_form("/packs/AbCdE12345/edit", &[("name", "Typed"), ("listed", "1"), ("keep", "odds"), ("version.odds", "v3"), ("version.lucky", "latest"), ("addon", "aether")])
+        .await;
+    assert_eq!(page.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(page.body.contains("larger than 50 MB"), "{}", page.body);
+    assert!(page.body.contains(r#"value="Typed""#), "the name");
+    assert!(page.body.contains(r#"name="listed" value="1" checked"#), "listed");
+    assert!(page.body.contains(r#"name="keep" value="lucky">"#), "lucky unticked: {}", page.body);
+    assert!(page.body.contains(r#"name="keep" value="odds" checked"#), "odds still ticked");
+    assert!(page.body.contains(r#"<option value="v3" selected>"#), "the picked version");
+    assert!(page.body.contains(r#"name="addon" value="aether" checked"#), "the added addon");
+}
