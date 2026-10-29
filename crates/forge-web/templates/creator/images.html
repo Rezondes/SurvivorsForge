@@ -55,7 +55,7 @@
 <section class="panel">
   <h2>Screenshots ({{ images.len() }} of 10)</h2>
   {% if images.is_empty() %}<p class="muted">No screenshots yet.</p>{% endif %}
-  {% if images.len() > 1 %}<p class="muted">Drag a screenshot by its handle to change the order, or use the arrows.</p>{% endif %}
+  {% if images.len() > 1 %}<p class="muted">Use the arrows to change the order, or drag a screenshot by its handle.</p>{% endif %}
   <div class="shots" data-order-url="/addons/{{ slug }}/images/order">
     {% for img in images %}
     <figure data-image-id="{{ img.id }}" id="shot-{{ img.id }}">

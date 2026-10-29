@@ -308,6 +308,14 @@ async fn screenshots_in_the_editor_always_have_a_text() {
 }
 
 #[tokio::test]
+async fn touch_screens_get_no_drag_handle() {
+    // Dragging does not work with fingers; the arrows do.
+    let mut web = logged_in(owner()).await;
+    let css = web.get("/static/app.css").await.body;
+    assert!(css.contains("@media (pointer: coarse) { .drag-handle { display: none; } }"));
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))
