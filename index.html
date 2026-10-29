@@ -42,6 +42,7 @@
             <a class="button large" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-windows-x86_64.zip" data-download="windows">Download for Windows</a>
             <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-linux-x86_64.AppImage" data-download="linux">Linux and Steam Deck</a>
           </div>
+          <p class="small" id="release" hidden></p>
           <p class="muted small">Free and open source. Windows 10 and 11, Linux and Steam Deck (experimental).
             <a href="https://github.com/Rezondes/SurvivorsForge/releases/latest" id="other-ways">Other ways to get it</a></p>
           <p class="small"><a href="https://forge.rezondes.net/addons">Browse all addons on the website</a></p>
@@ -220,6 +221,30 @@
         }
       });
     }
+
+    // Show the current release and link its exact files. Pre-releases are skipped, as by the launcher.
+    // A release from before the fixed names has only the versioned files, so those are the fallback.
+    const files = {
+      windows: [/^SurvivorsForge-windows-x86_64\.zip$/, /-x86_64-pc-windows-msvc\.zip$/],
+      linux: [/^SurvivorsForge-linux-x86_64\.AppImage$/, /\.AppImage$/],
+    };
+    fetch("https://api.github.com/repos/Rezondes/SurvivorsForge/releases/latest")
+      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+      .then((release) => {
+        for (const [platform, patterns] of Object.entries(files)) {
+          const asset = patterns.map((p) => release.assets.find((a) => p.test(a.name))).find(Boolean);
+          if (!asset) continue;
+          for (const link of document.querySelectorAll(`[data-download="${platform}"]`)) link.href = asset.browser_download_url;
+          for (const field of document.querySelectorAll(`[data-url="${platform}"]`)) field.value = asset.browser_download_url;
+          for (const name of document.querySelectorAll(`[data-file="${platform}"]`)) name.textContent = asset.name;
+        }
+        const date = new Date(release.published_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        const line = document.getElementById("release");
+        const notes = Object.assign(document.createElement("a"), { href: release.html_url, textContent: "What is new" });
+        line.append(`Version ${release.tag_name.replace(/^v/, "")}, released ${date}. `, notes);
+        line.hidden = false;
+      })
+      .catch(() => {});
   </script>
 </body>
 </html>
