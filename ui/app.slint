@@ -303,8 +303,8 @@ export component AppWindow inherits Window {
     in property <int> update-count;
     in property <bool> checking;
     callback check-updates();
-    // The game's executable was found next to the AddOns folder.
-    in property <bool> game-found;
+    // Why the game can't be started from here; empty when its executable was found.
+    in property <string> game-missing;
     callback launch-game();
     callback update-all();
     callback install-zip();
@@ -392,7 +392,7 @@ export component AppWindow inherits Window {
 
         // The logo in the middle, the game's start button on the right, apart from the tabs.
         Rectangle {
-            height: logo.preferred-height;
+            height: max(logo.preferred-height, launch.preferred-height);
             logo := Text {
                 text: "SurvivorsForge";
                 font-family: Theme.font-display;
@@ -400,15 +400,26 @@ export component AppWindow inherits Window {
                 color: Theme.gold-heading;
                 horizontal-alignment: center;
             }
-            if root.game-found : ActionButton {
-                width: self.preferred-width;
-                height: self.preferred-height;
+            launch := VerticalLayout {
                 x: parent.width - self.width;
-                y: (parent.height - self.height) / 2;
-                text: "Launch game";
-                primary: true;
-                large: true;
-                clicked => { root.launch-game(); }
+                // Wider than the label for more room around it; the hint wraps to the same width.
+                width: 220px;
+                alignment: center;
+                spacing: 4px;
+                ActionButton {
+                    text: "Launch game";
+                    primary: true;
+                    large: true;
+                    enabled: root.game-missing == "";
+                    clicked => { root.launch-game(); }
+                }
+                if root.game-missing != "" : Text {
+                    text: root.game-missing;
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    horizontal-alignment: right;
+                    wrap: word-wrap;
+                }
             }
         }
 

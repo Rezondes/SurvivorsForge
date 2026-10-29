@@ -353,7 +353,12 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     }
     ui.set_update_count(controller::update_all_ids(&core.statuses).len() as i32);
     ui.set_checking(core.checking);
-    ui.set_game_found(config::game_executable(core.addons_dir(), cfg!(windows)).is_some());
+    let game_missing = match config::game_executable(core.addons_dir(), cfg!(windows)) {
+        Some(_) => "",
+        None if cfg!(windows) => "AzerothSurvivors.exe is not next to the benilla-config folder.",
+        None => "No Linux build of the game next to benilla-config. Start a Windows build through Steam.",
+    };
+    ui.set_game_missing(game_missing.into());
     ui.set_status_text(core.status.clone().into());
     ui.set_status_error(core.status_error);
     ui.set_addons_dir(core.config.addons_dir.to_string_lossy().into_owned().into());
