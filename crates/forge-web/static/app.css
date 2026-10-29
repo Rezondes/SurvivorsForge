@@ -296,6 +296,31 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .6); }
 .lightbox-caption { flex: 1; min-width: 0; margin: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lightbox-bar form { margin: 0; }
 .description img { max-width: 100%; height: auto; }
+.description table { display: block; overflow-x: auto; }
+/* API playground: only the fields the chosen endpoint uses. */
+.playground:has(option[value="registry"]:checked) .pg-slug,
+.playground:has(option[value="registry"]:checked) .pg-tag,
+.playground:has(option[value="addon"]:checked) .pg-tag,
+.playground:has(option[value="versions"]:checked) .pg-tag { display: none; }
+/* API docs: side navigation and highlighted code. */
+.docs-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
+.toc { position: sticky; top: 0; max-height: calc(100vh - 120px); overflow-x: hidden; overflow-y: auto; font-size: var(--meta); }
+.toc-title { margin: 0 0 8px; color: var(--gold); }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li.sub { padding-left: 12px; }
+.toc a { display: block; overflow-wrap: anywhere; padding: 3px 8px; border-left: 2px solid var(--line); color: var(--muted); text-decoration: none; }
+.toc a:hover { color: var(--text); border-left-color: var(--outline-hover); }
+.toc a[aria-current] { color: var(--gold-bright); border-left-color: var(--outline-active); }
+.description h3[id], .description h4[id] { scroll-margin-top: 16px; }
+.tok-keyword { color: var(--gold); }
+.tok-string { color: var(--ok); }
+.tok-number { color: var(--warn); }
+.tok-comment { color: var(--muted); font-style: italic; }
+pre code { color: var(--text); word-break: normal; }
+@media (max-width: 900px) {
+  .docs-layout { grid-template-columns: minmax(0, 1fr); }
+  .toc { position: static; max-height: none; }
+}
 .pager { display: flex; justify-content: space-between; margin-top: 16px; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 

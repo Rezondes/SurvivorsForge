@@ -31,6 +31,8 @@ pub fn render(md: &str, image_base: &str) -> String {
                 .into_iter()
                 .collect(),
         )
+        // Code blocks keep their language, for syntax highlighting on the page.
+        .allowed_classes([("code", ["language-js", "language-ts", "language-csharp", "language-rust", "language-python", "language-json"].into_iter().collect())].into_iter().collect())
         .url_schemes(["http", "https", "mailto"].into_iter().collect())
         .url_relative(ammonia::UrlRelative::Deny)
         .link_rel(Some("nofollow noopener noreferrer ugc"))

@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::csrf::{self, CsrfToken};
 use crate::error::{WebError, WebResult, error_page};
 use crate::session::{self, SESSION_COOKIE};
-use crate::templates::{IndexPage, LoginPage, Visitor, render};
+use crate::templates::{ApiDocsPage, ApiPlaygroundPage, IndexPage, LoginPage, TocEntry, Visitor, render};
 use axum::extract::{FromRef, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -85,6 +85,8 @@ pub fn router(state: AppState) -> Router {
     let _ = PUBLIC_URL.set(state.config.public_web_url.clone());
     let pages = Router::new()
         .route("/", get(index))
+        .route("/api-docs", get(api_docs))
+        .route("/api-docs/playground", get(api_playground))
         .route("/addons", get(crate::public::addons))
         .route("/addons/{slug}", get(crate::public::addon))
         .route("/addons/{slug}/versions", get(crate::public::versions))
@@ -145,6 +147,7 @@ pub fn router(state: AppState) -> Router {
         .route("/static/htmx.min.js", get(|| async { asset("text/javascript", HTMX_JS) }))
         .route("/static/app.css", get(|| async { asset("text/css", APP_CSS) }))
         .route("/static/view.js", get(|| async { asset("text/javascript", VIEW_JS) }))
+        .route("/static/api-docs.js", get(|| async { asset("text/javascript", API_DOCS_JS) }))
         // The launcher's fonts (SIL OFL, licenses next to them in ui/fonts).
         // The launcher's icon, as tab icon and home screen icon.
         .route("/static/icon.png", get(|| async { binary("image/png", include_bytes!("../../../assets/icon.png")) }))
@@ -178,12 +181,13 @@ fn font(body: &'static [u8]) -> Response {
 const HTMX_JS: &str = include_str!("../static/htmx.min.js");
 const APP_CSS: &str = include_str!("../static/app.css");
 const VIEW_JS: &str = include_str!("../static/view.js");
+const API_DOCS_JS: &str = include_str!("../static/api-docs.js");
 
 /// Goes into the links to the stylesheet and scripts (`?v=`) and changes with their content, so a
 /// deploy reaches browsers that still cache the old files.
 pub fn asset_version() -> &'static str {
     static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        let hash = sha2::Sha256::new().chain_update(HTMX_JS).chain_update(APP_CSS).chain_update(VIEW_JS).finalize();
+        let hash = sha2::Sha256::new().chain_update(HTMX_JS).chain_update(APP_CSS).chain_update(VIEW_JS).chain_update(API_DOCS_JS).finalize();
         hash[..6].iter().map(|b| format!("{b:02x}")).collect()
     });
     &VERSION
@@ -209,6 +213,103 @@ async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extension(c
         Err(_) => Vec::new(),
     };
     Ok(render(&IndexPage { user, csrf: csrf.0, popular }))
+}
+
+/// The public API for other launchers, from the same file as `docs/public-api.md` on GitHub.
+async fn api_docs(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
+    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let md = include_str!("../../../docs/public-api.md");
+    // The page has its own h1; the Markdown's title would come out as a second heading.
+    let (description_html, toc) = heading_ids(&forge_core::markdown::render(md.split_once('\n').map_or(md, |(_, rest)| rest), ""));
+    Ok(render(&ApiDocsPage { user, csrf: csrf.0, description_html, toc }))
+}
+
+/// Gives every `h3` and `h4` of rendered Markdown an id from its text, and lists them for the
+/// table of contents. The sanitizer drops ids, so they are added after it.
+fn heading_ids(html: &str) -> (String, Vec<TocEntry>) {
+    let (mut out, mut toc, mut rest) = (String::new(), Vec::<TocEntry>::new(), html);
+    while let Some(start) = ["<h3>", "<h4>"].iter().filter_map(|tag| rest.find(tag)).min() {
+        let level = &rest[start + 2..start + 3];
+        let close = format!("</h{level}>");
+        let Some(end) = rest[start..].find(&close).map(|e| start + e) else { break };
+        let inner = &rest[start + 4..end];
+        let text = strip_tags(inner).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"");
+        let base = text.to_lowercase().split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join("-");
+        let taken = toc.iter().filter(|t| t.id == base || t.id.starts_with(&format!("{base}-"))).count();
+        let id = if taken == 0 { base } else { format!("{base}-{}", taken + 1) };
+        out.push_str(&rest[..start]);
+        out.push_str(&format!("<h{level} id=\"{id}\">{inner}</h{level}>"));
+        toc.push(TocEntry { id, text, sub: level == "4" });
+        rest = &rest[end + close.len()..];
+    }
+    out.push_str(rest);
+    (out, toc)
+}
+
+fn strip_tags(html: &str) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    text
+}
+
+#[derive(Deserialize, Default)]
+struct PlaygroundQuery {
+    #[serde(default)]
+    endpoint: String,
+    #[serde(default)]
+    slug: String,
+    #[serde(default)]
+    tag: String,
+}
+
+/// The API path for a playground form, or what is wrong with it. Slugs and tags are checked so
+/// that the form reaches nothing but the four public endpoints.
+fn playground_path(q: &PlaygroundQuery) -> Result<String, &'static str> {
+    let plain = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.+".contains(c));
+    let (slug, tag) = (q.slug.trim(), q.tag.trim());
+    let slug_ok = || if plain(slug) { Ok(()) } else { Err("Enter an addon id, e.g. aetherhud") };
+    match q.endpoint.as_str() {
+        "registry" => Ok("/v1/registry".into()),
+        "addon" => slug_ok().map(|_| format!("/v1/addons/{slug}")),
+        "versions" => slug_ok().map(|_| format!("/v1/addons/{slug}/versions")),
+        "findings" => {
+            slug_ok()?;
+            if plain(tag) { Ok(format!("/v1/addons/{slug}/versions/{tag}/findings")) } else { Err("Enter a version tag, e.g. v2.3.0") }
+        }
+        _ => Err("Pick an endpoint"),
+    }
+}
+
+/// Tries the public API from the browser: the website asks the API and shows its JSON.
+async fn api_playground(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Query(q): Query<PlaygroundQuery>,
+) -> WebResult<Html<String>> {
+    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let (mut path, mut error, mut result) = (String::new(), String::new(), String::new());
+    if !q.endpoint.is_empty() {
+        match playground_path(&q) {
+            Ok(p) => {
+                let answer = state.api.get(&p, None).await.unwrap_or_else(|e| json!({ "error": e.code(), "message": e.message() }));
+                result = serde_json::to_string_pretty(&answer).unwrap_or_default();
+                path = p;
+            }
+            Err(e) => error = e.into(),
+        }
+    }
+    let endpoint = if q.endpoint.is_empty() { "registry".into() } else { q.endpoint };
+    let api_url = format!("{}{path}", state.config.public_api_url);
+    Ok(render(&ApiPlaygroundPage { user, csrf: csrf.0, endpoint, slug: q.slug, tag: q.tag, path, api_url, error, result }))
 }
 
 async fn login(State(state): State<AppState>, jar: PrivateCookieJar) -> Response {

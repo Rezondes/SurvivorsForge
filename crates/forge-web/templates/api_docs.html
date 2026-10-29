@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}API for launchers - SurvivorsForge{% endblock %}
+{% block head %}<script src="/static/api-docs.js?v={{ crate::app::asset_version() }}" defer></script>{% endblock %}
+{% block content %}
+<div class="docs-layout">
+  <nav class="toc" aria-label="On this page">
+    <p class="toc-title">On this page</p>
+    <ul>
+      {% for entry in toc %}
+      <li{% if entry.sub %} class="sub"{% endif %}><a href="#{{ entry.id }}">{{ entry.text }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+  <section class="panel description">
+    <h1>API for launchers</h1>
+    <p><a class="button" href="/api-docs/playground">Try it in the playground</a></p>
+    {{ description_html|safe }}
+  </section>
+</div>
+{% endblock %}

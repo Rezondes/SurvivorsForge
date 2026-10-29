@@ -705,3 +705,38 @@ pub struct PackBuildingPage {
     /// The try the page asks for next; `None` once it gave up waiting.
     pub next_try: Option<u32>,
 }
+
+#[derive(Template)]
+#[template(path = "api_docs.html")]
+pub struct ApiDocsPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    /// `docs/public-api.md` without its title, through the same sanitizer as addon descriptions.
+    pub description_html: String,
+    pub toc: Vec<TocEntry>,
+}
+
+/// One heading of the API docs in the side navigation.
+pub struct TocEntry {
+    pub id: String,
+    pub text: String,
+    /// A subsection (`###` in the Markdown).
+    pub sub: bool,
+}
+
+#[derive(Template)]
+#[template(path = "api_playground.html")]
+pub struct ApiPlaygroundPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    /// The form as sent: `registry`, `addon`, `versions` or `findings`.
+    pub endpoint: String,
+    pub slug: String,
+    pub tag: String,
+    /// The API path that was asked, empty before the first request.
+    pub path: String,
+    pub api_url: String,
+    pub error: String,
+    /// The API's answer, pretty-printed.
+    pub result: String,
+}

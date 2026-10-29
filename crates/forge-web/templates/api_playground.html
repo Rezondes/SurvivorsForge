@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}API playground - SurvivorsForge{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>API playground</h1>
+  <p>Try the <a href="/api-docs">public API for launchers</a>. Requests here count against the same limit as your own.</p>
+  <form class="playground" method="get" action="/api-docs/playground">
+    <label for="endpoint">Endpoint</label>
+    <select id="endpoint" name="endpoint">
+      <option value="registry" {% if endpoint == "registry" %}selected{% endif %}>GET /v1/registry</option>
+      <option value="addon" {% if endpoint == "addon" %}selected{% endif %}>GET /v1/addons/{slug}</option>
+      <option value="versions" {% if endpoint == "versions" %}selected{% endif %}>GET /v1/addons/{slug}/versions</option>
+      <option value="findings" {% if endpoint == "findings" %}selected{% endif %}>GET /v1/addons/{slug}/versions/{tag}/findings</option>
+    </select>
+    <div class="pg-slug">
+      <label for="slug">Addon id (slug)</label>
+      <input id="slug" name="slug" value="{{ slug }}" placeholder="aetherhud" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="pg-tag">
+      <label for="tag">Version tag</label>
+      <input id="tag" name="tag" value="{{ tag }}" placeholder="v2.3.0" autocomplete="off" spellcheck="false">
+    </div>
+    <button type="submit">Send</button>
+  </form>
+  {% if error != "" %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
+</section>
+{% if path != "" %}
+<section class="panel">
+  <h2><code>GET {{ path }}</code></h2>
+  <p><a href="{{ api_url }}">Open in the API</a></p>
+  <pre>{{ result }}</pre>
+</section>
+{% endif %}
+{% endblock %}

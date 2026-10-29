@@ -203,3 +203,39 @@ async fn the_launcher_icon_is_the_favicon() {
     let ico = web.get("/favicon.ico").await;
     assert_eq!((ico.status, ico.headers["content-type"].to_str().unwrap()), (StatusCode::OK, "image/x-icon"));
 }
+
+#[tokio::test]
+async fn api_docs_show_the_public_api_markdown() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/api-docs").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.body.matches("<h1>").count(), 1, "the page's own title only");
+    assert!(page.body.contains("<code>GET /v1/registry</code>"), "{}", page.body);
+    assert!(page.body.contains("<table>"));
+    // Headings get ids for the side navigation, code keeps its language for highlighting.
+    assert!(page.body.contains(r#"<h3 id="conditions">Conditions</h3>"#) && page.body.contains(r##"<a href="#conditions">Conditions</a>"##));
+    assert!(page.body.contains(r##"<li class="sub"><a href="#python-standard-library">"##), "{}", page.body);
+    assert!(page.body.contains(r#"<code class="language-rust">"#));
+    assert!(web.get("/static/api-docs.js").await.body.contains("tok-keyword"));
+    assert!(web.get("/").await.body.contains(r#"href="/api-docs""#), "linked in the footer");
+}
+
+#[tokio::test]
+async fn playground_shows_the_answer_and_reaches_only_public_endpoints() {
+    let mut web = TestWeb::new().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/addons/aetherhud/versions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "tag": "v2.3.0" }])))
+        .mount(&web.api)
+        .await;
+    let page = web.get("/api-docs/playground?endpoint=versions&slug=aetherhud").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("GET /v1/addons/aetherhud/versions"), "{}", page.body);
+    assert!(page.body.contains("&#34;tag&#34;: &#34;v2.3.0&#34;") || page.body.contains("&quot;tag&quot;: &quot;v2.3.0&quot;"), "{}", page.body);
+
+    let page = web.get("/api-docs/playground?endpoint=addon&slug=..%2Fme").await;
+    assert!(page.body.contains("Enter an addon id"), "{}", page.body);
+    let page = web.get("/api-docs/playground?endpoint=findings&slug=aetherhud&tag=v1%3Fx%3D1").await;
+    assert!(page.body.contains("Enter a version tag"), "{}", page.body);
+    assert!(web.get("/api-docs").await.body.contains(r#"href="/api-docs/playground""#));
+}
