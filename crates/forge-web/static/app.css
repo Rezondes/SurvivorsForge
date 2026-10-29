@@ -1,13 +1,13 @@
 /* The launcher's look (ui/theme.slint, ui/components.slint): near-black warm ground, gold outlines
-   and lettering, deep red for the primary action, uncial display type for headings. Surfaces
+   and lettering, deep red for the primary action, Morpheus display type for headings. Surfaces
    separate by thin gold-brown borders; no shadows. */
 
 @font-face { font-family: "Marcellus"; src: url("/static/fonts/marcellus.ttf") format("truetype"); font-display: swap; }
-@font-face { font-family: "Uncial Antiqua"; src: url("/static/fonts/uncial-antiqua.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Morpheus"; src: url("/static/fonts/morpheus.ttf") format("truetype"); font-display: swap; }
 
 :root {
   color-scheme: dark;
-  --font-display: "Uncial Antiqua", Georgia, serif;
+  --font-display: "Morpheus", Georgia, serif;
   --font-body: "Marcellus", Georgia, serif;
 
   /* Ground and surfaces */
@@ -82,7 +82,7 @@ main:has(> .list) > * { flex: none; }
 main:has(> .list) > .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; align-content: start; }
 main:has(> .list) > .bottom { padding: 8px 16px; }
 
-/* Header: the uncial logo above tab-like navigation, as in the launcher */
+/* Header: the Morpheus logo above tab-like navigation, as in the launcher */
 .top {
   flex: none; display: flex; flex-direction: column; align-items: center; gap: 12px;
   padding: 20px 16px 16px; border-bottom: 1px solid var(--line);
@@ -101,7 +101,7 @@ main:has(> .list) > .bottom { padding: 8px 16px; }
 .bottom { color: var(--muted); font-size: var(--meta); text-align: center; padding: 24px 16px 0; margin-top: 24px; border-top: 1px solid var(--line); }
 .bottom p { margin: 0; }
 
-/* Headings: uncial gold between two fading rules, like "Class" and "Zone" in the game */
+/* Headings: Morpheus gold between two fading rules, like "Class" and "Zone" in the game */
 h1, h2, h3 { font-weight: 400; line-height: 1.25; }
 h1 {
   display: flex; align-items: center; gap: 16px; margin: 8px 0 20px;

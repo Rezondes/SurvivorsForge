@@ -110,7 +110,7 @@ To approximate a Steam Deck in Game Mode, set `XDG_CURRENT_DESKTOP=gamescope` (f
 | `assets/survivorsforge.desktop` | Linux desktop entry: name, icon and app id for the AppImage |
 | `packaging/linux/` | `AppRun` and `build-appimage.sh` for the Linux AppImage |
 | `docker/` | Linux build and runtime containers for testing on Windows (see Tests) |
-| `ui/fonts/` | Uncial Antiqua (headings) and Marcellus (text), embedded at build time; both under the SIL Open Font License (`OFL-*.txt`) |
+| `ui/fonts/` | Morpheus (headings, shareware by Kiwi Media, `README-morpheus.txt`) and Marcellus (text, SIL Open Font License, `OFL-marcellus.txt`), embedded at build time |
 | `registry/verified.json` | The verified addon list |
 | `tests/` | Integration tests for zip analysis and installation |
 

@@ -153,7 +153,7 @@ pub fn router(state: AppState) -> Router {
         .route("/static/icon.png", get(|| async { binary("image/png", include_bytes!("../../../assets/icon.png")) }))
         .route("/favicon.ico", get(|| async { binary("image/x-icon", include_bytes!("../../../assets/icon.ico")) }))
         .route("/static/fonts/marcellus.ttf", get(|| async { font(include_bytes!("../../../ui/fonts/Marcellus-Regular.ttf")) }))
-        .route("/static/fonts/uncial-antiqua.ttf", get(|| async { font(include_bytes!("../../../ui/fonts/UncialAntiqua-Regular.ttf")) }))
+        .route("/static/fonts/morpheus.ttf", get(|| async { font(include_bytes!("../../../ui/fonts/Morpheus.ttf")) }))
         .fallback(|| async { WebError::NotFound })
         .layer(middleware::from_fn_with_state(state.clone(), csrf::middleware));
     let limiter = Arc::new(RateLimiter::new(state.config.rate_limit_per_minute, state.config.trusted_proxies.clone()));
