@@ -13,7 +13,7 @@
   <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required>
   <label for="kind">Use as</label>
   <select id="kind" name="kind" data-single-file="icon">
-    <option value="screenshot">Screenshot (up to 10, scaled to at most 1920 px)</option>
+    {% if images.len() >= 10 %}<option value="screenshot" disabled>Screenshot (all 10 used, delete one first)</option>{% else %}<option value="screenshot">Screenshot (up to 10, scaled to at most 1920 px)</option>{% endif %}
     <option value="icon">Icon (one, cropped to a 256 px square)</option>
   </select>
   <label for="caption">Caption (for every picked screenshot)</label>
@@ -45,7 +45,7 @@
 {% endif %}
 
 <section class="panel">
-  <h2>Screenshots</h2>
+  <h2>Screenshots ({{ images.len() }} of 10)</h2>
   {% if images.is_empty() %}<p class="muted">No screenshots yet.</p>{% endif %}
   {% if images.len() > 1 %}<p class="muted">Drag a screenshot by its handle to change the order, or use the arrows.</p>{% endif %}
   <div class="shots" data-order-url="/addons/{{ slug }}/images/order">

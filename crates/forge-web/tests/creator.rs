@@ -267,6 +267,14 @@ async fn captions_save_when_the_field_is_left() {
 }
 
 #[tokio::test]
+async fn the_page_counts_the_screenshots() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains("<h2>Screenshots (1 of 10)</h2>"), "{page}");
+    assert!(page.contains(r#"<option value="screenshot">Screenshot (up to 10, scaled to at most 1920 px)</option>"#), "room left");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))
