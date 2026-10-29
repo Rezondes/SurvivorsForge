@@ -39,11 +39,11 @@
             <a href="https://wow.aethus.pl">Azeroth Survivors</a>. Every release is checked for harmful
             code before it reaches your AddOns folder.</p>
           <div class="actions">
-            <a class="button large" href="https://github.com/Rezondes/SurvivorsForge/releases/latest">Download for Windows</a>
-            <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/releases/latest">Linux and Steam Deck</a>
+            <a class="button large" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-windows-x86_64.zip" data-download="windows">Download for Windows</a>
+            <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-linux-x86_64.AppImage" data-download="linux">Linux and Steam Deck</a>
           </div>
-          <p class="muted small">Free and open source. Windows 10 and 11: the <code>windows-msvc.zip</code>.
-            Linux and Steam Deck (experimental): the <code>.AppImage</code>. Both on the latest release.</p>
+          <p class="muted small">Free and open source. Windows 10 and 11, Linux and Steam Deck (experimental).
+            <a href="https://github.com/Rezondes/SurvivorsForge/releases/latest" id="other-ways">Other ways to get it</a></p>
           <p class="small"><a href="https://forge.rezondes.net/addons">Browse all addons on the website</a></p>
         </div>
 
@@ -172,5 +172,54 @@
         Blizzard Entertainment.</p>
     </div>
   </footer>
+
+  <dialog id="get" aria-labelledby="get-title">
+    <h2 id="get-title" class="gold-text">Other ways to get it</h2>
+    <div class="get">
+      <label for="url-windows">Windows 10 and 11</label>
+      <div class="copy-row">
+        <input id="url-windows" readonly data-url="windows" value="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-windows-x86_64.zip">
+        <button type="button" class="button secondary" data-copy="url-windows">Copy</button>
+        <a class="button" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-windows-x86_64.zip" data-download="windows">Download</a>
+      </div>
+    </div>
+    <div class="get">
+      <label for="url-linux">Linux and Steam Deck</label>
+      <div class="copy-row">
+        <input id="url-linux" readonly data-url="linux" value="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-linux-x86_64.AppImage">
+        <button type="button" class="button secondary" data-copy="url-linux">Copy</button>
+        <a class="button" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-linux-x86_64.AppImage" data-download="linux">Download</a>
+      </div>
+      <p class="muted small">Make the file executable before the first start:
+        <code>chmod +x <span data-file="linux">SurvivorsForge-linux-x86_64.AppImage</span></code>.
+        On the Steam Deck, Gear Lever adds it to your apps.</p>
+    </div>
+    <p class="small"><a href="https://github.com/Rezondes/SurvivorsForge/releases/latest">Open the release page</a> for the release notes and older versions.</p>
+    <p class="muted small" role="status" id="copied"></p>
+    <form method="dialog"><button class="button secondary">Close</button></form>
+  </dialog>
+
+  <script>
+    // Without this script the links still work: the buttons download, "Other ways" opens the release page.
+    const dialog = document.getElementById("get");
+    document.getElementById("other-ways").addEventListener("click", (event) => {
+      event.preventDefault();
+      document.getElementById("copied").textContent = "";
+      dialog.showModal();
+    });
+    for (const button of document.querySelectorAll("[data-copy]")) {
+      button.addEventListener("click", async () => {
+        const field = document.getElementById(button.dataset.copy);
+        const status = document.getElementById("copied");
+        try {
+          await navigator.clipboard.writeText(field.value);
+          status.textContent = "Link copied.";
+        } catch {
+          field.select();
+          status.textContent = "Press Ctrl+C to copy the selected link.";
+        }
+      });
+    }
+  </script>
 </body>
 </html>
