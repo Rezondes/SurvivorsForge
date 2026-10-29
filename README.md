@@ -11,8 +11,7 @@ On GitHub: *Settings → Pages → Build and deployment*, Source *Deploy from a 
 
 ## Links to the platform
 
-The links to the platform website use `https://forge.example.com`. Replace that address in
-`index.html` with the real one once the platform runs.
+The links to the platform website point at the official instance, `https://forge.rezondes.net`.
 
 ## Files
 
