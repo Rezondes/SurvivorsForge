@@ -23,9 +23,18 @@ fn lacks(src: &str, rule: &str) {
 #[test]
 fn forbidden_global_positive() {
     for src in ["os.execute('x')", "local f = io.open('x')", "debug.getinfo(1)", "require('socket')", "loadlib('a', 'b')",
-        "dofile('x')", "local s = string.dump(f)", "collectgarbage()"] {
+        "dofile('x')", "local s = string.dump(f)"] {
         has(src, "lua.forbidden_global", Severity::Critical);
     }
+}
+
+#[test]
+fn collectgarbage_is_only_a_notice() {
+    for src in ["collectgarbage()", "local kb = collectgarbage('count')"] {
+        has(src, "lua.forbidden_global", Severity::Notice);
+        assert!(rules(src).iter().all(|(_, s, _)| *s < Severity::Warn), "{:?} for {src}", rules(src));
+    }
+    lacks("local n = 'collectgarbage'", "lua.forbidden_name_string");
 }
 
 #[test]

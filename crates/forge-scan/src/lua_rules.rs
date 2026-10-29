@@ -8,14 +8,13 @@ use full_moon::tokenizer::{Lexer, LexerResult, Symbol, TokenType};
 
 /// Globals that reach the file system, the OS, other code or the interpreter itself. `getfenv` and
 /// `setfenv` are not among them: 1.12 addons and their libraries use them for the global table and
-/// their own environments.
-pub const FORBIDDEN_GLOBALS: &[&str] = &[
-    "os", "io", "debug", "package", "require", "loadlib", "dofile", "loadfile", "load", "newproxy", "collectgarbage",
-];
+/// their own environments. `collectgarbage` is not either: it only runs or measures the garbage
+/// collector, at worst a stutter, and is a notice.
+pub const FORBIDDEN_GLOBALS: &[&str] = &["os", "io", "debug", "package", "require", "loadlib", "dofile", "loadfile", "load", "newproxy"];
 /// Strings that only make sense to reach a forbidden global by name. Not "debug": it is an
 /// everyday settings key and log level.
 const FORBIDDEN_NAME_STRINGS: &[&str] = &[
-    "os", "io", "package", "require", "loadlib", "dofile", "loadfile", "load", "newproxy", "collectgarbage", "loadstring",
+    "os", "io", "package", "require", "loadlib", "dofile", "loadfile", "load", "newproxy", "loadstring",
     "RunScript",
 ];
 pub const CHAT_SEND: &[&str] = &["SendChatMessage", "SendAddonMessage", "GuildInvite", "InviteByName"];
@@ -243,6 +242,9 @@ fn check_ident(lua: &Lua, i: usize, name: &str, report: &mut Report) {
     }
     if FORBIDDEN_GLOBALS.contains(&name) {
         lua.add(report, "lua.forbidden_global", Severity::Critical, i, format!("{name} is not allowed in addons"));
+    }
+    if name == "collectgarbage" {
+        lua.add(report, "lua.forbidden_global", Severity::Notice, i, "collectgarbage runs or measures the garbage collector and can make the game stutter");
     }
     match name {
         "loadstring" | "RunScript" => {
