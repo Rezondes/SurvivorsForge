@@ -164,7 +164,7 @@ async fn the_edit_toolbar_stays_on_every_edit_page() {
 #[tokio::test]
 async fn captions_can_be_changed_later() {
     let mut web = logged_in(owner()).await;
-    let images = web.get("/addons/lucky/images").await.body;
+    let images = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(images.contains(r#"action="/addons/lucky/images/7/caption""#) && images.contains(r#"value="x""#), "{images}");
     Mock::given(method("PATCH"))
         .and(path("/v1/addons/lucky/images/7"))
@@ -175,14 +175,14 @@ async fn captions_can_be_changed_later() {
         .await;
     // Back at the screenshot, not at the top; view.js saves in place and says so at the field.
     let page = web.post_form("/addons/lucky/images/7/caption", &[("caption", "Bags open")]).await;
-    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images#shot-7"));
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images?tab=screenshots#shot-7"));
     assert!(images.contains(r#"data-caption-status"#), "{images}");
 }
 
 #[tokio::test]
 async fn screenshots_take_a_dragged_order() {
     let mut web = logged_in(owner()).await;
-    let images = web.get("/addons/lucky/images").await.body;
+    let images = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(images.contains(r#"data-order-url="/addons/lucky/images/order""#) && images.contains(r#"data-image-id="7""#), "{images}");
     assert!(images.contains(r#"aria-label="Move earlier""#) && images.contains(r#"aria-label="Delete screenshot""#), "icon buttons keep a name");
     Mock::given(method("PATCH"))
@@ -194,17 +194,17 @@ async fn screenshots_take_a_dragged_order() {
         .await;
     // An id of another addon is left out.
     let page = web.post_form("/addons/lucky/images/order", &[("order", "99,7")]).await;
-    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images"));
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images?tab=screenshots"));
 }
 
 #[tokio::test]
 async fn moving_a_screenshot_keeps_it_in_view() {
     // Without script the page comes back scrolled to the moved screenshot, not to the top.
     let mut web = logged_in(owner()).await;
-    let images = web.get("/addons/lucky/images").await.body;
+    let images = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(images.contains(r#"<figure data-image-id="7" id="shot-7">"#) && images.contains("data-move"), "{images}");
     let page = web.post_form("/addons/lucky/images/7/move", &[("direction", "up")]).await;
-    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images#shot-7"));
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images?tab=screenshots#shot-7"));
 }
 
 #[tokio::test]
@@ -247,7 +247,7 @@ async fn the_icon_is_cropped_replaced_and_deleted() {
 #[tokio::test]
 async fn deleting_an_image_asks_first() {
     let mut web = logged_in(owner()).await;
-    let page = web.get("/addons/lucky/images").await.body;
+    let page = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(page.contains(r#"class="inline" data-confirm="Delete this screenshot? This cannot be undone.""#), "{page}");
 }
 
@@ -262,16 +262,16 @@ async fn the_icon_square_moves_by_keyboard() {
 async fn captions_save_when_the_field_is_left() {
     // view.js saves a changed caption on leaving the field; it compares with the saved one.
     let mut web = logged_in(owner()).await;
-    let page = web.get("/addons/lucky/images").await.body;
+    let page = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(page.contains(r#"class="caption-form" data-saved="x""#), "{page}");
 }
 
 #[tokio::test]
 async fn the_page_counts_the_screenshots() {
     let mut web = logged_in(owner()).await;
-    let page = web.get("/addons/lucky/images").await.body;
+    let page = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(page.contains("<h2>Screenshots (1 of 10)</h2>"), "{page}");
-    assert!(page.contains(r#"<option value="screenshot">Screenshot (up to 10, scaled to at most 1920 px)</option>"#), "room left");
+    assert!(page.contains("<h2>Upload screenshots</h2>"), "room left");
 }
 
 #[tokio::test]
@@ -282,12 +282,15 @@ async fn without_an_icon_the_page_says_how_to_add_one() {
 }
 
 #[tokio::test]
-async fn the_upload_form_starts_with_what_it_is_for() {
+async fn icon_and_screenshots_have_their_own_tab() {
     let mut web = logged_in(owner()).await;
-    let page = web.get("/addons/lucky/images").await.body;
-    let kind = page.find(r#"<select id="kind""#).unwrap();
-    assert!(kind < page.find(r#"<input id="file""#).unwrap(), "Use as comes first");
-    assert!(page.contains(r#"<div data-for-kind="screenshot">"#) && page.contains(r#"data-for-kind="icon" hidden"#), "{page}");
+    let icon = web.get("/addons/lucky/images").await.body;
+    assert!(icon.contains(r#"<a href="/addons/lucky/images?tab=icon" aria-current="page">Icon</a>"#), "the icon tab comes first: {icon}");
+    assert!(icon.contains(r#"<input type="hidden" name="kind" value="icon">"#) && icon.contains("data-cropper"), "{icon}");
+    assert!(!icon.contains("data-order-url") && !icon.contains(r#"name="caption""#), "no screenshots on the icon tab");
+    let shots = web.get("/addons/lucky/images?tab=screenshots").await.body;
+    assert!(shots.contains(r#"<input type="hidden" name="kind" value="screenshot">"#) && shots.contains("data-order-url"), "{shots}");
+    assert!(!shots.contains("data-cropper") && !shots.contains("No icon yet"), "no icon on the screenshots tab");
 }
 
 #[tokio::test]
@@ -303,7 +306,7 @@ async fn screenshots_in_the_editor_always_have_a_text() {
     Mock::given(method("GET")).and(path("/v1/addons/lucky")).respond_with(ResponseTemplate::new(200).set_body_json(json!({
         "slug": "lucky", "name": "Lucky", "icon_url": null, "images": [{ "id": 7, "url": "https://web.test/img/a.webp", "caption": "" }]
     }))).with_priority(1).mount(&web.api).await;
-    let page = web.get("/addons/lucky/images").await.body;
+    let page = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(page.contains(r#"<img src="https://web.test/img/a.webp" alt="Screenshot 1""#), "{page}");
 }
 
@@ -326,10 +329,11 @@ async fn the_icon_square_shows_a_preview() {
 async fn the_toolbar_marks_the_current_page() {
     let mut web = logged_in(owner()).await;
     get_json(&web, "/v1/addons/lucky/members", json!([])).await;
-    for (page, link) in [("/addons/lucky/images", "images"), ("/addons/lucky/edit", "edit"), ("/addons/lucky/members", "members")] {
+    // The images page also marks its own tab.
+    for (page, link, marked) in [("/addons/lucky/images", "images", 2), ("/addons/lucky/edit", "edit", 1), ("/addons/lucky/members", "members", 1)] {
         let body = web.get(page).await.body;
         assert!(body.contains(&format!(r#"<a href="/addons/lucky/{link}" aria-current="page">"#)), "{page}: {body}");
-        assert_eq!(body.matches(r#"aria-current="page""#).count(), 1, "{page}");
+        assert_eq!(body.matches(r#"aria-current="page""#).count(), marked, "{page}");
     }
 }
 
@@ -360,10 +364,11 @@ async fn several_screenshots_in_one_upload() {
         .unwrap();
     let page = web.request(request).await;
     assert!(page.body.contains("2 images uploaded."), "{}", page.body);
-    let form = web.get("/addons/lucky/images").await.body;
+    let form = web.get("/addons/lucky/images?tab=screenshots").await.body;
     assert!(form.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" multiple"#));
-    // Picking "Icon" turns the field into a single file one (view.js), the server keeps one anyway.
-    assert!(form.contains(r#"<select id="kind" name="kind" data-single-file="icon">"#), "{form}");
+    // The icon takes one file; the server keeps one anyway.
+    let icon = web.get("/addons/lucky/images?tab=icon").await.body;
+    assert!(icon.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" required>"#), "{icon}");
 }
 
 #[tokio::test]

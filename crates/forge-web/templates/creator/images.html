@@ -6,21 +6,19 @@
 {% if let Some(m) = message %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 
+<nav class="subnav tabs" aria-label="Images">
+  <a href="/addons/{{ slug }}/images?tab=icon"{% if tab == "icon" %} aria-current="page"{% endif %}>Icon</a>
+  <a href="/addons/{{ slug }}/images?tab=screenshots"{% if tab == "screenshots" %} aria-current="page"{% endif %}>Screenshots ({{ images.len() }} of 10)</a>
+</nav>
+
+{% if tab == "icon" %}
 <form class="panel" method="post" action="/addons/{{ slug }}/images" enctype="multipart/form-data"
       hx-post="/addons/{{ slug }}/images" hx-encoding="multipart/form-data" hx-target="main" hx-select="main" hx-swap="outerHTML"
       hx-disabled-elt="find button[type='submit']">
-  <h2>Upload</h2>
-  <label for="kind">Use as</label>
-  <select id="kind" name="kind" data-single-file="icon">
-    {% if images.len() >= 10 %}<option value="screenshot" disabled>Screenshot (all 10 used, delete one first)</option>{% else %}<option value="screenshot">Screenshot (up to 10, scaled to at most 1920 px)</option>{% endif %}
-    <option value="icon">Icon (one, cropped to a 256 px square)</option>
-  </select>
-  <label for="file"><span data-for-kind="screenshot">Images (PNG, JPEG or WebP, at most 5 MB each; pick several at once)</span><span data-for-kind="icon" hidden>Image (PNG, JPEG or WebP, at most 5 MB)</span></label>
-  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required>
-  <div data-for-kind="screenshot">
-    <label for="caption">Caption (for every picked screenshot)</label>
-    <input id="caption" name="caption" maxlength="200">
-  </div>
+  <h2>Upload an icon</h2>
+  <input type="hidden" name="kind" value="icon">
+  <label for="file">Image (PNG, JPEG or WebP, at most 5 MB; cropped to a 256 px square)</label>
+  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" required>
   <div class="cropper" data-cropper hidden>
     <p class="muted">Drag the square over the part that becomes the icon, or move it with the arrow keys; the slider sets its size.</p>
     <div class="cropper-row">
@@ -40,7 +38,7 @@
   <div class="icon-row">
     <img class="icon big" src="{{ icon }}" alt="Icon" width="96" height="96">
     <div>
-      <p class="muted">To replace it, upload a new image as Icon above and pick its square.</p>
+      <p class="muted">To replace it, upload a new image above and pick its square.</p>
       <form method="post" action="/addons/{{ slug }}/icon/delete" class="inline" data-confirm="Delete the icon? This cannot be undone.">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button type="submit" class="danger"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M4.5 4l.7 9.5h5.6l.7-9.5M7 6.5v5M9 6.5v5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg> Delete icon</button>
@@ -51,8 +49,25 @@
 {% else %}
 <section class="panel">
   <h2>Icon</h2>
-  <p class="muted">No icon yet: the addon shows its initial. Upload an image as Icon above and pick its square.</p>
+  <p class="muted">No icon yet: the addon shows its initial. Upload an image above and pick its square.</p>
 </section>
+{% endif %}
+
+{% else %}
+{% if images.len() >= 10 %}
+<div class="notice" role="status">All 10 screenshots are used. Delete one to upload another.</div>
+{% else %}
+<form class="panel" method="post" action="/addons/{{ slug }}/images" enctype="multipart/form-data"
+      hx-post="/addons/{{ slug }}/images" hx-encoding="multipart/form-data" hx-target="main" hx-select="main" hx-swap="outerHTML"
+      hx-disabled-elt="find button[type='submit']">
+  <h2>Upload screenshots</h2>
+  <input type="hidden" name="kind" value="screenshot">
+  <label for="file">Images (PNG, JPEG or WebP, at most 5 MB each, scaled to at most 1920 px; pick several at once)</label>
+  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required>
+  <label for="caption">Caption (for every picked screenshot)</label>
+  <input id="caption" name="caption" maxlength="200">
+  <p><button type="submit">Upload</button> <span class="htmx-indicator muted">Uploading...</span></p>
+</form>
 {% endif %}
 
 <section class="panel">
@@ -89,4 +104,5 @@
     {% endfor %}
   </div>
 </section>
+{% endif %}
 {% endblock %}

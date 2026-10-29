@@ -370,6 +370,8 @@ pub struct ImagesPage {
     pub csrf: String,
     pub slug: String,
     pub name: String,
+    /// `icon` or `screenshots`.
+    pub tab: String,
     pub icon_url: Option<String>,
     pub images: Vec<ImageRow>,
     pub message: Option<String>,

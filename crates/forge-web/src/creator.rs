@@ -488,8 +488,8 @@ async fn images_page(
     token: &str,
     csrf: String,
     slug: &str,
-    message: Option<String>,
-    error: Option<String>,
+    tab: &str,
+    (message, error): (Option<String>, Option<String>),
 ) -> WebResult<Html<String>> {
     let perms = perms(state, slug, token).await?;
     let a = state.api.get(&format!("/v1/addons/{slug}"), None).await?;
@@ -499,13 +499,24 @@ async fn images_page(
         .flatten()
         .map(|i| crate::templates::ImageRow { id: i["id"].as_i64().unwrap_or(0), url: s(&i["url"]), caption: s(&i["caption"]) })
         .collect();
-    Ok(render(&ImagesPage { user: Some(user), csrf, slug: slug.into(), name: s(&a["name"]), icon_url: a["icon_url"].as_str().map(str::to_string), images, message, error, perms }))
+    let tab = if tab == SCREENSHOTS { SCREENSHOTS } else { ICON }.to_string();
+    Ok(render(&ImagesPage { user: Some(user), csrf, slug: slug.into(), name: s(&a["name"]), tab, icon_url: a["icon_url"].as_str().map(str::to_string), images, message, error, perms }))
+}
+
+/// The tabs of the images page; an upload stays on the tab of its kind.
+const ICON: &str = "icon";
+const SCREENSHOTS: &str = "screenshots";
+
+fn tab_of(kind: &str) -> &'static str {
+    if kind == "screenshot" { SCREENSHOTS } else { ICON }
 }
 
 #[derive(Deserialize)]
 pub struct ImagesQuery {
     #[serde(default)]
     created: Option<String>,
+    #[serde(default)]
+    tab: String,
     /// Images of the publish form that did not go up.
     #[serde(default)]
     error: Option<String>,
@@ -523,7 +534,7 @@ pub async fn images(
         return Ok(forbidden());
     }
     let message = query.created.map(|_| "Your addon is published. Add or change screenshots and the icon here, now or later under Edit.".to_string());
-    Ok(images_page(&state, user, &token, csrf.0, &slug, message, query.error).await?.into_response())
+    Ok(images_page(&state, user, &token, csrf.0, &slug, &query.tab, (message, query.error)).await?.into_response())
 }
 
 pub async fn upload_image(
@@ -541,7 +552,7 @@ pub async fn upload_image(
         let name = field.name().unwrap_or_default().to_string();
         let file_name = field.file_name().unwrap_or("upload").to_string();
         let Ok(bytes) = field.bytes().await else {
-            return Ok(images_page(&state, user, &token, csrf.0, &slug, None, Some("Images may be at most 5 MB each.".into())).await?.into_response());
+            return Ok(images_page(&state, user, &token, csrf.0, &slug, tab_of(&kind), (None, Some("Images may be at most 5 MB each.".into()))).await?.into_response());
         };
         match name.as_str() {
             "file" if !bytes.is_empty() => files.push((file_name, bytes.to_vec())),
@@ -587,7 +598,7 @@ pub async fn upload_image(
         n => Some(std::iter::once(format!("{n} images uploaded.")).chain(notes).collect::<Vec<_>>().join(" ")),
     };
     let error = (!errors.is_empty()).then(|| errors.join(" "));
-    Ok(images_page(&state, user, &token, csrf.0, &slug, message, error).await?.into_response())
+    Ok(images_page(&state, user, &token, csrf.0, &slug, tab_of(&kind), (message, error)).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -614,7 +625,7 @@ pub async fn move_image(
         }
     }
     // Back at the moved screenshot instead of the top of the page.
-    Ok(Redirect::to(&format!("/addons/{slug}/images#shot-{id}")).into_response())
+    Ok(Redirect::to(&format!("/addons/{slug}/images?tab=screenshots#shot-{id}")).into_response())
 }
 
 async fn save_order(state: &AppState, token: &str, slug: &str, order: &[i64]) -> WebResult<()> {
@@ -640,7 +651,7 @@ pub async fn order_images(State(state): State<AppState>, jar: PrivateCookieJar, 
     order.dedup();
     order.extend(ids.iter().filter(|i| !order.contains(i)).collect::<Vec<_>>());
     save_order(&state, &token, &slug, &order).await?;
-    Ok(Redirect::to(&format!("/addons/{slug}/images")).into_response())
+    Ok(Redirect::to(&format!("/addons/{slug}/images?tab=screenshots")).into_response())
 }
 
 #[derive(Deserialize)]
@@ -661,9 +672,9 @@ pub async fn caption_image(
     let body = json!({ "caption": form.caption });
     match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}/images/{id}"), Some(&token), Some(&body)).await {
         // Back at the screenshot instead of the top of the page.
-        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/images#shot-{id}")).into_response()),
+        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/images?tab=screenshots#shot-{id}")).into_response()),
         Err(ApiError::Api { message, status, .. }) if status != 403 && status != 404 => {
-            let page = images_page(&state, user, &token, csrf.0, &slug, None, Some(message)).await?;
+            let page = images_page(&state, user, &token, csrf.0, &slug, SCREENSHOTS, (None, Some(message))).await?;
             Ok((StatusCode::UNPROCESSABLE_ENTITY, page).into_response())
         }
         Err(e) => Err(e.into()),
@@ -677,13 +688,13 @@ pub async fn delete_icon(State(state): State<AppState>, jar: PrivateCookieJar, E
         Ok(_) | Err(ApiError::Api { status: 404, .. }) => "Icon deleted.".to_string(),
         Err(e) => return Err(e.into()),
     };
-    Ok(images_page(&state, user, &token, csrf.0, &slug, Some(message), None).await?.into_response())
+    Ok(images_page(&state, user, &token, csrf.0, &slug, ICON, (Some(message), None)).await?.into_response())
 }
 
 pub async fn delete_image(State(state): State<AppState>, jar: PrivateCookieJar, Path((slug, id)): Path<(String, i64)>) -> WebResult<Response> {
     let (_, token) = me(&state, &jar).await?;
     state.api.call(Method::DELETE, &format!("/v1/addons/{slug}/images/{id}"), Some(&token), None).await?;
-    Ok(Redirect::to(&format!("/addons/{slug}/images")).into_response())
+    Ok(Redirect::to(&format!("/addons/{slug}/images?tab=screenshots")).into_response())
 }
 
 async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>) -> WebResult<Html<String>> {
