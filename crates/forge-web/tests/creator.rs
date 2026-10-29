@@ -275,6 +275,13 @@ async fn the_page_counts_the_screenshots() {
 }
 
 #[tokio::test]
+async fn without_an_icon_the_page_says_how_to_add_one() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains("No icon yet: the addon shows its initial."), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))
