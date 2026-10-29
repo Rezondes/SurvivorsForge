@@ -163,8 +163,14 @@ fn may_edit(user: Option<&Visitor>, p: &Value) -> bool {
     user.is_some_and(|u| u.admin || (!u.login.is_empty() && u.login.eq_ignore_ascii_case(p["created_by"].as_str().unwrap_or_default())))
 }
 
-/// `GET /packs/{id}`: what is in the pack, the link to share and the download.
-pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(id): Path<String>) -> WebResult<Html<String>> {
+/// `GET /packs/{id}?msg=`: what is in the pack, the link to share and the download.
+pub async fn pack(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(id): Path<String>,
+    RawQuery(raw): RawQuery,
+) -> WebResult<Html<String>> {
     valid_id(&id)?;
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
     let p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
@@ -181,6 +187,7 @@ pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
     Ok(render(&PackPage {
         rebuild,
         can_edit: may_edit(user.as_ref(), &p),
+        msg: values(raw.as_deref(), "msg").pop(),
         user,
         csrf: csrf.0,
         link: format!("{}/packs/{id}", state.config.public_web_url),
@@ -229,7 +236,11 @@ pub async fn save_pack(State(state): State<AppState>, jar: PrivateCookieJar, Ext
     addons.extend(field("addon").iter().map(|slug| json!({ "slug": slug, "latest": true })));
     let change = json!({ "name": field("name").pop().unwrap_or_default().trim(), "listed": !field("listed").is_empty(), "addons": addons });
     match state.api.call(reqwest::Method::PATCH, &format!("/v1/packs/{id}"), Some(&token), Some(&change)).await {
-        Ok(_) => Ok(Redirect::to(&format!("/packs/{id}")).into_response()),
+        Ok(_) => {
+            let msg = "The pack is saved. Its link stays the same; the next download gets the new content.";
+            let query = reqwest::Url::parse_with_params("http://x/", &[("msg", msg)]).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
+            Ok(Redirect::to(&format!("/packs/{id}?{query}")).into_response())
+        }
         Err(ApiError::Api { status, message, .. }) if status == 422 || status == 403 => {
             // The pack as it is, with what the visitor entered on top, so nothing is lost.
             let mut p = state.api.get(&format!("/v1/packs/{id}"), None).await?;

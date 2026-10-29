@@ -6,6 +6,7 @@
 {% block content %}
 <h1>{% if name != "" %}{{ name }}{% else %}Addon pack{% endif %}</h1>
 <p class="muted">{{ entries.len() }} addon{% if entries.len() != 1 %}s{% endif %}{% if created_by != "" %} · by {{ created_by }}{% endif %} · {{ created }}{% if can_edit %} · <a href="/packs/{{ id }}/edit">Edit the pack</a>{% endif %}</p>
+{% if let Some(m) = msg %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 
 <section class="panel download">
   {% if available %}

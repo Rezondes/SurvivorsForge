@@ -246,7 +246,10 @@ async fn the_creator_edits_the_pack() {
     let saved = web
         .post_form("/packs/AbCdE12345/edit", &[("name", "Renamed"), ("listed", "1"), ("keep", "odds"), ("version.odds", "v3"), ("version.lucky", "latest"), ("addon", "aether")])
         .await;
-    assert_eq!((saved.status, saved.location()), (StatusCode::SEE_OTHER, "/packs/AbCdE12345"));
+    assert_eq!(saved.status, StatusCode::SEE_OTHER);
+    assert!(saved.location().starts_with("/packs/AbCdE12345?msg="), "{}", saved.location());
+    let back = web.get(saved.location()).await;
+    assert!(back.body.contains(r#"<div class="notice ok" role="status">The pack is saved."#), "{}", back.body);
 }
 
 #[tokio::test]

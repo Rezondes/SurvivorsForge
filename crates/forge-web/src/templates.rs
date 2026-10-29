@@ -705,6 +705,8 @@ pub struct PackPage {
     pub rebuild: String,
     /// The visitor created the pack or is an admin.
     pub can_edit: bool,
+    /// Set by the action that redirected here.
+    pub msg: Option<String>,
 }
 
 pub struct PackListRow {
