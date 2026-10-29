@@ -21,8 +21,10 @@
       <label class="sr-only" for="version-{{ e.slug }}">Version of {{ e.name }}</label>
       <select id="version-{{ e.slug }}" name="version.{{ e.slug }}">
         <option value="latest"{% if e.latest %} selected{% endif %}>Newest{% if let Some(first) = e.versions.first() %} (now {{ first }}){% endif %}</option>
+        <optgroup label="Keep this version">
         {% for v in e.versions %}<option value="{{ v }}"{% if !e.latest && *v == e.tag %} selected{% endif %}>{{ v }}</option>{% endfor %}
         {% if !e.latest && !e.versions.contains(e.tag) %}<option value="{{ e.tag }}" selected>{{ e.tag }} (no longer available)</option>{% endif %}
+        </optgroup>
       </select>
       <span class="removed-note">will be removed</span>
     </div>

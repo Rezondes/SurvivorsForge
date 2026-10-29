@@ -235,6 +235,7 @@ async fn the_creator_edits_the_pack() {
     assert_eq!(edit.status, StatusCode::OK, "{}", edit.body);
     assert!(edit.body.contains(r#"<option value="latest" selected>Newest (now v2)</option>"#), "{}", edit.body);
     assert!(edit.body.contains(r#"<option value="v1" selected>v1</option>"#), "odds stays on v1: {}", edit.body);
+    assert_eq!(edit.body.matches(r#"<optgroup label="Keep this version">"#).count(), 2, "fixed tags apart from Newest");
     assert!(edit.body.contains(r#"value="aether""#) && !edit.body.contains(r#"name="addon" value="lucky""#), "only addons not in the pack can be added");
 
     Mock::given(method("PATCH"))
