@@ -291,6 +291,13 @@ async fn the_upload_form_starts_with_what_it_is_for() {
 }
 
 #[tokio::test]
+async fn upload_cannot_be_sent_twice() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains(r#"hx-disabled-elt="find button[type='submit']""#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))

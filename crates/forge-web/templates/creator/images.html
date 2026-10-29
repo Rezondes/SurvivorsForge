@@ -7,7 +7,8 @@
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 
 <form class="panel" method="post" action="/addons/{{ slug }}/images" enctype="multipart/form-data"
-      hx-post="/addons/{{ slug }}/images" hx-encoding="multipart/form-data" hx-target="main" hx-select="main" hx-swap="outerHTML">
+      hx-post="/addons/{{ slug }}/images" hx-encoding="multipart/form-data" hx-target="main" hx-select="main" hx-swap="outerHTML"
+      hx-disabled-elt="find button[type='submit']">
   <h2>Upload</h2>
   <label for="kind">Use as</label>
   <select id="kind" name="kind" data-single-file="icon">
