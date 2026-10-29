@@ -173,8 +173,10 @@ async fn captions_can_be_changed_later() {
         .expect(1)
         .mount(&web.api)
         .await;
+    // Back at the screenshot, not at the top; view.js saves in place and says so at the field.
     let page = web.post_form("/addons/lucky/images/7/caption", &[("caption", "Bags open")]).await;
-    assert!(page.body.contains("Caption saved."), "{}", page.body);
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images#shot-7"));
+    assert!(images.contains(r#"data-caption-status"#), "{images}");
 }
 
 #[tokio::test]

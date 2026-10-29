@@ -58,6 +58,7 @@
         <input id="caption-{{ img.id }}" name="caption" value="{{ img.caption }}" maxlength="200" placeholder="No caption">
         <button type="submit" class="secondary">Save</button>
       </form>
+      <p class="caption-status" role="status" data-caption-status></p>
       <div class="actions shot-tools">
         {% if images.len() > 1 %}<span class="drag-handle" data-drag-handle title="Drag to move"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 3h.01M10 3h.01M6 8h.01M10 8h.01M6 13h.01M10 13h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>{% endif %}
         <form method="post" action="/addons/{{ slug }}/images/{{ img.id }}/move" class="inline" data-move>

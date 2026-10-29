@@ -77,6 +77,36 @@
     }, 2000);
   });
 
+  // A caption is saved in place: the page keeps its scroll position and the result shows at the field.
+  function saveCaption(form) {
+    var status = form.parentNode.querySelector("[data-caption-status]");
+    status.className = "caption-status";
+    status.textContent = "Saving...";
+    fetch(form.action, { method: "POST", body: new URLSearchParams(new FormData(form)) })
+      .then(function (response) {
+        if (response.ok) {
+          form.setAttribute("data-saved", form.querySelector('[name="caption"]').value);
+          status.textContent = "Saved.";
+          return;
+        }
+        return response.text().then(function (html) {
+          var notice = new DOMParser().parseFromString(html, "text/html").querySelector(".notice.bad");
+          status.className = "caption-status bad";
+          status.textContent = notice ? notice.textContent : "Could not save the caption.";
+        });
+      })
+      .catch(function () {
+        status.className = "caption-status bad";
+        status.textContent = "Could not save the caption. Check your connection.";
+      });
+  }
+  document.addEventListener("submit", function (event) {
+    var form = event.target.closest("form.caption-form");
+    if (!form) return;
+    event.preventDefault();
+    saveCaption(form);
+  });
+
   // Forms that destroy something ask first; without script they act at once.
   document.addEventListener(
     "submit",

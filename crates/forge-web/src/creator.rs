@@ -659,12 +659,15 @@ pub async fn caption_image(
 ) -> WebResult<Response> {
     let (user, token) = me(&state, &jar).await?;
     let body = json!({ "caption": form.caption });
-    let (message, error) = match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}/images/{id}"), Some(&token), Some(&body)).await {
-        Ok(_) => (Some("Caption saved.".to_string()), None),
-        Err(ApiError::Api { message, status, .. }) if status != 403 && status != 404 => (None, Some(message)),
-        Err(e) => return Err(e.into()),
-    };
-    Ok(images_page(&state, user, &token, csrf.0, &slug, message, error).await?.into_response())
+    match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}/images/{id}"), Some(&token), Some(&body)).await {
+        // Back at the screenshot instead of the top of the page.
+        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/images#shot-{id}")).into_response()),
+        Err(ApiError::Api { message, status, .. }) if status != 403 && status != 404 => {
+            let page = images_page(&state, user, &token, csrf.0, &slug, None, Some(message)).await?;
+            Ok((StatusCode::UNPROCESSABLE_ENTITY, page).into_response())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Removes the icon; the addon shows its initial again.

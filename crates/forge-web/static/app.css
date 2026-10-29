@@ -263,6 +263,8 @@ pre { background: var(--field); border: 1px solid var(--line); border-radius: va
 .shots figcaption { color: var(--muted); font-size: var(--meta); }
 .caption-form { display: flex; gap: 6px; margin: 6px 0; }
 .caption-form input { flex: 1; min-width: 0; min-height: 34px; }
+.caption-status { margin: 0 0 6px; min-height: 1.2em; font-size: var(--meta); color: var(--muted); }
+.caption-status.bad { color: var(--bad); }
 .actions.shot-tools { align-items: center; gap: 6px; }
 .icon-button { min-width: 38px; min-height: 38px; padding: 0; }
 .icon-button svg { display: block; }
