@@ -52,11 +52,11 @@
     {% for img in images %}
     <figure data-image-id="{{ img.id }}" id="shot-{{ img.id }}">
       <img src="{{ img.url }}" alt="{{ img.caption }}" loading="lazy">
-      <form method="post" action="/addons/{{ slug }}/images/{{ img.id }}/caption" class="caption-form">
+      <form method="post" action="/addons/{{ slug }}/images/{{ img.id }}/caption" class="caption-form" data-saved="{{ img.caption }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label for="caption-{{ img.id }}" class="sr-only">Caption of screenshot {{ loop.index }}</label>
         <input id="caption-{{ img.id }}" name="caption" value="{{ img.caption }}" maxlength="200" placeholder="No caption">
-        <button type="submit" class="secondary">Save</button>
+        <button type="submit" class="secondary" title="Saved on its own when you leave the field">Save</button>
       </form>
       <p class="caption-status" role="status" data-caption-status></p>
       <div class="actions shot-tools">

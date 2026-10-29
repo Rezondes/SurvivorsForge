@@ -100,6 +100,11 @@
         status.textContent = "Could not save the caption. Check your connection.";
       });
   }
+  // Leaving a changed caption saves it, so editing several and saving one loses none.
+  document.addEventListener("change", function (event) {
+    var form = event.target.closest("form.caption-form");
+    if (form && event.target.value !== form.getAttribute("data-saved")) saveCaption(form);
+  });
   document.addEventListener("submit", function (event) {
     var form = event.target.closest("form.caption-form");
     if (!form) return;

@@ -259,6 +259,14 @@ async fn the_icon_square_moves_by_keyboard() {
 }
 
 #[tokio::test]
+async fn captions_save_when_the_field_is_left() {
+    // view.js saves a changed caption on leaving the field; it compares with the saved one.
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains(r#"class="caption-form" data-saved="x""#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))
