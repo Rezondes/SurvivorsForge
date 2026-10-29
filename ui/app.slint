@@ -303,6 +303,9 @@ export component AppWindow inherits Window {
     in property <int> update-count;
     in property <bool> checking;
     callback check-updates();
+    // The game's executable was found next to the AddOns folder.
+    in property <bool> game-found;
+    callback launch-game();
     callback update-all();
     callback install-zip();
     callback add-repo();
@@ -387,12 +390,26 @@ export component AppWindow inherits Window {
         padding-bottom: 8px;
         spacing: 14px;
 
-        Text {
-            text: "SurvivorsForge";
-            font-family: Theme.font-display;
-            font-size: Theme.logo;
-            color: Theme.gold-heading;
-            horizontal-alignment: center;
+        // The logo in the middle, the game's start button on the right, apart from the tabs.
+        Rectangle {
+            height: logo.preferred-height;
+            logo := Text {
+                text: "SurvivorsForge";
+                font-family: Theme.font-display;
+                font-size: Theme.logo;
+                color: Theme.gold-heading;
+                horizontal-alignment: center;
+            }
+            if root.game-found : ActionButton {
+                width: self.preferred-width;
+                height: self.preferred-height;
+                x: parent.width - self.width;
+                y: (parent.height - self.height) / 2;
+                text: "Launch game";
+                primary: true;
+                large: true;
+                clicked => { root.launch-game(); }
+            }
         }
 
         HorizontalLayout {

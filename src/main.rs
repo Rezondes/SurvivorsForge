@@ -353,6 +353,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     }
     ui.set_update_count(controller::update_all_ids(&core.statuses).len() as i32);
     ui.set_checking(core.checking);
+    ui.set_game_found(config::game_executable(core.addons_dir(), cfg!(windows)).is_some());
     ui.set_status_text(core.status.clone().into());
     ui.set_status_error(core.status_error);
     ui.set_addons_dir(core.config.addons_dir.to_string_lossy().into_owned().into());
@@ -542,6 +543,21 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>)
         }
         install_remote(shared, &id, &name, &repo, &spec, source, remote)
     });
+}
+
+/// Starts the game in its own folder; it keeps running when the launcher closes.
+fn on_launch_game(ui: &AppWindow, shared: &Shared) {
+    {
+        let mut core = lock(shared);
+        match config::game_executable(core.addons_dir(), cfg!(windows)) {
+            Some(exe) => match std::process::Command::new(&exe).current_dir(exe.parent().unwrap_or(Path::new("."))).spawn() {
+                Ok(_) => core.set_status("Azeroth Survivors started.".into(), false),
+                Err(e) => core.set_status(format!("Could not start the game: {e}"), true),
+            },
+            None => core.set_status("The game was not found next to the AddOns folder.".into(), true),
+        }
+    }
+    refresh(ui, shared);
 }
 
 fn on_update_all(ui: &AppWindow, shared: &Shared) {
@@ -1184,6 +1200,7 @@ fn main() -> Result<(), slint::PlatformError> {
         refresh(&ui, shared);
     });
     on!(on_check_updates, |ui, shared| check_updates(&ui, shared));
+    on!(on_launch_game, |ui, shared| on_launch_game(&ui, shared));
     on!(on_update_all, |ui, shared| on_update_all(&ui, shared));
     on!(on_install_zip, |ui, shared| on_install_zip(&ui, shared));
     on!(on_add_repo, |ui, _shared| {

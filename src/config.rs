@@ -162,6 +162,27 @@ pub fn find_addons_dirs(roots: &[PathBuf], max_depth: usize) -> Vec<PathBuf> {
     found
 }
 
+/// The game's executable next to `<game>/benilla-config/AddOns`: `AzerothSurvivors.exe` on Windows,
+/// on Linux a native build whose name starts with `AzerothSurvivors`. A Windows build on Linux runs
+/// through Proton and can't be started from here.
+pub fn game_executable(addons_dir: &Path, windows: bool) -> Option<PathBuf> {
+    let game = addons_dir.parent()?.parent()?;
+    if windows {
+        return Some(game.join("AzerothSurvivors.exe")).filter(|p| p.is_file());
+    }
+    // ponytail: first match by name; pin the exact name once the Linux build's file is known
+    let mut native: Vec<PathBuf> = std::fs::read_dir(game)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("AzerothSurvivors")))
+        .filter(|p| !p.extension().is_some_and(|e| ["exe", "dll", "pdb"].iter().any(|x| e.eq_ignore_ascii_case(x))))
+        .collect();
+    native.sort();
+    native.into_iter().next()
+}
+
 /// Steam Deck Game Mode (and any gamescope session): the app runs fullscreen there.
 pub fn is_game_mode(xdg_current_desktop: Option<&str>, gamescope_display: bool) -> bool {
     gamescope_display || xdg_current_desktop.is_some_and(|d| d.eq_ignore_ascii_case("gamescope"))
@@ -186,6 +207,21 @@ pub fn validate_addons_dir(path: &Path) -> Result<Option<DirWarning>, DirError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_game_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let game = dir.path().join("AzerothSurvivors");
+        let addons = game.join("benilla-config").join("AddOns");
+        std::fs::create_dir_all(&addons).unwrap();
+        assert_eq!(game_executable(&addons, true), None, "nothing there yet");
+        std::fs::write(game.join("AzerothSurvivors.exe"), b"").unwrap();
+        assert_eq!(game_executable(&addons, true), Some(game.join("AzerothSurvivors.exe")));
+        assert_eq!(game_executable(&addons, false), None, "Linux can't start the Windows build directly");
+        std::fs::write(game.join("AzerothSurvivors.x86_64"), b"").unwrap();
+        assert_eq!(game_executable(&addons, false), Some(game.join("AzerothSurvivors.x86_64")));
+        assert_eq!(game_executable(Path::new(""), true), None, "no AddOns folder set");
+    }
 
     #[test]
     fn suggests_existing_addon_dirs() {
