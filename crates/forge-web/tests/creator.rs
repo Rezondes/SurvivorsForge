@@ -298,6 +298,16 @@ async fn upload_cannot_be_sent_twice() {
 }
 
 #[tokio::test]
+async fn screenshots_in_the_editor_always_have_a_text() {
+    let mut web = logged_in(owner()).await;
+    Mock::given(method("GET")).and(path("/v1/addons/lucky")).respond_with(ResponseTemplate::new(200).set_body_json(json!({
+        "slug": "lucky", "name": "Lucky", "icon_url": null, "images": [{ "id": 7, "url": "https://web.test/img/a.webp", "caption": "" }]
+    }))).with_priority(1).mount(&web.api).await;
+    let page = web.get("/addons/lucky/images").await.body;
+    assert!(page.contains(r#"<img src="https://web.test/img/a.webp" alt="Screenshot 1""#), "{page}");
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))

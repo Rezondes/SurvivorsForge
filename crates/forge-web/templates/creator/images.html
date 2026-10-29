@@ -59,7 +59,7 @@
   <div class="shots" data-order-url="/addons/{{ slug }}/images/order">
     {% for img in images %}
     <figure data-image-id="{{ img.id }}" id="shot-{{ img.id }}">
-      <img src="{{ img.url }}" alt="{{ img.caption }}" loading="lazy">
+      <img src="{{ img.url }}" alt="{% if img.caption != "" %}{{ img.caption }}{% else %}Screenshot {{ loop.index }}{% endif %}" loading="lazy">
       <form method="post" action="/addons/{{ slug }}/images/{{ img.id }}/caption" class="caption-form" data-saved="{{ img.caption }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label for="caption-{{ img.id }}" class="sr-only">Caption of screenshot {{ loop.index }}</label>
