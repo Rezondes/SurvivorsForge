@@ -305,6 +305,8 @@ export component AppWindow inherits Window {
     callback check-updates();
     // Why the game can't be started from here; empty when its executable was found.
     in property <string> game-missing;
+    // The game started from here still runs.
+    in property <bool> game-running;
     callback launch-game();
     callback update-all();
     callback install-zip();
@@ -407,10 +409,11 @@ export component AppWindow inherits Window {
                 alignment: center;
                 spacing: 4px;
                 ActionButton {
-                    text: "Launch game";
+                    text: root.game-running ? "Game running" : "Launch game";
                     primary: true;
                     large: true;
-                    enabled: root.game-missing == "";
+                    // Off at once on the click, before the game's window shows up.
+                    enabled: root.game-missing == "" && !root.game-running;
                     clicked => { root.launch-game(); }
                 }
                 if root.game-missing != "" : Text {

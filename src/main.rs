@@ -47,6 +47,8 @@ struct Core {
     /// Browse addons picked for an addon pack.
     picked: std::collections::BTreeSet<String>,
     pack_busy: bool,
+    /// The game started from here still runs: the launch button waits for it to close.
+    game_running: bool,
     /// The addon in the detail view, and whether it was opened from Browse (else Installed).
     detail: Option<(String, bool)>,
     /// Long descriptions from the platform by addon id; `None` while one is fetched.
@@ -82,6 +84,7 @@ impl Core {
             category: None,
             picked: Default::default(),
             pack_busy: false,
+            game_running: false,
             detail: None,
             about: HashMap::new(),
         };
@@ -359,6 +362,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         None => "No Linux build of the game next to benilla-config. Start a Windows build through Steam.",
     };
     ui.set_game_missing(game_missing.into());
+    ui.set_game_running(core.game_running);
     ui.set_status_text(core.status.clone().into());
     ui.set_status_error(core.status_error);
     ui.set_addons_dir(core.config.addons_dir.to_string_lossy().into_owned().into());
@@ -550,13 +554,31 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>)
     });
 }
 
-/// Starts the game in its own folder; it keeps running when the launcher closes.
+/// Starts the game in its own folder, once: until the started game closes the button stays off.
+/// A thread waits for the game's process, so the launcher learns at once when it ends. The game
+/// keeps running when the launcher closes.
 fn on_launch_game(ui: &AppWindow, shared: &Shared) {
     {
         let mut core = lock(shared);
+        if core.game_running {
+            return;
+        }
         match config::game_executable(core.addons_dir(), cfg!(windows)) {
             Some(exe) => match std::process::Command::new(&exe).current_dir(exe.parent().unwrap_or(Path::new("."))).spawn() {
-                Ok(_) => core.set_status("Azeroth Survivors started.".into(), false),
+                Ok(mut child) => {
+                    core.game_running = true;
+                    core.set_status("Azeroth Survivors is running.".into(), false);
+                    let (weak, shared) = (ui.as_weak(), shared.clone());
+                    std::thread::spawn(move || {
+                        let _ = child.wait();
+                        {
+                            let mut core = lock(&shared);
+                            core.game_running = false;
+                            core.set_status("Azeroth Survivors was closed.".into(), false);
+                        }
+                        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+                    });
+                }
                 Err(e) => core.set_status(format!("Could not start the game: {e}"), true),
             },
             None => core.set_status("The game was not found next to the AddOns folder.".into(), true),
