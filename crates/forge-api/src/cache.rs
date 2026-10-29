@@ -4,7 +4,7 @@
 
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use crate::error::ApiError;
@@ -72,6 +72,14 @@ impl ResponseCache {
     }
 }
 
+/// Whether `If-None-Match` names `etag`, compared weakly: a proxy that compresses the answer
+/// (Cloudflare) turns `"x"` into `W/"x"`, and clients send that back.
+pub fn etag_matches(if_none_match: &HeaderValue, etag: &[u8]) -> bool {
+    let strip = |t: &[u8]| t.strip_prefix(b"W/").unwrap_or(t).to_vec();
+    let etag = strip(etag);
+    if_none_match.as_bytes().split(|&b| b == b',').map(|t| t.trim_ascii()).any(|t| t == b"*" || strip(t) == etag)
+}
+
 pub async fn middleware(State(cache): State<Arc<ResponseCache>>, request: Request, next: Next) -> Response {
     let method = request.method().clone();
     if method != Method::GET {
@@ -90,7 +98,7 @@ pub async fn middleware(State(cache): State<Arc<ResponseCache>>, request: Reques
     let now = Instant::now();
     if let Some((status, headers, body)) = cache.get(&key, now) {
         if let (Some(sent), Some(etag)) = (&if_none_match, headers.get(header::ETAG))
-            && sent == etag
+            && etag_matches(sent, etag.as_bytes())
         {
             let mut not_modified = StatusCode::NOT_MODIFIED.into_response();
             for name in [header::ETAG, header::CACHE_CONTROL] {
@@ -130,6 +138,13 @@ mod tests {
             assert_eq!(cache.ttl_for(path), None, "{path}");
         }
         assert_eq!(ResponseCache::new(Duration::ZERO).ttl_for("/v1/registry"), None);
+    }
+
+    #[test]
+    fn etags_compare_weakly() {
+        let matches = |sent: &str| etag_matches(&HeaderValue::from_str(sent).unwrap(), br#""abc""#);
+        assert!(matches(r#""abc""#) && matches(r#"W/"abc""#) && matches(r#""x", W/"abc""#) && matches("*"));
+        assert!(!matches(r#""abd""#) && !matches(r#"W/"ab""#));
     }
 
     #[test]

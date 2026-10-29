@@ -121,7 +121,7 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap, RawQuery(ra
     let body = body.to_string();
     let etag = format!("\"{}\"", &hex::encode(Sha256::digest(body.as_bytes()))[..32]);
     let etag_value = HeaderValue::from_str(&etag).map_err(|_| ApiError::internal())?;
-    if headers.get(header::IF_NONE_MATCH).is_some_and(|v| v.as_bytes() == etag.as_bytes()) {
+    if headers.get(header::IF_NONE_MATCH).is_some_and(|v| crate::cache::etag_matches(v, etag.as_bytes())) {
         return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, etag_value)]).into_response());
     }
     Ok((
