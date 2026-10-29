@@ -1,11 +1,11 @@
 <nav class="subnav" aria-label="Edit addon">
   <a href="/addons/{{ slug }}">View page</a>
-  {% if perms.owner || perms.edit_description %}<a href="/addons/{{ slug }}/edit">Details</a>{% endif %}
-  {% if perms.edit_images %}<a href="/addons/{{ slug }}/images">Images</a>{% endif %}
+  {% if perms.owner || perms.edit_description %}<a href="/addons/{{ slug }}/edit"{% if section == "details" %} aria-current="page"{% endif %}>Details</a>{% endif %}
+  {% if perms.edit_images %}<a href="/addons/{{ slug }}/images"{% if section == "images" %} aria-current="page"{% endif %}>Images</a>{% endif %}
   {% if perms.owner %}
-    <a href="/addons/{{ slug }}/members">Contributors</a>
-    <a href="/addons/{{ slug }}/dependencies">Dependencies</a>
-    <a href="/addons/{{ slug }}/versions">Versions</a>
-    <a href="/addons/{{ slug }}/delete" class="danger-link">Delete</a>
+    <a href="/addons/{{ slug }}/members"{% if section == "members" %} aria-current="page"{% endif %}>Contributors</a>
+    <a href="/addons/{{ slug }}/dependencies"{% if section == "dependencies" %} aria-current="page"{% endif %}>Dependencies</a>
+    <a href="/addons/{{ slug }}/versions"{% if section == "versions" %} aria-current="page"{% endif %}>Versions</a>
+    <a href="/addons/{{ slug }}/delete" class="danger-link"{% if section == "delete" %} aria-current="page"{% endif %}>Delete</a>
   {% endif %}
 </nav>

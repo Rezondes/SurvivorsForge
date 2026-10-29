@@ -2,7 +2,7 @@
 {% block title %}{{ tag }} compatibility - SurvivorsForge{% endblock %}
 {% block content %}
 <h1>Which game versions does {{ tag }} run on?</h1>
-{% include "creator/nav.html" %}
+{% let section = "versions" %}{% include "creator/nav.html" %}
 <p><a href="/addons/{{ slug }}/versions">Back to versions</a></p>
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 <form class="panel" method="post" action="/addons/{{ slug }}/versions/{{ tag }}/edit">

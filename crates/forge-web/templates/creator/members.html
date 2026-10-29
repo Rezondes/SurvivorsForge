@@ -2,7 +2,7 @@
 {% block title %}Contributors - SurvivorsForge{% endblock %}
 {% block content %}
 <h1>Contributors</h1>
-{% include "creator/nav.html" %}
+{% let section = "members" %}{% include "creator/nav.html" %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 
 <form class="panel" method="post" action="/addons/{{ slug }}/members">

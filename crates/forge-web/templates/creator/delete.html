@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Delete {{ slug }} - SurvivorsForge{% endblock %}
 {% block content %}
-{% include "creator/nav.html" %}
+{% let section = "delete" %}{% include "creator/nav.html" %}
 <section class="panel">
   <h1>Delete {{ slug }}?</h1>
   <div class="notice bad" role="alert">The addon disappears from the site and the launcher. Its folders and address become free for others. Your GitHub repo stays untouched.</div>

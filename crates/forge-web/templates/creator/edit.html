@@ -2,7 +2,7 @@
 {% block title %}Edit {{ name }} - SurvivorsForge{% endblock %}
 {% block content %}
 <h1>Edit {{ name }}</h1>
-{% include "creator/nav.html" %}
+{% let section = "details" %}{% include "creator/nav.html" %}
 {% if saved %}<div class="notice ok" role="status">Saved.</div>{% endif %}
 {% if errors.get("form") != "" %}<div class="notice bad" role="alert">{{ errors.get("form") }}</div>{% endif %}
 

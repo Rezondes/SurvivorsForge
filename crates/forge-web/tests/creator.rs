@@ -323,6 +323,17 @@ async fn the_icon_square_shows_a_preview() {
 }
 
 #[tokio::test]
+async fn the_toolbar_marks_the_current_page() {
+    let mut web = logged_in(owner()).await;
+    get_json(&web, "/v1/addons/lucky/members", json!([])).await;
+    for (page, link) in [("/addons/lucky/images", "images"), ("/addons/lucky/edit", "edit"), ("/addons/lucky/members", "members")] {
+        let body = web.get(page).await.body;
+        assert!(body.contains(&format!(r#"<a href="/addons/lucky/{link}" aria-current="page">"#)), "{page}: {body}");
+        assert_eq!(body.matches(r#"aria-current="page""#).count(), 1, "{page}");
+    }
+}
+
+#[tokio::test]
 async fn several_screenshots_in_one_upload() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST"))

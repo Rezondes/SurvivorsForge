@@ -3,7 +3,7 @@
 {% block content %}
 <p><a href="/addons/{{ slug }}">Back to {{ name }}</a></p>
 <h1>Versions of {{ name }}</h1>
-{% if let Some(perms) = perms %}{% include "creator/nav.html" %}{% endif %}
+{% if let Some(perms) = perms %}{% let section = "versions" %}{% include "creator/nav.html" %}{% endif %}
 {% if rows.is_empty() %}
 <section class="panel"><p>No release yet.</p></section>
 {% else %}

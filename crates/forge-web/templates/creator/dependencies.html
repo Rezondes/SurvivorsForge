@@ -2,7 +2,7 @@
 {% block title %}Dependencies - SurvivorsForge{% endblock %}
 {% block content %}
 <h1>Dependencies</h1>
-{% include "creator/nav.html" %}
+{% let section = "dependencies" %}{% include "creator/nav.html" %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 
 <form class="panel" method="post" action="/addons/{{ slug }}/dependencies">

@@ -304,6 +304,7 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .6); }
 .subnav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .subnav a { padding: 4px 12px; border: 1px solid var(--outline); border-radius: var(--radius); text-decoration: none; }
 .subnav a:hover { border-color: var(--outline-hover); background: var(--control); }
+.subnav a[aria-current="page"] { border-color: var(--outline-active); background: var(--crimson); color: var(--gold-bright); }
 .danger-link { color: var(--bad); }
 .danger-link:hover { color: var(--bad); }
 label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }

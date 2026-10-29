@@ -2,7 +2,7 @@
 {% block title %}Images of {{ name }} - SurvivorsForge{% endblock %}
 {% block content %}
 <h1>Images of {{ name }}</h1>
-{% include "creator/nav.html" %}
+{% let section = "images" %}{% include "creator/nav.html" %}
 {% if let Some(m) = message %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 
