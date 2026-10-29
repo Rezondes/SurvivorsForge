@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SurvivorsForge - Addons for Azeroth Survivors</title>
+  <meta name="description" content="Install, update and share addons for Azeroth Survivors. Every release is checked for harmful code before it reaches your AddOns folder. Free and open source.">
+  <meta property="og:title" content="SurvivorsForge">
+  <meta property="og:description" content="Addons for Azeroth Survivors, checked and one click away.">
+  <meta property="og:image" content="assets/icon.png">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#">
+        <img src="assets/icon.png" alt="" width="40" height="40">
+        <span class="gold-text">SurvivorsForge</span>
+      </a>
+      <nav aria-label="Sections">
+        <a href="#features">Features</a>
+        <a href="#safety">Safety</a>
+        <a href="#packs">Browser</a>
+        <a href="#creators">Creators</a>
+        <a href="https://github.com/Rezondes/SurvivorsForge">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <div>
+          <h1 class="gold-text">Addons for Azeroth Survivors, one click away</h1>
+          <p class="intro">SurvivorsForge installs, updates and removes the addons of
+            <a href="https://wow.aethus.pl">Azeroth Survivors</a>. Every release is checked for harmful
+            code before it reaches your AddOns folder.</p>
+          <div class="actions">
+            <a class="button large" href="https://github.com/Rezondes/SurvivorsForge/releases/latest">Download for Windows</a>
+            <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/releases/latest">Linux and Steam Deck</a>
+          </div>
+          <p class="muted small">Free and open source. Windows 10 and 11: the <code>windows-msvc.zip</code>.
+            Linux and Steam Deck (experimental): the <code>.AppImage</code>. Both on the latest release.</p>
+          <p class="small"><a href="https://forge.example.com/addons">Browse all addons on the website</a></p>
+        </div>
+
+        <div class="window" aria-hidden="true">
+          <div class="window-title gold-text">SurvivorsForge</div>
+          <div class="tabs"><span class="tab active">Installed (3)</span><span class="tab">Browse</span><span class="tab">Settings</span></div>
+          <div class="row">
+            <span class="initial"><span class="gold-text">S</span></span>
+            <div><strong>Survivor UI <span class="pill">Verified</span></strong><small>by morderous · v3.0.36</small></div>
+            <span class="status update">Update: v3.0.42</span>
+          </div>
+          <div class="row">
+            <span class="initial"><span class="gold-text">L</span></span>
+            <div><strong>LuckyOdds <span class="pill">Checked</span></strong><small>by cadoky · v0.7.0</small></div>
+            <span class="status ok">Up to date</span>
+          </div>
+          <div class="row">
+            <span class="initial"><span class="gold-text">B</span></span>
+            <div><strong>BordoUI <span class="pill">Verified</span></strong><small>by threenox · v2.0.0</small></div>
+            <span class="status ok">Up to date</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <h2 class="heading">What it does</h2>
+        <p class="lead">One place for every addon you play with, made for this one game.</p>
+        <div class="grid">
+          <div class="card"><h3>Install in one click</h3><p>Pick an addon in Browse and it lands in the right folder, with the folders it needs. No unpacking by hand.</p></div>
+          <div class="card"><h3>Updates for all of them</h3><p>One check finds new versions of every addon you have, and <em>Update all</em> installs them at once.</p></div>
+          <div class="card"><h3>Dependencies included</h3><p>Addons that need a library get it installed with them, in the right order. Optional extras are named before you install.</p></div>
+          <div class="card"><h3>Your own sources</h3><p>Add any addon from a GitHub repo or install a zip from your disk. Addons already in your folder are found and tracked.</p></div>
+          <div class="card"><h3>Fits your game version</h3><p>Set your game version once and you are told before installing an addon that does not support it.</p></div>
+          <div class="card"><h3>Safe removal</h3><p>Removed addons go to the recycle bin. Your addon settings in the WTF folder stay untouched.</p></div>
+          <div class="card"><h3>Steam Deck ready</h3><p>Runs as an AppImage on Linux and SteamOS, with large touch controls in Game Mode.</p></div>
+          <div class="card"><h3>Works offline</h3><p>Without a connection you still see your addons and the last known list. Nothing is installed until the check is possible again.</p></div>
+          <div class="card"><h3>Updates itself</h3><p>A new version of SurvivorsForge shows up as a banner and installs with one click.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="safety">
+      <div class="wrap">
+        <h2 class="heading">Checked before it reaches you</h2>
+        <p class="lead">Addons run inside your game. So every release is looked at before anyone installs it, and the
+          launcher makes sure you get exactly the file that was looked at.</p>
+        <ol class="steps">
+          <li><h3>Scanned</h3><p>Each new release is opened by an isolated worker, and its Lua and XML are checked for code that has no place in an addon.</p></li>
+          <li><h3>Reviewed</h3><p>Anything the scan finds goes to the admins. They verify a version by hand or block it.</p></li>
+          <li><h3>Fingerprinted</h3><p>The platform keeps the SHA-256 of every checked file. The launcher compares it after each download and refuses a different file.</p></li>
+          <li><h3>Watched</h3><p>Files on GitHub are checked again regularly. A release that changes afterwards loses its badge until it is checked again.</p></li>
+        </ol>
+        <div class="badges" aria-label="What the badges mean">
+          <div><span class="badge ok">Verified</span> checked by an admin</div>
+          <div><span class="badge">Checked</span> scanned, nothing found</div>
+          <div><span class="badge bad">Flagged</span> asks before installing</div>
+          <div><span class="badge dim">Not checked</span> not scanned yet</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="packs">
+      <div class="wrap split">
+        <div>
+          <h2 class="heading">Playing in the browser?</h2>
+          <p>The browser version of the game takes addons as a zip upload. An addon pack puts all the addons you want into one zip,
+            ready to upload.</p>
+          <ul class="checklist">
+            <li>Tick the addons on the website or in the launcher</li>
+            <li>Download one zip, every addon in its own folder</li>
+            <li>Share the link: your friends see what is inside and get the same zip</li>
+          </ul>
+          <a class="button" href="https://forge.example.com/packs/new">Build an addon pack</a>
+        </div>
+        <div class="pack-file" aria-label="Example of a pack zip">
+          <div class="name">SurvivorsForge-pack.zip</div>
+          <ul>
+            <li>AZSSpellMeter/</li>
+            <li>BordoUI/</li>
+            <li>LuckyOdds/</li>
+            <li>SurvivorPlates/ <span>with Survivor UI</span></li>
+            <li>SurvivorUI/</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="creators">
+      <div class="wrap">
+        <h2 class="heading">For addon authors</h2>
+        <p class="lead">Your code stays in your GitHub repo. The platform reads your releases and brings them to the players.</p>
+        <div class="grid">
+          <div class="card"><h3>Publish from GitHub</h3><p>Log in with GitHub, install the SurvivorsForge App on your repo and your addon is listed. Every new release appears on its own.</p></div>
+          <div class="card"><h3>Your page</h3><p>Description in Markdown, screenshots, an icon, the category and the game versions each release supports.</p></div>
+          <div class="card"><h3>Work as a team</h3><p>Add contributors who may edit the description or the images, and name the libraries your addon needs.</p></div>
+        </div>
+        <p class="center"><a class="button secondary" href="https://forge.example.com/addons/new">Publish an addon</a></p>
+      </div>
+    </section>
+
+    <section id="open-source">
+      <div class="wrap">
+        <h2 class="heading">Open source</h2>
+        <p class="lead">The launcher, the platform and the scanner are free software under the AGPL-3.0. Read the code, report a
+          bug, or run your own copy of the platform.</p>
+        <div class="actions center">
+          <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge">Source on GitHub</a>
+          <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/issues">Report a problem</a>
+          <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/blob/main/docs/self-hosting.md">Host the platform</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <nav aria-label="Links">
+        <a href="https://github.com/Rezondes/SurvivorsForge/releases/latest">Download</a>
+        <a href="https://forge.example.com/addons">Addons</a>
+        <a href="https://github.com/Rezondes/SurvivorsForge">GitHub</a>
+        <a href="https://github.com/Rezondes/SurvivorsForge/blob/main/SECURITY.md">Security</a>
+      </nav>
+      <p>SurvivorsForge is a community project. It is not made by or affiliated with the team of Azeroth Survivors or with
+        Blizzard Entertainment.</p>
+    </div>
+  </footer>
+</body>
+</html>

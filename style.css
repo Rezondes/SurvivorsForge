@@ -1,0 +1,188 @@
+/* The look of the SurvivorsForge launcher and website: near-black warm ground, gold outlines and
+   lettering, deep red for the primary action, uncial display type. No shadows. */
+
+@font-face { font-family: "Marcellus"; src: url("assets/fonts/Marcellus-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Uncial Antiqua"; src: url("assets/fonts/UncialAntiqua-Regular.ttf") format("truetype"); font-display: swap; }
+
+:root {
+  color-scheme: dark;
+  --font-display: "Uncial Antiqua", Georgia, serif;
+  --font-body: "Marcellus", Georgia, serif;
+
+  --bg: #0A0806;
+  --bg-glow: radial-gradient(ellipse at 50% 0%, #1A130C 0%, #0A0806 70%);
+  --panel: linear-gradient(180deg, #14100B 0%, #0E0B08 100%);
+  --field: #0C0907;
+  --row: linear-gradient(90deg, #1B140D 0%, #120E09 100%);
+  --row-hover: linear-gradient(90deg, #241A10 0%, #16110B 100%);
+
+  --line: #3A2C18;
+  --outline: #8A6C3A;
+  --outline-hover: #C9A24E;
+  --outline-active: #F0CC6A;
+
+  --gold: #E8C25A;
+  --gold-bright: #F6DD9A;
+  --gold-heading: linear-gradient(180deg, #FBE7A1 0%, #D9A93E 100%);
+  --text: #E9DCC0;
+  --muted: #A89679;
+
+  --crimson: linear-gradient(180deg, #5A1913 0%, #2B0907 100%);
+  --crimson-hover: linear-gradient(180deg, #6E2018 0%, #36100B 100%);
+  --control: linear-gradient(180deg, #17110B 0%, #0E0A07 100%);
+
+  --ok: #5BE36F;
+  --warn: #F0A030;
+  --bad: #E0574A;
+
+  --radius: 3px;
+  --page: 1080px;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--bg-glow) no-repeat, var(--bg);
+  color: var(--text);
+  font: 16px/1.6 var(--font-body);
+}
+a { color: var(--gold); text-underline-offset: 3px; }
+a:hover { color: var(--gold-bright); }
+:focus-visible { outline: 2px solid var(--outline-active); outline-offset: 3px; }
+::selection { background: var(--outline); color: var(--gold-bright); }
+img { max-width: 100%; height: auto; }
+.wrap { max-width: var(--page); margin: 0 auto; padding: 0 16px; }
+.muted { color: var(--muted); }
+.gold-text { background: var(--gold-heading); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Header */
+.top { border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-block: 14px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.brand img { width: 40px; height: 40px; }
+.brand span { font-family: var(--font-display); font-size: 28px; line-height: 1; }
+.top nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.top nav a {
+  padding: 6px 14px; border: 1px solid transparent; border-radius: var(--radius);
+  color: var(--gold); text-decoration: none; font-size: 15px;
+}
+.top nav a:hover { border-color: var(--outline); background: var(--control); }
+
+/* Buttons, as in the launcher: red with gold rim for the main action, outlined gold otherwise */
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 20px;
+  border: 1px solid var(--outline-hover); border-radius: var(--radius);
+  background: var(--crimson); color: var(--gold-bright); font: inherit; text-decoration: none;
+}
+.button:hover { border-color: var(--outline-active); background: var(--crimson-hover); color: var(--gold-bright); }
+.button.large { font-family: var(--font-display); font-size: 20px; min-height: 52px; padding: 10px 28px; }
+.button.secondary { border-color: var(--outline); background: var(--control); color: var(--gold); }
+.button.secondary:hover { border-color: var(--outline-hover); }
+
+/* Section headings: uncial gold between two fading rules */
+.heading {
+  display: flex; align-items: center; gap: 16px; margin: 0 0 12px;
+  font-family: var(--font-display); font-weight: 400; font-size: 30px; line-height: 1.2; color: var(--gold); text-align: center;
+}
+.heading::before, .heading::after { content: ""; flex: 1; height: 1px; min-width: 24px; }
+.heading::before { background: linear-gradient(90deg, transparent, var(--outline)); }
+.heading::after { background: linear-gradient(90deg, var(--outline), transparent); }
+.lead { max-width: 680px; margin: 0 auto 32px; text-align: center; color: var(--muted); }
+section { padding: 64px 0; }
+section + section { border-top: 1px solid var(--line); }
+h3 { margin: 0 0 6px; font-weight: 400; font-size: 20px; color: var(--gold); }
+p { margin: 0 0 12px; }
+
+/* Hero */
+.hero { padding: 56px 0 64px; }
+.hero .wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+.hero h1 { margin: 0 0 16px; font-family: var(--font-display); font-weight: 400; font-size: 46px; line-height: 1.15; }
+.hero .intro { font-size: 18px; margin-bottom: 24px; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.small { font-size: 14px; }
+.center { text-align: center; justify-content: center; margin-top: 28px; }
+
+/* The launcher, drawn in its own style */
+.window {
+  border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 18px;
+}
+.window-title { font-family: var(--font-display); font-size: 26px; text-align: center; margin-bottom: 12px; }
+.tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 14px; }
+.tab { padding: 5px 14px; border: 1px solid var(--outline); border-radius: var(--radius); color: var(--gold); font-size: 14px; }
+.tab.active { border-color: var(--outline-active); background: var(--crimson); color: var(--gold-bright); }
+.row {
+  display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center;
+  padding: 10px 12px; margin-top: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--row);
+}
+.row:hover { border-color: var(--outline); background: var(--row-hover); }
+.initial {
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid var(--outline); border-radius: var(--radius); background: var(--field); font-size: 22px;
+}
+.row strong { display: block; font-weight: 400; font-size: 17px; color: var(--gold); }
+.row small { color: var(--muted); font-size: 13px; }
+.status { font-size: 13px; text-align: right; white-space: nowrap; }
+.status.ok { color: var(--ok); }
+.status.update { color: var(--warn); }
+.pill { display: inline-block; padding: 0 8px; border: 1px solid var(--outline); border-radius: 10px; font-size: 11px; color: var(--gold); vertical-align: 2px; margin-left: 6px; }
+
+/* Feature grid */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.card { border: 1px solid var(--line); border-radius: 4px; background: var(--row); padding: 20px; }
+.card p { margin: 0; color: var(--text); }
+
+/* Steps of the check */
+.steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; counter-reset: step; }
+.steps li { position: relative; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 52px 18px 18px; counter-increment: step; }
+.steps li::before {
+  content: counter(step); position: absolute; top: 14px; left: 18px; width: 28px; height: 28px; display: grid; place-items: center;
+  border: 1px solid var(--outline-hover); border-radius: 50%; background: var(--crimson); color: var(--gold-bright); font-size: 14px;
+}
+.badges { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: center; margin-top: 28px; }
+.badges div { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.badge { display: inline-block; padding: 1px 9px; border: 1px solid var(--outline); border-radius: 10px; font-size: 12px; color: var(--gold); white-space: nowrap; }
+.badge.ok { border-color: var(--ok); color: var(--ok); }
+.badge.bad { border-color: var(--bad); color: var(--bad); }
+.badge.dim { border-color: var(--line); color: var(--muted); }
+
+/* Two columns: text and a panel */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+.split h2 { text-align: left; }
+.split h2::before { display: none; }
+.checklist { list-style: none; padding: 0; margin: 0 0 20px; }
+.checklist li { padding: 6px 0 6px 26px; position: relative; }
+.checklist li::before { content: ""; position: absolute; left: 4px; top: 15px; width: 9px; height: 9px; border-radius: 2px; background: var(--gold); }
+.pack-file { border: 1px solid var(--line); border-radius: 4px; background: var(--panel); padding: 18px; font-size: 15px; }
+.pack-file .name { color: var(--gold-bright); margin-bottom: 8px; }
+.pack-file ul { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 1px solid var(--line); }
+.pack-file li { padding: 3px 0 3px 12px; color: var(--text); }
+.pack-file li span { color: var(--muted); }
+
+/* Footer */
+footer { border-top: 1px solid var(--line); padding: 32px 0 40px; color: var(--muted); font-size: 14px; text-align: center; }
+footer nav { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+
+@media (max-width: 900px) {
+  .hero .wrap, .split { grid-template-columns: 1fr; }
+  .grid, .steps { grid-template-columns: repeat(2, 1fr); }
+  .hero h1 { font-size: 38px; }
+}
+
+@media (max-width: 600px) {
+  section { padding: 44px 0; }
+  .hero { padding: 32px 0 44px; }
+  .hero h1 { font-size: 30px; }
+  .hero .intro { font-size: 16px; }
+  .heading { font-size: 24px; gap: 10px; }
+  .grid, .steps { grid-template-columns: 1fr; }
+  .brand span { font-size: 24px; }
+  .top nav { width: 100%; justify-content: space-between; gap: 0; }
+  .top nav a { padding: 10px 8px; }
+  .actions .button { flex: 1 1 100%; }
+  .window { padding: 12px; }
+  .row { grid-template-columns: 36px 1fr; }
+  .initial { width: 36px; height: 36px; font-size: 18px; }
+  .status { grid-column: 2; text-align: left; }
+}
