@@ -41,7 +41,7 @@ After saving, from the App's settings page:
 
 To try publishing your own addon later, use a public repo of your account that has a release
 with an addon zip. Repos of your own account need no App; installing it (*Install App* in the
-App's settings) brings new releases at once instead of with the daily poll. Repos of an
+App's settings) brings new releases at once instead of with the poll every 15 minutes. Repos of an
 organization need the App and your admin rights there.
 
 ## 2. Configure
@@ -113,9 +113,13 @@ can be downloaded without a warning and go into addon packs.
 - **Admin**: *Admin* in the top bar: review queue, reports, users, categories, game versions,
   audit log.
 
-Without webhooks, a new release of an addon shows up after the daily poll. A newly added addon is
-synced at once. Repos without the App installed are read through GitHub's API without a token,
-which allows 60 requests per hour per IP; the 12 verified addons need about 25 of them.
+Without webhooks, a new release of an addon shows up after the next poll, every 15 minutes. A
+newly added addon is synced at once. Creators check one of their addons at once with *Force
+Refresh* in *My addons* (once every 5 minutes per user), admins check all of them with *Check all
+for updates* under *Admin > Addons*. Repos without the App installed are read through GitHub's
+API without a token, which allows 60 requests per hour per IP; the 12 verified addons need about
+25 of them per poll, so four polls an hour run out. Set `GITHUB_READ_TOKEN` (5000 per hour) when
+you keep the stack running.
 
 ## 6. The launcher against the local platform
 

@@ -135,6 +135,19 @@ pub async fn claim(State(state): State<AppState>, jar: PrivateCookieJar, Path(sl
     Ok(Redirect::to(&format!("{page}?{query}")).into_response())
 }
 
+/// `POST /addons/{slug}/sync`: the owner or a contributor checks the addon for updates now.
+/// The API allows it once every five minutes per user.
+pub async fn sync(State(state): State<AppState>, jar: PrivateCookieJar, Path(slug): Path<String>) -> WebResult<Response> {
+    let (_, token) = me(&state, &jar).await?;
+    let (key, text) = match state.api.post(&format!("/v1/addons/{}/sync", seg(&slug)), Some(&token), &json!({})).await {
+        Ok(_) => ("msg", "Checking GitHub for updates. New versions show up here in a minute.".to_string()),
+        Err(e @ (ApiError::Unauthorized | ApiError::Down(_))) => return Err(e.into()),
+        Err(e) => ("error", e.message()),
+    };
+    let query = reqwest::Url::parse_with_params("http://x/", &[(key, text)]).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
+    Ok(Redirect::to(&format!("/me/addons?{query}")).into_response())
+}
+
 #[derive(Deserialize, Default, Clone)]
 pub struct NewAddonForm {
     /// `owner/name`; the forms send `repo_owner` and `repo_name` instead.

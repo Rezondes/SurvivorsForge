@@ -28,7 +28,11 @@
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/me/addons">
           <button type="submit">Claim it</button>
         </form>
-      {% else %}<a href="/addons/{{ r.slug }}/edit">Edit</a>{% endif %}</td>
+      {% else %}<a href="/addons/{{ r.slug }}/edit">Edit</a>
+        {% if !r.blocked %}<form method="post" action="/addons/{{ r.slug }}/sync" class="inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" title="Check GitHub for new releases now. Once every 5 minutes.">Force Refresh</button>
+        </form>{% endif %}{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

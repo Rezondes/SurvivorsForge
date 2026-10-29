@@ -562,3 +562,28 @@ async fn a_failed_image_upload_still_lands_on_the_new_addon() {
     let images = web.get(page.location()).await;
     assert!(images.body.contains("a.txt: This is not a PNG, JPEG or WebP image"), "{}", images.body);
 }
+
+#[tokio::test]
+async fn creators_force_an_update_check() {
+    let mut web = logged_in(owner()).await;
+    get_json(&web, "/v1/me/addons", json!([
+        { "slug": "lucky", "name": "Lucky", "role": "owner", "trust": "scanned", "latest_tag": "v1", "findings": { "critical": 0, "warn": 0 }, "blocked": false, "locked": false },
+        { "slug": "gone", "name": "Gone", "role": "owner", "trust": "scanned", "latest_tag": "v1", "findings": { "critical": 0, "warn": 0 }, "blocked": true, "locked": false }
+    ]))
+    .await;
+    let page = web.get("/me/addons").await;
+    assert!(page.body.contains(r#"action="/addons/lucky/sync""#) && page.body.contains("Force Refresh"), "{}", page.body);
+    assert!(!page.body.contains("/addons/gone/sync"), "not for a blocked addon");
+
+    Mock::given(method("POST")).and(path("/v1/addons/lucky/sync")).respond_with(ResponseTemplate::new(202)).expect(1).mount(&web.api).await;
+    let done = web.post_form("/addons/lucky/sync", &[]).await;
+    assert!(done.location().starts_with("/me/addons?msg="), "{}", done.location());
+
+    Mock::given(method("POST"))
+        .and(path("/v1/addons/other/sync"))
+        .respond_with(ResponseTemplate::new(429).set_body_json(json!({ "error": "refresh_too_soon", "message": "You can force the next update check in 3 minutes" })))
+        .mount(&web.api)
+        .await;
+    let refused = web.post_form("/addons/other/sync", &[]).await;
+    assert!(refused.location().starts_with("/me/addons?error=") && refused.location().contains("3+minutes"), "{}", refused.location());
+}

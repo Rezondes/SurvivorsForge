@@ -2,7 +2,15 @@
 {% block title %}Addons - Admin - SurvivorsForge{% endblock %}
 {% block content %}
 <p><a href="/admin">Admin</a></p>
-<h1>Addons</h1>
+<div class="title-row">
+  <h1>Addons</h1>
+  <form method="post" action="/admin/addons/sync" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" title="Addons are checked every 15 minutes on their own.">Check all for updates</button>
+  </form>
+</div>
+{% if let Some(m) = msg %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 <form class="panel" method="get" action="/admin/addons" role="search">
   <label for="q">Name</label>
   <input id="q" type="search" name="q" value="{{ q }}">

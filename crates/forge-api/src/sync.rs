@@ -1,6 +1,6 @@
 //! Keeps an addon's versions in step with its GitHub releases or tags.
 //!
-//! Runs as the job `sync_addon`, queued by webhooks and by the daily `poll_releases`.
+//! Runs as the job `sync_addon`, queued by webhooks, by the `poll_releases` every 15 minutes and by hand.
 
 use crate::app::AppState;
 use crate::github::GitHubError;

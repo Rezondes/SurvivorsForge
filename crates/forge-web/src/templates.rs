@@ -564,6 +564,8 @@ pub struct AdminAddonsPage {
     pub q: String,
     /// (slug, name, trust of the current version)
     pub found: Vec<(String, String, String)>,
+    pub msg: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Template)]

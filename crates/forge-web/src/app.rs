@@ -108,6 +108,7 @@ pub fn router(state: AppState) -> Router {
         .route("/addons/{slug}/edit", get(crate::creator::edit_addon).post(crate::creator::save_addon))
         .route("/addons/{slug}/preview", post(crate::creator::preview))
         .route("/addons/{slug}/claim", post(crate::creator::claim))
+        .route("/addons/{slug}/sync", post(crate::creator::sync))
         .route(
             "/addons/{slug}/images",
             get(crate::creator::images)
@@ -136,6 +137,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/users/{id}/{action}", post(crate::admin::ban))
         .route("/admin/addons", get(crate::admin::addons))
         .route("/admin/addons/new", get(crate::admin::add_addon_page).post(crate::admin::add_addon))
+        .route("/admin/addons/sync", post(crate::admin::sync_all))
         .route("/admin/addons/{slug}", get(crate::admin::addon))
         .route("/admin/addons/{slug}/{action}", post(crate::admin::addon_action))
         .route("/admin/audit", get(crate::admin::audit))

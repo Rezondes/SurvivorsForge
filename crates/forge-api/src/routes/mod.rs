@@ -12,6 +12,7 @@ pub mod images;
 pub mod me;
 pub mod members;
 pub mod packs;
+pub mod refresh;
 pub mod registry;
 pub mod reports;
 pub mod search;

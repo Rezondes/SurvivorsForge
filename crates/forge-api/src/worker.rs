@@ -59,7 +59,7 @@ pub fn platform(state: AppState) -> Worker {
             let state = prune_state.clone();
             async move { crate::pack_job::prune(&state).await }
         })
-        .every(sync::POLL_RELEASES, Duration::days(1))
+        .every(sync::POLL_RELEASES, Duration::minutes(15))
         .every(crate::pack_job::PRUNE, Duration::hours(1))
         .every(crate::source_check::CHECK_SOURCES, Duration::hours(6))
 }

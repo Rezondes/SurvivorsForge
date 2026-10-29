@@ -299,6 +299,8 @@ pub async fn ban(State(state): State<AppState>, jar: PrivateCookieJar, Path((git
 pub struct AddonSearch {
     #[serde(default)]
     q: String,
+    msg: Option<String>,
+    error: Option<String>,
 }
 
 /// `GET /admin/addons?q=`: find an addon by name to manage it.
@@ -315,7 +317,14 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         .flatten()
         .map(|a| (s(&a["slug"]), s(&a["name"]), a["trust"].as_str().unwrap_or("none").to_string()))
         .collect();
-    Ok(render(&crate::templates::AdminAddonsPage { user: Some(user), csrf: csrf.0, q, found }))
+    Ok(render(&crate::templates::AdminAddonsPage { user: Some(user), csrf: csrf.0, q, found, msg: search.msg, error: search.error }))
+}
+
+/// `POST /admin/addons/sync`: checks every addon for updates now, in the background.
+pub async fn sync_all(State(state): State<AppState>, jar: PrivateCookieJar) -> WebResult<Response> {
+    let (_, token) = admin(&state, &jar).await?;
+    let result = state.api.post("/v1/admin/addons/sync", Some(&token), &serde_json::json!({})).await;
+    back("/admin/addons", result, "Checking every addon for updates in the background.")
 }
 
 pub async fn addon(

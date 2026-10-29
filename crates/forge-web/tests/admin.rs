@@ -321,3 +321,14 @@ async fn admins_are_listed_and_granted_on_the_users_page() {
     expect(&web, "PUT", "/v1/admin/users/7/role", json!({ "admin": false, "note": "left" })).await;
     web.post_form("/admin/users/7/remove-admin", &[("note", "left"), ("login", "")]).await;
 }
+
+#[tokio::test]
+async fn admin_checks_every_addon_for_updates() {
+    let mut web = as_admin().await;
+    get_json(&web, "/v1/addons", json!({ "addons": [] })).await;
+    let page = web.get("/admin/addons").await;
+    assert!(page.body.contains(r#"action="/admin/addons/sync""#), "{}", page.body);
+    expect(&web, "POST", "/v1/admin/addons/sync", json!({})).await;
+    let done = web.post_form("/admin/addons/sync", &[]).await;
+    assert!(done.location().starts_with("/admin/addons?msg="), "{}", done.location());
+}
