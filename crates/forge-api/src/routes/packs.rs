@@ -1,6 +1,6 @@
 //! `/v1/packs`: addon packs, one zip with several addons for players of the browser version.
-//! Any logged-in user creates them; anyone with the link sees and downloads them. The worker builds
-//! the zip on the first download (`crate::pack_job`).
+//! Any logged-in user creates them and changes their own; anyone with the link sees and downloads
+//! them. The worker builds the zip on the first download (`crate::pack_job`).
 
 use crate::app::AppState;
 use crate::auth::CurrentUser;
@@ -49,8 +49,21 @@ pub struct NewPack {
 #[derive(Deserialize)]
 struct PackAddon {
     slug: String,
-    /// Without a tag the addon's current version goes in.
+    /// Without a tag the addon's newest checked version goes in.
     tag: Option<String>,
+    /// Follows the newest checked version from now on; ignores `tag`.
+    #[serde(default)]
+    latest: bool,
+}
+
+/// The newest version of addon `a.id` that can go into a pack, with `packable` the parameter that
+/// binds `PACKABLE`: releases before pre-releases, none removed on GitHub.
+fn newest_packable(packable: &str) -> String {
+    format!(
+        "(SELECT n.id FROM versions n JOIN version_trust nt ON nt.version_id = n.id
+          WHERE n.addon_id = a.id AND n.sha256 IS NOT NULL AND n.deleted_on_github_at IS NULL AND nt.trust = ANY({packable})
+          ORDER BY n.prerelease, n.published_at DESC, n.id DESC LIMIT 1)"
+    )
 }
 
 #[derive(sqlx::FromRow)]
@@ -61,20 +74,89 @@ struct Chosen {
     trust: String,
     sha256: Option<String>,
     size: Option<i64>,
+    #[sqlx(skip)]
+    latest: bool,
+}
+
+fn check_name(name: &str) -> ApiResult<()> {
+    if name.chars().count() > MAX_NAME {
+        return Err(invalid("invalid_name", "At most 80 characters"));
+    }
+    Ok(())
+}
+
+/// The versions `addons` ask for, each checked and the whole within the pack limits.
+async fn choose(state: &AppState, addons: &[PackAddon]) -> ApiResult<Vec<Chosen>> {
+    if addons.is_empty() {
+        return Err(invalid("empty_pack", "Pick at least one addon"));
+    }
+    let max = state.config.pack_max_addons;
+    if addons.len() as i64 > max {
+        return Err(invalid("too_many_addons", format!("A pack holds at most {max} addons")));
+    }
+    let mut chosen: Vec<Chosen> = Vec::new();
+    for addon in addons {
+        let tag = addon.tag.as_deref().filter(|_| !addon.latest);
+        let row: Option<Chosen> = sqlx::query_as(&format!(
+            "SELECT v.id AS version_id, a.name, v.tag, t.trust, v.sha256, v.asset_size AS size
+             FROM addons a
+             JOIN versions v ON v.addon_id = a.id AND (CASE WHEN $2::text IS NULL THEN v.id = {} ELSE v.tag = $2 END)
+             JOIN version_trust t ON t.version_id = v.id
+             WHERE a.slug = $1::citext AND a.deleted_at IS NULL",
+            newest_packable("$3")
+        ))
+        .bind(&addon.slug)
+        .bind(tag)
+        .bind(PACKABLE)
+        .fetch_optional(&state.pool)
+        .await?;
+        let Some(mut row) = row else {
+            let has_versions: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM addons a JOIN versions v ON v.addon_id = a.id WHERE a.slug = $1::citext AND a.deleted_at IS NULL)",
+            )
+                .bind(&addon.slug)
+                .fetch_one(&state.pool)
+                .await?;
+            return Err(match (has_versions, tag) {
+                (true, None) => invalid("not_packable", format!("{} has no checked version, so it cannot go into a pack", addon.slug)),
+                _ => invalid("unknown_addon", format!("No addon or version {}", addon.slug)),
+            });
+        };
+        if !PACKABLE.contains(&row.trust.as_str()) || row.sha256.is_none() {
+            return Err(invalid("not_packable", format!("{} {} is not checked or was flagged, so it cannot go into a pack", row.name, row.tag)));
+        }
+        if chosen.iter().any(|c| c.version_id == row.version_id || c.name == row.name) {
+            return Err(invalid("duplicate_addon", format!("{} is in the list twice", row.name)));
+        }
+        row.latest = addon.latest;
+        chosen.push(row);
+    }
+    // Release sizes are known before the build; a source zip's size only after it.
+    let known: i64 = chosen.iter().filter_map(|c| c.size).sum();
+    if known as u64 > state.config.pack_max_bytes {
+        return Err(invalid("too_large", format!("The pack would be larger than {} MB", state.config.pack_max_bytes / 1_000_000)));
+    }
+    Ok(chosen)
+}
+
+/// Replaces the versions of `pack` with `chosen` and points it at their content key.
+async fn store_versions(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, pack: i64, chosen: &[Chosen]) -> sqlx::Result<()> {
+    let ids: Vec<i64> = chosen.iter().map(|c| c.version_id).collect();
+    let latest: Vec<bool> = chosen.iter().map(|c| c.latest).collect();
+    sqlx::query("DELETE FROM pack_versions WHERE pack_id = $1").bind(pack).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO pack_versions (pack_id, version_id, latest) SELECT $1, unnest($2::bigint[]), unnest($3::bool[])")
+        .bind(pack)
+        .bind(&ids)
+        .bind(&latest)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("UPDATE packs SET content_key = $2 WHERE id = $1").bind(pack).bind(content_key(&ids)).execute(&mut **tx).await?;
+    Ok(())
 }
 
 pub async fn create(State(state): State<AppState>, user: CurrentUser, Json(body): Json<NewPack>) -> ApiResult<(StatusCode, Json<Value>)> {
     let name = body.name.trim();
-    if name.chars().count() > MAX_NAME {
-        return Err(invalid("invalid_name", "At most 80 characters"));
-    }
-    if body.addons.is_empty() {
-        return Err(invalid("empty_pack", "Pick at least one addon"));
-    }
-    let max = state.config.pack_max_addons;
-    if body.addons.len() as i64 > max {
-        return Err(invalid("too_many_addons", format!("A pack holds at most {max} addons")));
-    }
+    check_name(name)?;
     let now = (state.clock)();
     let recent: i64 = sqlx::query_scalar("SELECT count(*) FROM packs WHERE created_by = $1 AND created_at > $2")
         .bind(user.id)
@@ -86,34 +168,7 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, Json(body)
         return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "pack_limit", message));
     }
 
-    let mut chosen: Vec<Chosen> = Vec::new();
-    for addon in &body.addons {
-        let row: Option<Chosen> = sqlx::query_as(
-            "SELECT v.id AS version_id, a.name, v.tag, t.trust, v.sha256, v.asset_size AS size
-             FROM addons a
-             JOIN versions v ON v.addon_id = a.id AND (CASE WHEN $2::text IS NULL THEN v.id = relevant_version(a.id) ELSE v.tag = $2 END)
-             JOIN version_trust t ON t.version_id = v.id
-             WHERE a.slug = $1::citext AND a.deleted_at IS NULL",
-        )
-        .bind(&addon.slug)
-        .bind(&addon.tag)
-        .fetch_optional(&state.pool)
-        .await?;
-        let row = row.ok_or_else(|| invalid("unknown_addon", format!("No addon or version {}", addon.slug)))?;
-        if !PACKABLE.contains(&row.trust.as_str()) || row.sha256.is_none() {
-            return Err(invalid("not_packable", format!("{} {} is not checked or was flagged, so it cannot go into a pack", row.name, row.tag)));
-        }
-        if chosen.iter().any(|c| c.version_id == row.version_id) {
-            return Err(invalid("duplicate_addon", format!("{} is in the list twice", row.name)));
-        }
-        chosen.push(row);
-    }
-    // Release sizes are known before the build; a source zip's size only after it.
-    let known: i64 = chosen.iter().filter_map(|c| c.size).sum();
-    if known as u64 > state.config.pack_max_bytes {
-        return Err(invalid("too_large", format!("The pack would be larger than {} MB", state.config.pack_max_bytes / 1_000_000)));
-    }
-
+    let chosen = choose(&state, &body.addons).await?;
     let ids: Vec<i64> = chosen.iter().map(|c| c.version_id).collect();
     let id = public_id();
     let mut tx = state.pool.begin().await?;
@@ -128,18 +183,52 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, Json(body)
     .bind(body.listed)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query("INSERT INTO pack_versions (pack_id, version_id) SELECT $1, unnest($2::bigint[])")
-        .bind(pack)
-        .bind(&ids)
-        .execute(&mut *tx)
-        .await?;
+    store_versions(&mut tx, pack, &chosen).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+#[derive(Deserialize)]
+pub struct PackChange {
+    name: Option<String>,
+    listed: Option<bool>,
+    /// Replaces every addon of the pack.
+    addons: Option<Vec<PackAddon>>,
+}
+
+/// `PATCH /v1/packs/{id}`: its creator or an admin renames the pack, lists or hides it, or changes
+/// its addons and their versions. The link stays the same.
+pub async fn update(State(state): State<AppState>, user: CurrentUser, Path(public_id): Path<String>, Json(body): Json<PackChange>) -> ApiResult<Json<Value>> {
+    let pack = load(&state, &public_id).await?;
+    if pack.created_by != Some(user.id) && !user.is_admin() {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "forbidden", "Only the creator of the pack changes it"));
+    }
+    let name = body.name.as_deref().map(str::trim);
+    if let Some(name) = name {
+        check_name(name)?;
+    }
+    let chosen = match &body.addons {
+        Some(addons) => Some(choose(&state, addons).await?),
+        None => None,
+    };
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("UPDATE packs SET name = coalesce($2, name), listed = coalesce($3, listed) WHERE id = $1")
+        .bind(pack.id)
+        .bind(name)
+        .bind(body.listed)
+        .execute(&mut *tx)
+        .await?;
+    if let Some(chosen) = &chosen {
+        store_versions(&mut tx, pack.id, chosen).await?;
+    }
+    tx.commit().await?;
+    show(State(state), Path(public_id)).await
 }
 
 #[derive(sqlx::FromRow)]
 struct PackRow {
     id: i64,
+    created_by: Option<i64>,
     name: String,
     listed: bool,
     created_at: chrono::DateTime<chrono::Utc>,
@@ -147,9 +236,32 @@ struct PackRow {
     content_key: String,
 }
 
+/// The pack, with the addons that follow the newest version moved up to it.
 async fn load(state: &AppState, public_id: &str) -> ApiResult<PackRow> {
+    let pack = load_row(state, public_id).await?;
+    let moved = sqlx::query(&format!(
+        "UPDATE pack_versions pv SET version_id = n.newest
+         FROM (SELECT pv.version_id AS old, {} AS newest
+               FROM pack_versions pv JOIN versions v ON v.id = pv.version_id JOIN addons a ON a.id = v.addon_id
+               WHERE pv.pack_id = $1 AND pv.latest) n
+         WHERE pv.pack_id = $1 AND pv.version_id = n.old AND n.newest IS NOT NULL AND n.newest <> n.old",
+        newest_packable("$2")
+    ))
+    .bind(pack.id)
+    .bind(PACKABLE)
+    .execute(&state.pool)
+    .await?;
+    if moved.rows_affected() == 0 {
+        return Ok(pack);
+    }
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT version_id FROM pack_versions WHERE pack_id = $1").bind(pack.id).fetch_all(&state.pool).await?;
+    sqlx::query("UPDATE packs SET content_key = $2 WHERE id = $1").bind(pack.id).bind(content_key(&ids)).execute(&state.pool).await?;
+    load_row(state, public_id).await
+}
+
+async fn load_row(state: &AppState, public_id: &str) -> ApiResult<PackRow> {
     sqlx::query_as(
-        "SELECT p.id, p.name, p.listed, p.created_at, u.login::text AS creator, p.content_key
+        "SELECT p.id, p.created_by, p.name, p.listed, p.created_at, u.login::text AS creator, p.content_key
          FROM packs p LEFT JOIN users u ON u.id = p.created_by WHERE p.public_id = $1",
     )
     .bind(public_id)
@@ -166,13 +278,20 @@ struct PackEntry {
     trust: String,
     /// Still installable: not deleted, blocked, flagged or changed on GitHub since.
     available: bool,
+    /// Follows the newest checked version.
+    latest: bool,
+    /// Tags of every version that can go into a pack, newest first: the choices when editing.
+    versions: Vec<String>,
     folders: Vec<String>,
 }
 
 async fn entries(state: &AppState, pack: i64) -> sqlx::Result<Vec<PackEntry>> {
     sqlx::query_as(
         "SELECT a.slug::text AS slug, a.name, v.tag, t.trust,
-                (a.deleted_at IS NULL AND v.sha256 IS NOT NULL AND t.trust = ANY($2)) AS available,
+                (a.deleted_at IS NULL AND v.sha256 IS NOT NULL AND t.trust = ANY($2)) AS available, pv.latest,
+                ARRAY(SELECT o.tag FROM versions o JOIN version_trust ot ON ot.version_id = o.id
+                      WHERE o.addon_id = a.id AND o.sha256 IS NOT NULL AND o.deleted_on_github_at IS NULL AND ot.trust = ANY($2)
+                      ORDER BY o.prerelease, o.published_at DESC, o.id DESC) AS versions,
                 ARRAY(SELECT folder::text FROM addon_folders WHERE addon_id = a.id AND active ORDER BY folder) AS folders
          FROM pack_versions pv
          JOIN versions v ON v.id = pv.version_id

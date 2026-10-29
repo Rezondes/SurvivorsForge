@@ -5,7 +5,7 @@
 {% block head %}<meta name="robots" content="noindex">{% endblock %}
 {% block content %}
 <h1>{% if name != "" %}{{ name }}{% else %}Addon pack{% endif %}</h1>
-<p class="muted">{{ entries.len() }} addon{% if entries.len() != 1 %}s{% endif %}{% if created_by != "" %} · by {{ created_by }}{% endif %} · {{ created }}</p>
+<p class="muted">{{ entries.len() }} addon{% if entries.len() != 1 %}s{% endif %}{% if created_by != "" %} · by {{ created_by }}{% endif %} · {{ created }}{% if can_edit %} · <a href="/packs/{{ id }}/edit">Edit the pack</a>{% endif %}</p>
 
 <section class="panel download">
   {% if available %}
@@ -31,7 +31,7 @@
         {% for e in entries %}
         <tr>
           <td><a href="/addons/{{ e.slug }}">{{ e.name }}</a></td>
-          <td>{{ e.tag }}</td>
+          <td>{{ e.tag }}{% if e.latest %} <span class="muted">(newest)</span>{% endif %}</td>
           <td class="check">{% if e.available %}<span class="badge {{ e.notice.class }}">{{ e.notice.badge }}</span>{% else %}<span class="badge bad">Unavailable</span>{% endif %}</td>
           <td>{{ e.folders }}</td>
         </tr>

@@ -108,7 +108,9 @@ can be downloaded without a warning and go into addon packs.
 - **Search and filter**: http://localhost:3080/addons, search field, *Check*, *Category*, *Sort*.
 - **Addon packs**: *Build a pack*, tick some addons, *Create the pack*, then *Download the pack*.
   The first download builds the zip (a few seconds), later ones come straight from the file. Open
-  the pack link in a private window: it works without login.
+  the pack link in a private window: it works without login. *Edit the pack* (creator and admins)
+  renames it, adds or removes addons and sets each one to *Newest* or a fixed version; addons on
+  *Newest* move to every new checked version on their own.
 - **Publish an addon**: *My addons → Publish an addon*, with the repo you installed the App on.
 - **Test a zip**: *My addons → Test a zip* (`/scan`) runs the scanner on an uploaded zip before you
   publish it; nothing is stored.

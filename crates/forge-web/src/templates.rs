@@ -665,6 +665,24 @@ pub struct PackEntry {
     pub available: bool,
     pub notice: Notice,
     pub folders: String,
+    /// Follows the addon's newest checked version.
+    pub latest: bool,
+    /// Tags that can go into a pack, newest first.
+    pub versions: Vec<String>,
+}
+
+#[derive(Template)]
+#[template(path = "packs/edit.html")]
+pub struct PackEditPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub id: String,
+    pub name: String,
+    pub listed: bool,
+    pub entries: Vec<PackEntry>,
+    /// Packable addons not in the pack yet.
+    pub others: Vec<PackChoice>,
+    pub error: Option<String>,
 }
 
 #[derive(Template)]
@@ -683,6 +701,8 @@ pub struct PackPage {
     pub entries: Vec<PackEntry>,
     /// The picker with the addons of this pack that are still available.
     pub rebuild: String,
+    /// The visitor created the pack or is an admin.
+    pub can_edit: bool,
 }
 
 pub struct PackListRow {

@@ -5,7 +5,7 @@ use crate::api_client::ApiError;
 use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
 use crate::error::{WebError, WebResult};
-use crate::templates::{NewPackPage, PackBuildingPage, PackChoice, PackEntry, PackListRow, PackPage, PacksPage, render};
+use crate::templates::{NewPackPage, PackBuildingPage, PackChoice, PackEditPage, PackEntry, PackListRow, PackPage, PacksPage, Visitor, render};
 use crate::trust::notice;
 use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
@@ -82,7 +82,8 @@ pub async fn create_pack(State(state): State<AppState>, jar: PrivateCookieJar, E
     let picked = values(Some(&body), "addon");
     let name = values(Some(&body), "name").pop().unwrap_or_default();
     let listed = !values(Some(&body), "listed").is_empty();
-    let addons: Vec<Value> = picked.iter().map(|slug| json!({ "slug": slug })).collect();
+    let latest = !values(Some(&body), "latest").is_empty();
+    let addons: Vec<Value> = picked.iter().map(|slug| json!({ "slug": slug, "latest": latest })).collect();
     match state.api.post("/v1/packs", Some(&token), &json!({ "name": name.trim(), "listed": listed, "addons": addons })).await {
         Ok(created) => Ok(Redirect::to(&format!("/packs/{}", s(&created["id"]))).into_response()),
         Err(ApiError::Api { status, message, .. }) if status == 422 || status == 429 => {
@@ -138,12 +139,8 @@ fn valid_id(id: &str) -> WebResult<()> {
     if id.len() == 10 && id.bytes().all(|b| b.is_ascii_alphanumeric()) { Ok(()) } else { Err(WebError::NotFound) }
 }
 
-/// `GET /packs/{id}`: what is in the pack, the link to share and the download.
-pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(id): Path<String>) -> WebResult<Html<String>> {
-    valid_id(&id)?;
-    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
-    let p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
-    let entries = p["addons"]
+fn entries(p: &Value) -> Vec<PackEntry> {
+    p["addons"]
         .as_array()
         .into_iter()
         .flatten()
@@ -154,8 +151,23 @@ pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
             available: a["available"] == true,
             notice: notice(a["trust"].as_str().unwrap_or_default(), false, false),
             folders: a["folders"].as_array().into_iter().flatten().map(s).collect::<Vec<_>>().join(", "),
+            latest: a["latest"] == true,
+            versions: a["versions"].as_array().into_iter().flatten().map(s).collect(),
         })
-        .collect::<Vec<PackEntry>>();
+        .collect()
+}
+
+/// The creator of the pack or an admin; the API checks it again.
+fn may_edit(user: Option<&Visitor>, p: &Value) -> bool {
+    user.is_some_and(|u| u.admin || (!u.login.is_empty() && u.login.eq_ignore_ascii_case(p["created_by"].as_str().unwrap_or_default())))
+}
+
+/// `GET /packs/{id}`: what is in the pack, the link to share and the download.
+pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(id): Path<String>) -> WebResult<Html<String>> {
+    valid_id(&id)?;
+    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
+    let entries = entries(&p);
     let kept: Vec<String> = entries.iter().filter(|e| e.available).map(|e| format!("addon={}", e.slug)).collect();
     let rebuild = if kept.is_empty() { "/packs/new".into() } else { format!("/packs/new?{}", kept.join("&")) };
     // A pack without a name is called after its addons, so several open packs can be told apart.
@@ -167,6 +179,7 @@ pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
     };
     Ok(render(&PackPage {
         rebuild,
+        can_edit: may_edit(user.as_ref(), &p),
         user,
         csrf: csrf.0,
         link: format!("{}/packs/{id}", state.config.public_web_url),
@@ -178,6 +191,51 @@ pub async fn pack(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
         entries,
         id,
     }))
+}
+
+/// The edit page of pack `id` as the API's `p` describes it.
+async fn edit_page(state: &AppState, user: Visitor, csrf: String, id: String, p: &Value, error: Option<String>) -> WebResult<PackEditPage> {
+    let entries = entries(p);
+    let mut others = choices(state, &[]).await?;
+    others.retain(|c| !entries.iter().any(|e| e.slug.eq_ignore_ascii_case(&c.slug)));
+    Ok(PackEditPage { user: Some(user), csrf, id, name: s(&p["name"]), listed: p["listed"] == true, entries, others, error })
+}
+
+/// `GET /packs/{id}/edit`: its creator renames the pack, picks versions and adds or removes addons.
+pub async fn edit_pack(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(id): Path<String>) -> WebResult<Html<String>> {
+    valid_id(&id)?;
+    let (user, _) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
+    let p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
+    if !may_edit(Some(&user), &p) {
+        return Err(WebError::Forbidden);
+    }
+    Ok(render(&edit_page(&state, user, csrf.0, id, &p, None).await?))
+}
+
+/// `POST /packs/{id}/edit`: `keep` lists the addons that stay, each with its `version.<slug>`
+/// (`latest` or a tag); `addon` adds others on their newest version.
+pub async fn save_pack(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(id): Path<String>, body: String) -> WebResult<Response> {
+    valid_id(&id)?;
+    let (user, token) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
+    let field = |name: &str| values(Some(&body), name);
+    let mut addons: Vec<Value> = field("keep")
+        .iter()
+        .map(|slug| match field(&format!("version.{slug}")).pop().filter(|v| v != "latest") {
+            Some(tag) => json!({ "slug": slug, "tag": tag }),
+            None => json!({ "slug": slug, "latest": true }),
+        })
+        .collect();
+    addons.extend(field("addon").iter().map(|slug| json!({ "slug": slug, "latest": true })));
+    let change = json!({ "name": field("name").pop().unwrap_or_default().trim(), "listed": !field("listed").is_empty(), "addons": addons });
+    match state.api.call(reqwest::Method::PATCH, &format!("/v1/packs/{id}"), Some(&token), Some(&change)).await {
+        Ok(_) => Ok(Redirect::to(&format!("/packs/{id}")).into_response()),
+        Err(ApiError::Api { status, message, .. }) if status == 422 || status == 403 => {
+            let p = state.api.get(&format!("/v1/packs/{id}"), None).await?;
+            let page = edit_page(&state, user, csrf.0, id, &p, Some(message)).await?;
+            Ok((StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST), render(&page)).into_response())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// How often the building page asks again (every 3 seconds) before it stops: about two minutes.

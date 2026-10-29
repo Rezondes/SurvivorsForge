@@ -244,3 +244,83 @@ async fn only_listed_and_available_packs_are_public(pool: PgPool) {
     let names: Vec<String> = app.get("/v1/packs", None).await.json()["packs"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap().to_string()).collect();
     assert!(names.is_empty(), "packs that cannot be downloaded are not offered: {names:?}");
 }
+
+/// Another checked version `tag` of `slug`, published after the ones before.
+async fn newer_version(app: &TestApp, slug: &str, tag: &str) {
+    let version: i64 = sqlx::query_scalar(
+        "INSERT INTO versions (addon_id, tag, published_at, asset_name, asset_url, asset_size, sha256, scan_status, created_at)
+         SELECT id, $2, now() + interval '1 day', 'a.zip', 'https://github.com/x.zip', 100, 'feed', 'done', now() FROM addons WHERE slug = $1 RETURNING id",
+    )
+    .bind(slug)
+    .bind(tag)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO scans (version_id, sha256, scanner_version, started_at, finished_at, result) VALUES ($1, 'feed', 'x', now(), now(), 'clean')")
+        .bind(version)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+}
+
+fn tags(pack: &serde_json::Value) -> Vec<(String, String, bool)> {
+    pack["addons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| (a["slug"].as_str().unwrap().into(), a["tag"].as_str().unwrap().into(), a["latest"].as_bool().unwrap()))
+        .collect()
+}
+
+#[sqlx::test]
+async fn latest_addons_follow_new_versions(pool: PgPool) {
+    let (app, _dir) = app_with_packs(pool).await;
+    let token = app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
+    checked_version(&app, "lucky", "clean").await;
+    checked_version(&app, "odds", "clean").await;
+    let created = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky", "latest": true }, { "slug": "odds", "tag": "v1" }] })).await;
+    let id = created.json()["id"].as_str().unwrap().to_string();
+    let key = |app: &TestApp| {
+        let pool = app.pool.clone();
+        let id = id.clone();
+        async move { sqlx::query_scalar::<_, String>("SELECT content_key FROM packs WHERE public_id = $1").bind(id).fetch_one(&pool).await.unwrap() }
+    };
+    let before = key(&app).await;
+
+    newer_version(&app, "lucky", "v2").await;
+    newer_version(&app, "odds", "v2").await;
+    let pack = app.get(&format!("/v1/packs/{id}"), None).await.json();
+    assert_eq!(tags(&pack), [("lucky".into(), "v2".into(), true), ("odds".into(), "v1".into(), false)], "only the following addon moves");
+    assert_eq!(pack["addons"][1]["versions"], json!(["v2", "v1"]), "the choices, newest first");
+    assert_ne!(key(&app).await, before, "a new zip for the new versions");
+}
+
+#[sqlx::test]
+async fn creator_changes_name_addons_and_versions(pool: PgPool) {
+    let (app, _dir) = app_with_packs(pool).await;
+    let token = app.publish(1, "alice", "lucky").await;
+    let bob = app.publish(2, "bob", "odds").await;
+    checked_version(&app, "lucky", "clean").await;
+    checked_version(&app, "odds", "clean").await;
+    newer_version(&app, "lucky", "v2").await;
+    let id = app.post("/v1/packs", Some(&token), json!({ "name": "Old", "addons": [{ "slug": "lucky", "tag": "v1" }] })).await.json()["id"].as_str().unwrap().to_string();
+    let uri = format!("/v1/packs/{id}");
+
+    assert_eq!(app.patch(&uri, Some(&bob), json!({ "name": "Mine" })).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(app.patch(&uri, None, json!({ "name": "Mine" })).await.status, StatusCode::UNAUTHORIZED);
+
+    let renamed = app.patch(&uri, Some(&token), json!({ "name": "  My UI ", "listed": true })).await;
+    assert_eq!(renamed.status, StatusCode::OK, "{}", renamed.body);
+    assert_eq!((renamed.json()["name"].as_str(), renamed.json()["listed"].as_bool()), (Some("My UI"), Some(true)));
+    assert_eq!(tags(&renamed.json()), [("lucky".into(), "v1".into(), false)], "addons stay without addons");
+
+    let changed = app.patch(&uri, Some(&token), json!({ "addons": [{ "slug": "lucky", "latest": true }, { "slug": "odds" }] })).await.json();
+    assert_eq!(tags(&changed), [("lucky".into(), "v2".into(), true), ("odds".into(), "v1".into(), false)]);
+    assert_eq!(changed["id"], json!(id), "same link");
+
+    let refused = app.patch(&uri, Some(&token), json!({ "addons": [] })).await;
+    assert_eq!((refused.status, refused.error().as_str()), (StatusCode::UNPROCESSABLE_ENTITY, "empty_pack"));
+    let twice = app.patch(&uri, Some(&token), json!({ "addons": [{ "slug": "lucky", "tag": "v1" }, { "slug": "lucky", "latest": true }] })).await;
+    assert_eq!(twice.error(), "duplicate_addon");
+}

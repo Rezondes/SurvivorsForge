@@ -198,3 +198,62 @@ async fn packs_can_be_listed_when_created() {
     let page = web.post_form("/packs/new", &[("name", "Mine"), ("addon", "lucky"), ("listed", "1")]).await;
     assert_eq!(page.location(), "/packs/AbCdE12345");
 }
+
+fn editable_pack() -> serde_json::Value {
+    json!({ "id": "AbCdE12345", "name": "My UI", "listed": false, "created_at": "2026-10-29T10:00:00Z", "created_by": "alice", "available": true,
+            "addons": [
+                { "slug": "lucky", "name": "Lucky", "tag": "v2", "trust": "scanned", "available": true, "latest": true, "versions": ["v2", "v1"], "folders": ["Lucky"] },
+                { "slug": "odds", "name": "Odds", "tag": "v1", "trust": "scanned", "available": true, "latest": false, "versions": ["v3", "v1"], "folders": ["Odds"] }
+            ],
+            "file": { "status": "none", "size": null, "error": null } })
+}
+
+#[tokio::test]
+async fn new_packs_follow_the_newest_versions_by_default() {
+    let mut web = logged_in().await;
+    let page = web.get("/packs/new").await;
+    assert!(page.body.contains(r#"name="latest" value="1" checked"#), "{}", page.body);
+    Mock::given(method("POST"))
+        .and(path("/v1/packs"))
+        .and(body_partial_json(json!({ "addons": [{ "slug": "lucky", "latest": true }] })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "id": "AbCdE12345" })))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    web.post_form("/packs/new", &[("addon", "lucky"), ("latest", "1")]).await;
+}
+
+#[tokio::test]
+async fn the_creator_edits_the_pack() {
+    let mut web = logged_in().await;
+    Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(editable_pack())).mount(&web.api).await;
+    let page = web.get("/packs/AbCdE12345").await;
+    assert!(page.body.contains(r#"href="/packs/AbCdE12345/edit""#) && page.body.contains("v2 <span class=\"muted\">(newest)</span>"), "{}", page.body);
+
+    let edit = web.get("/packs/AbCdE12345/edit").await;
+    assert_eq!(edit.status, StatusCode::OK, "{}", edit.body);
+    assert!(edit.body.contains(r#"<option value="latest" selected>Newest (now v2)</option>"#), "{}", edit.body);
+    assert!(edit.body.contains(r#"<option value="v1" selected>v1</option>"#), "odds stays on v1: {}", edit.body);
+    assert!(edit.body.contains(r#"value="aether""#) && !edit.body.contains(r#"name="addon" value="lucky""#), "only addons not in the pack can be added");
+
+    Mock::given(method("PATCH"))
+        .and(path("/v1/packs/AbCdE12345"))
+        .and(body_partial_json(json!({ "name": "Renamed", "listed": true, "addons": [{ "slug": "odds", "tag": "v3" }, { "slug": "aether", "latest": true }] })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_pack()))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let saved = web
+        .post_form("/packs/AbCdE12345/edit", &[("name", "Renamed"), ("listed", "1"), ("keep", "odds"), ("version.odds", "v3"), ("version.lucky", "latest"), ("addon", "aether")])
+        .await;
+    assert_eq!((saved.status, saved.location()), (StatusCode::SEE_OTHER, "/packs/AbCdE12345"));
+}
+
+#[tokio::test]
+async fn only_the_creator_edits_the_pack() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("bob", "user")).await;
+    Mock::given(method("GET")).and(path("/v1/packs/AbCdE12345")).respond_with(ResponseTemplate::new(200).set_body_json(editable_pack())).mount(&web.api).await;
+    assert!(!web.get("/packs/AbCdE12345").await.body.contains("/edit\""), "no link for others");
+    assert_eq!(web.get("/packs/AbCdE12345/edit").await.status, StatusCode::FORBIDDEN);
+}

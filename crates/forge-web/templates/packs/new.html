@@ -26,6 +26,8 @@
     {% endfor %}
   </fieldset>
   <p class="muted">Only checked versions go into a pack. Flagged or unchecked ones are not listed.</p>
+  <label class="check"><input type="checkbox" name="latest" value="1" checked> Keep every addon on its newest checked version</label>
+  <p class="muted">Without it, the pack keeps the versions shown above. You can change both later.</p>
   <label class="check"><input type="checkbox" name="listed" value="1"> Show it on the public pack list</label>
   <p class="muted">Without it, only people with the link find the pack.</p>
   <p><button type="submit">Create the pack</button></p>
