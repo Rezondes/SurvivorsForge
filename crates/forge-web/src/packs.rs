@@ -160,7 +160,7 @@ fn entries(p: &Value) -> Vec<PackEntry> {
 
 /// The creator of the pack or an admin; the API checks it again.
 fn may_edit(user: Option<&Visitor>, p: &Value) -> bool {
-    user.is_some_and(|u| u.admin || (!u.login.is_empty() && u.login.eq_ignore_ascii_case(p["created_by"].as_str().unwrap_or_default())))
+    user.is_some_and(|u| u.staff || (!u.login.is_empty() && u.login.eq_ignore_ascii_case(p["created_by"].as_str().unwrap_or_default())))
 }
 
 /// `GET /packs/{id}?msg=`: what is in the pack, the link to share and the download.

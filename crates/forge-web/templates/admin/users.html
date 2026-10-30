@@ -5,22 +5,28 @@
 <h1>Users</h1>
 {% include "admin/flash.html" %}
 <section class="panel">
-  <h2>Admins</h2>
+  <h2>Moderators and admins</h2>
   {% for a in admins %}
   <div class="member">
-    <strong>{{ a.login }}</strong>
+    <strong>{{ a.login }}</strong> <span class="badge">{{ a.role }}</span>
     {% if a.by_config %}
       <span class="muted">set in ADMIN_GITHUB_IDS on the server</span>
-    {% else %}
-    <form method="post" action="/admin/users/{{ a.github_id }}/remove-admin">
+    {% else if manage_roles %}
+    <form method="post" action="/admin/users/{{ a.github_id }}/role">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="">
-      <label class="sr-only" for="revoke-{{ a.github_id }}">Note</label><input id="revoke-{{ a.github_id }}" name="note" placeholder="Note" required>
-      <button type="submit" class="danger">Take admin rights</button>
+      <label class="sr-only" for="role-{{ a.github_id }}">Role</label>
+      <select id="role-{{ a.github_id }}" name="role">
+        <option value="user">User</option>
+        <option value="moderator"{% if a.role == "moderator" %} selected{% endif %}>Moderator</option>
+        <option value="admin"{% if a.role == "admin" %} selected{% endif %}>Admin</option>
+      </select>
+      <label class="sr-only" for="note-{{ a.github_id }}">Note</label><input id="note-{{ a.github_id }}" name="note" placeholder="Note" required>
+      <button type="submit">Change role</button>
     </form>
     {% endif %}
   </div>
   {% endfor %}
-  <p class="muted">To make someone an admin, look them up below. They must have logged in here once.</p>
+  {% if manage_roles %}<p class="muted">To give someone a role, look them up below. They must have logged in here once.</p>{% endif %}
 </section>
 <form class="panel" method="get" action="/admin/users">
   <label for="login">GitHub login</label>
@@ -31,26 +37,36 @@
 {% if let Some(u) = found %}
 <section class="panel">
   <h2>{{ u.login }}</h2>
-  <p>Role: {{ u.role }} · Owns {{ u.addons }} addon{% if u.addons != 1 %}s{% endif %}{% if u.banned %} · <span class="badge bad">Banned</span> {{ u.ban_reason }}{% endif %}</p>
+  <p>Role: <span class="badge">{{ u.role }}</span> · Owns {{ u.addons }} addon{% if u.addons != 1 %}s{% endif %}{% if u.banned %} · <span class="badge bad">Banned</span> {{ u.ban_reason }}{% endif %}</p>
   {% if u.banned %}
   <form method="post" action="/admin/users/{{ u.github_id }}/unban" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="{{ u.login }}">
     <label for="unban-note">Note</label><input id="unban-note" name="note" required>
     <button type="submit">Lift the ban</button>
   </form>
-  {% else if u.role != "admin" %}
-  <form method="post" action="/admin/users/{{ u.github_id }}/make-admin" class="admin-actions">
+  {% else %}
+  {% if manage_roles %}
+  <form method="post" action="/admin/users/{{ u.github_id }}/role" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="{{ u.login }}">
-    <label for="grant-note">Why</label><input id="grant-note" name="note" required>
-    <p class="muted">Admins review and verify versions, block addons, ban users and manage the lists.</p>
-    <button type="submit">Make {{ u.login }} an admin</button>
+    <label for="role">Role</label>
+    <select id="role" name="role">
+      <option value="user"{% if u.role == "user" %} selected{% endif %}>User</option>
+      <option value="moderator"{% if u.role == "moderator" %} selected{% endif %}>Moderator</option>
+      <option value="admin"{% if u.role == "admin" %} selected{% endif %}>Admin</option>
+    </select>
+    <label for="role-note">Why</label><input id="role-note" name="note" required>
+    <p class="muted">Moderators review and verify versions, block addons, ban users and manage the lists. Admins also give roles and see the monitoring.</p>
+    <button type="submit">Change the role of {{ u.login }}</button>
   </form>
+  {% endif %}
+  {% if u.role == "user" || (u.role == "moderator" && manage_roles) %}
   <form method="post" action="/admin/users/{{ u.github_id }}/ban" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="{{ u.login }}">
     <label for="ban-note">Reason</label><input id="ban-note" name="note" required>
     <p class="muted">Banning ends their sessions and blocks every addon they own until the ban is lifted.</p>
     <button type="submit" class="danger">Ban {{ u.login }}</button>
   </form>
+  {% endif %}
   {% endif %}
 </section>
 {% endif %}

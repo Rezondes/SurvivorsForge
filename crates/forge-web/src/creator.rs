@@ -305,7 +305,7 @@ pub async fn repo_suggestions(State(state): State<AppState>, jar: PrivateCookieJ
 pub async fn repo_pick(State(state): State<AppState>, jar: PrivateCookieJar, Query(q): Query<RepoQuery>) -> WebResult<Html<String>> {
     let (user, token) = me(&state, &jar).await?;
     let (owner, name) = q.repo.split_once('/').unwrap_or(("", q.repo.as_str()));
-    let repo = if q.page == "admin" && user.admin {
+    let repo = if q.page == "admin" && user.staff {
         repo_field(owner, name, true, true)
     } else {
         creator_field(&state, &token, &user, owner, name, true).await

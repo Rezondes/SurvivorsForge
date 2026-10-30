@@ -3,6 +3,7 @@
 
 use askama::Template;
 use axum::response::Html;
+pub use forge_core::roles::Permission;
 use serde_json::Value;
 
 /// The logged-in visitor as the API describes them (`/v1/me`).
@@ -10,16 +11,27 @@ use serde_json::Value;
 pub struct Visitor {
     pub login: String,
     pub avatar_url: String,
-    pub admin: bool,
+    pub role: String,
+    /// What the API lets this user do (`forge_core::roles`), e.g. `moderate`.
+    pub permissions: Vec<String>,
+    /// Moderators and admins: they see the admin pages.
+    pub staff: bool,
 }
 
 impl Visitor {
     pub fn from_me(me: &Value) -> Visitor {
+        let permissions: Vec<String> = me["permissions"].as_array().into_iter().flatten().filter_map(|p| p.as_str().map(str::to_string)).collect();
         Visitor {
             login: me["login"].as_str().unwrap_or_default().to_string(),
             avatar_url: me["avatar_url"].as_str().unwrap_or_default().to_string(),
-            admin: me["role"] == "admin",
+            role: me["role"].as_str().unwrap_or("user").to_string(),
+            staff: permissions.iter().any(|p| p == Permission::Moderate.as_str()),
+            permissions,
         }
+    }
+
+    pub fn can(&self, permission: Permission) -> bool {
+        self.permissions.iter().any(|p| p == permission.as_str())
     }
 }
 
@@ -535,6 +547,8 @@ pub struct AdminUsersPage {
     pub user: Option<Visitor>,
     pub csrf: String,
     pub admins: Vec<AdminRow>,
+    /// The viewer may give roles and ban moderators.
+    pub manage_roles: bool,
     pub login: String,
     pub found: Option<UserRow>,
     pub not_found: bool,
@@ -545,6 +559,7 @@ pub struct AdminUsersPage {
 pub struct AdminRow {
     pub github_id: i64,
     pub login: String,
+    pub role: String,
     /// From ADMIN_GITHUB_IDS: only the configuration can take it away.
     pub by_config: bool,
 }

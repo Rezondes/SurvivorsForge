@@ -6,7 +6,7 @@ use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
 use crate::error::{WebError, WebResult};
 use crate::templates::{
-    AdminAddAddonPage, AdminAddonPage, AdminAuditPage, AdminIndexPage, AdminListPage, AdminReportsPage, AdminReviewPage, AdminUsersPage, Visitor, render,
+    AdminAddAddonPage, AdminAddonPage, AdminAuditPage, AdminIndexPage, AdminListPage, AdminReportsPage, AdminReviewPage, AdminUsersPage, Permission, Visitor, render,
 };
 use axum::Extension;
 use axum::extract::{Form, Path, Query, State};
@@ -17,10 +17,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-/// The logged-in admin, or `403` for everyone else.
+/// The logged-in moderator or admin, or `403` for everyone else.
 async fn admin(state: &AppState, jar: &PrivateCookieJar) -> WebResult<(Visitor, String)> {
     let (user, token) = visitor(state, jar).await?.ok_or(WebError::LoginRequired)?;
-    if !user.admin {
+    if !user.staff {
         return Err(WebError::Forbidden);
     }
     Ok((user, token))
@@ -59,6 +59,8 @@ fn s(v: &Value) -> String {
 pub struct NoteForm {
     #[serde(default)]
     note: String,
+    #[serde(default)]
+    role: String,
     #[serde(default)]
     status: String,
     #[serde(default)]
@@ -270,12 +272,13 @@ pub async fn users(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         .as_array()
         .into_iter()
         .flatten()
-        .map(|a| crate::templates::AdminRow { github_id: a["github_id"].as_i64().unwrap_or(0), login: s(&a["login"]), by_config: a["by_config"] == true })
+        .map(|a| crate::templates::AdminRow { github_id: a["github_id"].as_i64().unwrap_or(0), login: s(&a["login"]), role: s(&a["role"]), by_config: a["by_config"] == true })
         .collect();
-    Ok(render(&AdminUsersPage { user: Some(user), csrf: csrf.0, admins, login, found, not_found, msg: flash.msg, error: flash.error }))
+    let manage_roles = user.can(Permission::ManageRoles);
+    Ok(render(&AdminUsersPage { user: Some(user), csrf: csrf.0, admins, manage_roles, login, found, not_found, msg: flash.msg, error: flash.error }))
 }
 
-/// `ban`, `unban`, `make-admin` and `remove-admin` for one user.
+/// `ban`, `unban` and `role` (the form's `role`) for one user.
 pub async fn ban(State(state): State<AppState>, jar: PrivateCookieJar, Path((github_id, action)): Path<(i64, String)>, Form(form): Form<NoteForm>) -> WebResult<Response> {
     let (_, token) = admin(&state, &jar).await?;
     let (result, done) = match action.as_str() {
@@ -284,10 +287,10 @@ pub async fn ban(State(state): State<AppState>, jar: PrivateCookieJar, Path((git
             let result = state.api.call(method, &format!("/v1/admin/users/{github_id}/ban"), Some(&token), Some(&json!({ "note": form.note }))).await;
             (result, if action == "unban" { "Ban lifted." } else { "User banned." })
         }
-        "make-admin" | "remove-admin" => {
-            let body = json!({ "role": if action == "make-admin" { "admin" } else { "user" }, "note": form.note });
+        "role" => {
+            let body = json!({ "role": form.role, "note": form.note });
             let result = state.api.call(Method::PUT, &format!("/v1/admin/users/{github_id}/role"), Some(&token), Some(&body)).await;
-            (result, if action == "make-admin" { "Admin rights granted." } else { "Admin rights taken." })
+            (result, "Role changed.")
         }
         _ => return Err(WebError::NotFound),
     };

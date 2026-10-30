@@ -145,6 +145,9 @@ impl TestWeb {
     }
 }
 
+/// `/v1/me` as the API answers it, with the permissions of the default `ADMIN_STATS_ROLES`.
 pub fn me(login: &str, role: &str) -> Value {
-    json!({ "id": 1, "github_id": 1, "login": login, "avatar_url": "https://avatars.githubusercontent.com/u/1", "role": role })
+    use forge_core::roles::{self, Role};
+    let permissions = roles::permissions(role.parse().unwrap_or(Role::User), &[Role::Admin, Role::Moderator]);
+    json!({ "id": 1, "github_id": 1, "login": login, "avatar_url": "https://avatars.githubusercontent.com/u/1", "role": role, "permissions": permissions })
 }

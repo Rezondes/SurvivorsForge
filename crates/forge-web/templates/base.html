@@ -28,7 +28,7 @@
       {% match user %}
       {% when Some with (u) %}
         <a href="/me/addons">My addons</a>
-        {% if u.admin %}<a href="/admin">Admin</a>{% endif %}
+        {% if u.staff %}<a href="/admin">Admin</a>{% endif %}
         <form method="post" action="/logout" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <button type="submit" class="link">Log out {{ u.login }}</button>

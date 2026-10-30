@@ -301,25 +301,56 @@ async fn audit_filters() {
 }
 
 #[tokio::test]
-async fn admins_are_listed_and_granted_on_the_users_page() {
+async fn staff_is_listed_and_roles_are_set_on_the_users_page() {
     let mut web = as_admin().await;
     get_json(&web, "/v1/admin/admins", json!([
-        { "github_id": 99, "login": "root", "by_config": true, "granted": false },
-        { "github_id": 7, "login": "mia", "by_config": false, "granted": true },
+        { "github_id": 99, "login": "root", "role": "admin", "by_config": true, "granted": false },
+        { "github_id": 7, "login": "mia", "role": "moderator", "by_config": false, "granted": true },
     ]))
     .await;
     get_json(&web, "/v1/admin/users/eve", json!({ "github_id": 5, "login": "eve", "role": "user", "banned": false, "addons": 0 })).await;
     let page = web.get("/admin/users?login=eve").await;
     assert!(page.body.contains("root") && page.body.contains("ADMIN_GITHUB_IDS"), "{}", page.body);
-    assert!(page.body.contains("/admin/users/7/remove-admin"), "granted admins can lose the right");
-    assert!(!page.body.contains("/admin/users/99/remove-admin"), "config admins cannot");
-    assert!(page.body.contains("Make eve an admin"));
+    assert!(page.body.contains(r#"<span class="badge">moderator</span>"#), "roles as badges");
+    assert!(page.body.contains(r#"action="/admin/users/7/role""#), "given roles can be changed");
+    assert!(!page.body.contains(r#"action="/admin/users/99/role""#), "config admins cannot");
+    assert!(page.body.contains(r#"action="/admin/users/5/role""#) && page.body.contains(r#"<option value="moderator">"#));
 
-    expect(&web, "PUT", "/v1/admin/users/5/role", json!({ "role": "admin", "note": "helps out" })).await;
-    let done = web.post_form("/admin/users/5/make-admin", &[("note", "helps out"), ("login", "eve")]).await;
+    expect(&web, "PUT", "/v1/admin/users/5/role", json!({ "role": "moderator", "note": "helps out" })).await;
+    let done = web.post_form("/admin/users/5/role", &[("role", "moderator"), ("note", "helps out"), ("login", "eve")]).await;
     assert!(done.location().starts_with("/admin/users?login=eve&msg="), "{}", done.location());
     expect(&web, "PUT", "/v1/admin/users/7/role", json!({ "role": "user", "note": "left" })).await;
-    web.post_form("/admin/users/7/remove-admin", &[("note", "left"), ("login", "")]).await;
+    web.post_form("/admin/users/7/role", &[("role", "user"), ("note", "left"), ("login", "")]).await;
+}
+
+#[tokio::test]
+async fn moderator_sees_admin_pages() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("mia", "moderator")).await;
+    get_json(&web, "/v1/admin/reports", json!([])).await;
+    get_json(&web, "/v1/admin/review-queue", json!([])).await;
+    get_json(&web, "/v1/admin/admins", json!([])).await;
+    let home = web.get("/").await;
+    assert!(home.body.contains(r#"<a href="/admin">Admin</a>"#), "the navigation links the admin pages");
+    for page in ["/admin", "/admin/review", "/admin/reports", "/admin/users"] {
+        assert_eq!(web.get(page).await.status, StatusCode::OK, "{page}");
+    }
+}
+
+#[tokio::test]
+async fn only_role_managers_see_role_select() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("mia", "moderator")).await;
+    get_json(&web, "/v1/admin/admins", json!([{ "github_id": 7, "login": "mia", "role": "moderator", "by_config": false, "granted": true }])).await;
+    get_json(&web, "/v1/admin/users/max", json!({ "github_id": 8, "login": "max", "role": "moderator", "banned": false, "addons": 0 })).await;
+    let page = web.get("/admin/users?login=max").await;
+    assert!(!page.body.contains("/role\""), "no role forms for moderators: {}", page.body);
+    assert!(!page.body.contains(r#"action="/admin/users/8/ban""#), "moderators cannot ban other staff");
+    assert!(page.body.contains("Role: <span class=\"badge\">moderator</span>"));
+
+    get_json(&web, "/v1/admin/users/eve", json!({ "github_id": 5, "login": "eve", "role": "user", "banned": false, "addons": 0 })).await;
+    let page = web.get("/admin/users?login=eve").await;
+    assert!(page.body.contains(r#"action="/admin/users/5/ban""#), "plain users can be banned");
 }
 
 #[tokio::test]

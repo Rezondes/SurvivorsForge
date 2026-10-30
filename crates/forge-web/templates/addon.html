@@ -12,7 +12,7 @@
   {% if let Some(icon) = icon_url %}<img class="icon big" src="{{ icon }}" alt="" width="96" height="96">{% endif %}
   <div>
     <h1>{{ name }}</h1>
-    <p class="muted">by {{ author }}{% if !claimed && user.is_some() %} (not claimed on this site yet){% endif %} · <a href="/addons?category={{ category|urlencode }}">{{ category }}</a> · <a href="https://github.com/{{ repo }}" rel="external noopener">GitHub</a>{% if let Some(u) = user %}{% if u.admin %} · <a href="/admin/addons/{{ slug }}">Manage as admin</a>{% endif %}{% endif %}</p>
+    <p class="muted">by {{ author }}{% if !claimed && user.is_some() %} (not claimed on this site yet){% endif %} · <a href="/addons?category={{ category|urlencode }}">{{ category }}</a> · <a href="https://github.com/{{ repo }}" rel="external noopener">GitHub</a>{% if let Some(u) = user %}{% if u.staff %} · <a href="/admin/addons/{{ slug }}">Manage as admin</a>{% endif %}{% endif %}</p>
     <p>{{ summary }}</p>
   </div>
 </header>
