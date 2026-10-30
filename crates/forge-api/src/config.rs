@@ -39,6 +39,8 @@ pub struct Config {
     pub public_image_url: String,
     /// Secret of the GitHub App webhook, checked against `X-Hub-Signature-256`.
     pub github_webhook_secret: String,
+    /// `owner/name` of the launcher's own repository, whose release downloads `/stats` shows.
+    pub launcher_repo: String,
     /// Versions the source check looks at per run.
     pub source_check_batch: i64,
     /// Where uploaded images are stored; the reverse proxy serves it as `public_image_url`.
@@ -92,6 +94,7 @@ impl Config {
         "PUBLIC_IMAGE_URL",
         "GITHUB_WEBHOOK_SECRET",
         "SOURCE_CHECK_BATCH",
+        "LAUNCHER_REPO",
         "IMAGE_DIR",
         "PACK_DIR",
         "PUBLIC_PACK_URL",
@@ -152,6 +155,7 @@ impl Config {
                 .collect::<Result<_, _>>()?,
             public_image_url: required("PUBLIC_IMAGE_URL")?.trim_end_matches('/').to_string(),
             github_webhook_secret: required("GITHUB_WEBHOOK_SECRET")?,
+            launcher_repo: parse("LAUNCHER_REPO", "Rezondes/SurvivorsForge")?,
             source_check_batch: {
                 let batch = parse("SOURCE_CHECK_BATCH", "200")?;
                 batch.parse().map_err(|_| invalid("SOURCE_CHECK_BATCH", &batch))?
@@ -194,6 +198,7 @@ impl Config {
             stats_roles: vec![forge_core::roles::Role::Admin, forge_core::roles::Role::Moderator],
             public_image_url: "https://web.test/img".into(),
             github_webhook_secret: "webhook-secret".into(),
+            launcher_repo: "Rezondes/SurvivorsForge".into(),
             source_check_batch: 200,
             image_dir: std::env::temp_dir().join("forge-test-images").to_string_lossy().into_owned(),
             pack_dir: std::env::temp_dir().join("forge-test-packs").to_string_lossy().into_owned(),

@@ -113,6 +113,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `TRUSTED_PROXIES` | no, set by Compose | Proxies whose `X-Forwarded-For` counts | API: `FORGE_CADDY_IP` and `FORGE_WEB_IP`; website: `FORGE_CADDY_IP` |
 | `WEBSITE_IP` | no, set by Compose | The website's address; it limits each visitor itself, so the API does not count its requests again | `FORGE_WEB_IP` |
 | `SOURCE_CHECK_BATCH` | no | Versions compared with GitHub per 6-hourly run | `200` |
+| `LAUNCHER_REPO` | no | GitHub repository of the launcher; `/stats` shows its release downloads | `Rezondes/SurvivorsForge` |
 | `GITHUB_API_URL` | no | GitHub REST API | `https://api.github.com` |
 | `GITHUB_READ_TOKEN` | no | Token for public reads of repos without the App; GitHub then allows 5000 instead of 60 requests per hour. A fine-grained token with *Public repositories (read-only)* and no permissions | `github_pat_...` |
 | `GITHUB_APP_ID` | yes | App ID from step 1 | `123456` |

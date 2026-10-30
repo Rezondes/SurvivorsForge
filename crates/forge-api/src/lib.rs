@@ -10,6 +10,7 @@ pub mod error;
 pub mod github;
 pub mod images;
 pub mod jobs;
+pub mod launcher_stats;
 pub mod pack_job;
 pub mod rate_limit;
 pub mod request_stats;
