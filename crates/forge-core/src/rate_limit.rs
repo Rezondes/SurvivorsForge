@@ -12,6 +12,19 @@ pub struct RateLimiter {
     window: Mutex<(Instant, HashMap<IpAddr, u32>)>,
 }
 
+/// The client address behind `trusted_proxies`; see `RateLimiter::client_ip`.
+pub fn client_ip(trusted_proxies: &[IpAddr], peer: IpAddr, forwarded_for: Option<&str>) -> IpAddr {
+    if !trusted_proxies.contains(&peer) {
+        return peer;
+    }
+    forwarded_for
+        .into_iter()
+        .flat_map(|h| h.rsplit(','))
+        .filter_map(|ip| ip.trim().parse::<IpAddr>().ok())
+        .find(|ip| !trusted_proxies.contains(ip))
+        .unwrap_or(peer)
+}
+
 impl RateLimiter {
     pub fn new(per_minute: u32, trusted_proxies: Vec<IpAddr>) -> RateLimiter {
         RateLimiter { per_minute, trusted_proxies, window: Mutex::new((Instant::now(), HashMap::new())) }
@@ -20,15 +33,7 @@ impl RateLimiter {
     /// The client address. `X-Forwarded-For` only counts when the direct peer is a trusted proxy;
     /// then the rightmost address that is not a trusted proxy is the client.
     pub fn client_ip(&self, peer: IpAddr, forwarded_for: Option<&str>) -> IpAddr {
-        if !self.trusted_proxies.contains(&peer) {
-            return peer;
-        }
-        forwarded_for
-            .into_iter()
-            .flat_map(|h| h.rsplit(','))
-            .filter_map(|ip| ip.trim().parse::<IpAddr>().ok())
-            .find(|ip| !self.trusted_proxies.contains(ip))
-            .unwrap_or(peer)
+        client_ip(&self.trusted_proxies, peer, forwarded_for)
     }
 
     /// Counts one request; false when the limit for this minute is used up.

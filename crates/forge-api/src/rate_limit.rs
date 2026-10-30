@@ -12,6 +12,24 @@ use std::time::Instant;
 
 pub use forge_core::rate_limit::RateLimiter;
 
+/// The visitor's address behind Caddy (`TRUSTED_PROXIES`), for handlers that count per visitor.
+pub struct VisitorIp(pub IpAddr);
+
+impl axum::extract::FromRequestParts<crate::app::AppState> for VisitorIp {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &crate::app::AppState) -> Result<Self, Self::Rejection> {
+        let peer = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|c| c.0.ip())
+            .or_else(|| parts.extensions.get::<MockConnectInfo<SocketAddr>>().map(|c| c.0.ip()))
+            .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+        let forwarded = parts.headers.get("x-forwarded-for").and_then(|v| v.to_str().ok());
+        Ok(VisitorIp(forge_core::rate_limit::client_ip(&state.config.trusted_proxies, peer, forwarded)))
+    }
+}
+
 /// The address of the direct sender (Caddy or the website, not the visitor behind them).
 pub fn peer_ip(request: &Request) -> IpAddr {
     // Tests set the peer with `MockConnectInfo`.

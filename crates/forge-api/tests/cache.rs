@@ -51,3 +51,14 @@ async fn private_routes_are_never_cached(pool: PgPool) {
     sqlx::query("UPDATE addons SET deleted_at = now() WHERE slug = 'lucky'").execute(&app.pool).await.unwrap();
     assert_eq!(app.get("/v1/me/addons", Some(&token)).await.json().as_array().unwrap().len(), 0);
 }
+
+#[sqlx::test]
+async fn telemetry_keeps_the_cache(pool: PgPool) {
+    let app = cached_app(pool).await;
+    app.publish(1, "alice", "lucky").await;
+    let first = app.get("/v1/addons/lucky", None).await.json()["name"].clone();
+    rename_directly(&app, "Changed").await;
+    let event = json!({ "kind": "install", "addon": "lucky", "version": "v1", "launcher_version": "0.4.3", "os": "windows" });
+    assert_eq!(app.post("/v1/telemetry/events", None, json!({ "events": [event] })).await.status, StatusCode::ACCEPTED);
+    assert_eq!(app.get("/v1/addons/lucky", None).await.json()["name"], first, "counting changes no cached answer");
+}

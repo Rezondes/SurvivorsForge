@@ -16,6 +16,7 @@ pub mod rate_limit;
 pub mod request_stats;
 pub mod routes;
 pub mod scan_job;
+pub mod sender;
 pub mod source_check;
 pub mod suggest;
 pub mod sync;
