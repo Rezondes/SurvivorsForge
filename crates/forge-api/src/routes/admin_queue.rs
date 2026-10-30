@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::audit::{self, Entry};
-use crate::auth::AdminUser;
+use crate::auth::StaffUser;
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 /// Versions an admin should look at, oldest first: flagged ones, changed files, and new versions
 /// of addons whose author already had a verified version. Skipped ones stay off while their trust holds.
-pub async fn review_queue(State(state): State<AppState>, AdminUser(_): AdminUser) -> ApiResult<Json<Value>> {
+pub async fn review_queue(State(state): State<AppState>, StaffUser(_): StaffUser) -> ApiResult<Json<Value>> {
     let list: Value = sqlx::query_scalar(
         "WITH queue AS (
              SELECT v.id, v.tag, v.created_at, v.addon_id, t.trust,
@@ -54,7 +54,7 @@ pub struct AuditQuery {
 
 pub const AUDIT_PAGE: i64 = 50;
 
-pub async fn audit_log(State(state): State<AppState>, AdminUser(_): AdminUser, Query(q): Query<AuditQuery>) -> ApiResult<Json<Value>> {
+pub async fn audit_log(State(state): State<AppState>, StaffUser(_): StaffUser, Query(q): Query<AuditQuery>) -> ApiResult<Json<Value>> {
     let page = q.page.unwrap_or(1).max(1);
     let empty = |v: &Option<String>| v.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     let page_json: Value = sqlx::query_scalar(
@@ -82,7 +82,7 @@ pub async fn audit_log(State(state): State<AppState>, AdminUser(_): AdminUser, Q
 }
 
 /// A platform user by GitHub login, for the ban and owner forms.
-pub async fn user(State(state): State<AppState>, AdminUser(_): AdminUser, Path(login): Path<String>) -> ApiResult<Json<Value>> {
+pub async fn user(State(state): State<AppState>, StaffUser(_): StaffUser, Path(login): Path<String>) -> ApiResult<Json<Value>> {
     let user: Option<Value> = sqlx::query_scalar(
         "SELECT json_build_object('github_id', u.github_id, 'login', u.login, 'role', u.role, 'banned', u.banned_at IS NOT NULL,
                                   'ban_reason', u.ban_reason, 'addons', (SELECT count(*) FROM addons WHERE owner_id = u.id AND deleted_at IS NULL))
@@ -138,7 +138,7 @@ async fn check_parent(state: &AppState, parent: &str, child: Option<&str>) -> Ap
     Ok(())
 }
 
-pub async fn create_category(State(state): State<AppState>, AdminUser(admin): AdminUser, Json(body): Json<CategoryBody>) -> ApiResult<StatusCode> {
+pub async fn create_category(State(state): State<AppState>, StaffUser(admin): StaffUser, Json(body): Json<CategoryBody>) -> ApiResult<StatusCode> {
     let name = valid_category(body.name.as_deref().unwrap_or_default())?;
     let parent = body.parent.as_deref().map(str::trim).filter(|p| !p.is_empty());
     if let Some(parent) = parent {
@@ -163,7 +163,7 @@ pub async fn create_category(State(state): State<AppState>, AdminUser(admin): Ad
 /// Renames or reorders; addons follow a rename through the foreign key.
 pub async fn update_category(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(name): Path<String>,
     Json(body): Json<CategoryBody>,
 ) -> ApiResult<StatusCode> {
@@ -201,7 +201,7 @@ pub async fn update_category(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn delete_category(State(state): State<AppState>, AdminUser(admin): AdminUser, Path(name): Path<String>) -> ApiResult<StatusCode> {
+pub async fn delete_category(State(state): State<AppState>, StaffUser(admin): StaffUser, Path(name): Path<String>) -> ApiResult<StatusCode> {
     let used: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM addons WHERE category = $1::citext)").bind(&name).fetch_one(&state.pool).await?;
     if used {
         return Err(ApiError::new(StatusCode::CONFLICT, "category_in_use", "Addons still use this category"));

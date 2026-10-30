@@ -11,7 +11,9 @@ use axum::http::StatusCode;
 use axum::http::request::Parts;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use crate::config::Config;
 use chrono::{DateTime, Utc};
+use forge_core::roles::{self, Permission, Role};
 use sha2::{Digest, Sha256};
 
 /// 32 random bytes, base64url without padding.
@@ -35,8 +37,18 @@ pub struct CurrentUser {
 }
 
 impl CurrentUser {
-    pub fn is_admin(&self) -> bool {
-        self.role == "admin"
+    /// Unknown names in the database count as `user`; the column check keeps them out anyway.
+    pub fn role(&self) -> Role {
+        self.role.parse().unwrap_or(Role::User)
+    }
+
+    /// Moderators and admins: they may act on every addon, pack and user like an admin.
+    pub fn is_staff(&self) -> bool {
+        self.role().is_staff()
+    }
+
+    pub fn can(&self, permission: Permission, config: &Config) -> bool {
+        roles::allows(self.role(), permission, &config.stats_roles)
     }
 }
 
@@ -71,17 +83,33 @@ impl FromRequestParts<AppState> for CurrentUser {
     }
 }
 
-/// A logged-in admin; everyone else gets `403`.
+/// The logged-in user, if they have `permission`; everyone else gets `403`.
+async fn permitted(parts: &mut Parts, state: &AppState, permission: Permission, message: &'static str) -> Result<CurrentUser, ApiError> {
+    let user = CurrentUser::from_request_parts(parts, state).await?;
+    if !user.can(permission, &state.config) {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "forbidden", message));
+    }
+    Ok(user)
+}
+
+/// A logged-in moderator or admin: everything under `/admin` except roles.
+pub struct StaffUser(pub CurrentUser);
+
+impl FromRequestParts<AppState> for StaffUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        permitted(parts, state, Permission::Moderate, "Moderators and admins only").await.map(StaffUser)
+    }
+}
+
+/// A logged-in admin, for what moderators may not do: giving roles.
 pub struct AdminUser(pub CurrentUser);
 
 impl FromRequestParts<AppState> for AdminUser {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        let user = CurrentUser::from_request_parts(parts, state).await?;
-        if !user.is_admin() {
-            return Err(ApiError::new(StatusCode::FORBIDDEN, "forbidden", "Admins only"));
-        }
-        Ok(AdminUser(user))
+        permitted(parts, state, Permission::ManageRoles, "Admins only").await.map(AdminUser)
     }
 }

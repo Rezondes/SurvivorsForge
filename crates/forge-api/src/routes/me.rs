@@ -10,8 +10,12 @@ use axum::Json;
 use axum::extract::{FromRequestParts, Path, Query, Request, State};
 use axum::http::StatusCode;
 
-pub async fn me(user: CurrentUser) -> Json<CurrentUser> {
-    Json(user)
+/// The logged-in user and what they may do (`permissions`, from `forge_core::roles`).
+pub async fn me(State(state): State<AppState>, user: CurrentUser) -> Json<Value> {
+    let permissions = forge_core::roles::permissions(user.role(), &state.config.stats_roles);
+    let mut me = serde_json::to_value(&user).unwrap_or_default();
+    me["permissions"] = json!(permissions);
+    Json(me)
 }
 
 fn github_down(e: crate::github::GitHubError) -> ApiError {
@@ -44,7 +48,7 @@ async fn repo_owner(state: &AppState, user: &CurrentUser, wanted: Option<&str>) 
     if owner.len() > 39 || !owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_owner", "Not a GitHub account name"));
     }
-    let mine = owner.eq_ignore_ascii_case(&user.login) || user.is_admin() || accounts_of(state, user).await?.iter().any(|a| a.eq_ignore_ascii_case(owner));
+    let mine = owner.eq_ignore_ascii_case(&user.login) || user.is_staff() || accounts_of(state, user).await?.iter().any(|a| a.eq_ignore_ascii_case(owner));
     if !mine {
         return Err(ApiError::new(StatusCode::FORBIDDEN, "not_your_account", "You can publish repos of your account and your organizations only"));
     }

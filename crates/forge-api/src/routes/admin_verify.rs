@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::audit::{self, Entry};
-use crate::auth::AdminUser;
+use crate::auth::StaffUser;
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
 use axum::extract::{Path, State};
@@ -18,7 +18,7 @@ pub struct VerifyBody {
 
 pub async fn verify(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(version_id): Path<i64>,
     Json(body): Json<VerifyBody>,
 ) -> ApiResult<Json<Value>> {
@@ -65,7 +65,7 @@ pub async fn verify(
 
 pub async fn unverify(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(version_id): Path<i64>,
     body: Option<Json<VerifyBody>>,
 ) -> ApiResult<StatusCode> {
@@ -93,7 +93,7 @@ pub async fn unverify(
 /// Takes a version off the review queue without verifying it; it keeps its trust.
 pub async fn skip(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(version_id): Path<i64>,
     body: Option<Json<VerifyBody>>,
 ) -> ApiResult<StatusCode> {
@@ -124,7 +124,7 @@ pub async fn skip(
 /// The file on GitHub changed after the scan; the admin accepts the new one.
 pub async fn accept_source(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(version_id): Path<i64>,
     body: Option<Json<VerifyBody>>,
 ) -> ApiResult<StatusCode> {

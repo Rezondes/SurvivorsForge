@@ -200,7 +200,7 @@ pub struct PackChange {
 /// its addons and their versions. The link stays the same.
 pub async fn update(State(state): State<AppState>, user: CurrentUser, Path(public_id): Path<String>, Json(body): Json<PackChange>) -> ApiResult<Json<Value>> {
     let pack = load(&state, &public_id).await?;
-    if pack.created_by != Some(user.id) && !user.is_admin() {
+    if pack.created_by != Some(user.id) && !user.is_staff() {
         return Err(ApiError::new(StatusCode::FORBIDDEN, "forbidden", "Only the creator of the pack changes it"));
     }
     let name = body.name.as_deref().map(str::trim);

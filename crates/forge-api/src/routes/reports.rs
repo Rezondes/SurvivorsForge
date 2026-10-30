@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::audit::{self, Entry};
-use crate::auth::{AdminUser, CurrentUser};
+use crate::auth::{StaffUser, CurrentUser};
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
 use axum::extract::{Path, State};
@@ -78,7 +78,7 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, Json(body)
 }
 
 /// Open reports, oldest first.
-pub async fn queue(State(state): State<AppState>, AdminUser(_): AdminUser) -> ApiResult<Json<Value>> {
+pub async fn queue(State(state): State<AppState>, StaffUser(_): StaffUser) -> ApiResult<Json<Value>> {
     let list: Value = sqlx::query_scalar(
         "SELECT coalesce(json_agg(json_build_object(
                     'id', r.id, 'target_type', r.target_type, 'target_id', r.target_id,
@@ -104,7 +104,7 @@ pub struct Resolve {
 
 pub async fn resolve(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(id): Path<i64>,
     Json(body): Json<Resolve>,
 ) -> ApiResult<StatusCode> {

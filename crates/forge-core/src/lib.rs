@@ -8,6 +8,7 @@ pub mod markdown;
 pub mod pack;
 pub mod rate_limit;
 pub mod registry;
+pub mod roles;
 pub mod toc;
 pub mod trust;
 

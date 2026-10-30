@@ -3,7 +3,7 @@
 use super::addons::{load_addon, not_blocked, require, user_permissions};
 use crate::app::AppState;
 use crate::audit::{self, Entry};
-use crate::auth::{AdminUser, CurrentUser};
+use crate::auth::{StaffUser, CurrentUser};
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
 use axum::extract::{Path, State};
@@ -55,7 +55,7 @@ fn map_unique(e: sqlx::Error) -> ApiError {
     e.into()
 }
 
-pub async fn create(State(state): State<AppState>, AdminUser(admin): AdminUser, Json(body): Json<GameVersionBody>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn create(State(state): State<AppState>, StaffUser(admin): StaffUser, Json(body): Json<GameVersionBody>) -> ApiResult<(StatusCode, Json<Value>)> {
     let name = body.name.unwrap_or_default();
     validate_name(&name)?;
     let sort_key = body.sort_key.ok_or_else(|| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_sort_key", "sort_key is required"))?;
@@ -77,7 +77,7 @@ pub async fn create(State(state): State<AppState>, AdminUser(admin): AdminUser, 
 
 pub async fn update(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    StaffUser(admin): StaffUser,
     Path(id): Path<i32>,
     Json(body): Json<GameVersionBody>,
 ) -> ApiResult<StatusCode> {
@@ -107,7 +107,7 @@ pub async fn update(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn delete(State(state): State<AppState>, AdminUser(admin): AdminUser, Path(id): Path<i32>) -> ApiResult<StatusCode> {
+pub async fn delete(State(state): State<AppState>, StaffUser(admin): StaffUser, Path(id): Path<i32>) -> ApiResult<StatusCode> {
     let used: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM versions WHERE game_min_id = $1 OR game_max_id = $1)")
         .bind(id)
         .fetch_one(&state.pool)

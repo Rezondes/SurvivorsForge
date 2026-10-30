@@ -2,7 +2,7 @@
 
 use super::addons::{load_addon, not_blocked, require, user_permissions};
 use crate::app::AppState;
-use crate::auth::{AdminUser, CurrentUser};
+use crate::auth::{StaffUser, CurrentUser};
 use crate::error::{ApiError, ApiResult};
 use crate::{jobs, sync};
 use axum::extract::{Path, State};
@@ -13,7 +13,7 @@ use chrono::{DateTime, Duration, Utc};
 pub const REFRESH_EVERY: Duration = Duration::minutes(5);
 
 /// `POST /v1/admin/addons/sync`: queues the check of every addon now, in the background.
-pub async fn sync_all(State(state): State<AppState>, AdminUser(_): AdminUser) -> ApiResult<StatusCode> {
+pub async fn sync_all(State(state): State<AppState>, StaffUser(_): StaffUser) -> ApiResult<StatusCode> {
     jobs::enqueue(&state.pool, sync::POLL_RELEASES, serde_json::json!({}), (state.clock)(), Some(sync::POLL_RELEASES)).await?;
     Ok(StatusCode::ACCEPTED)
 }

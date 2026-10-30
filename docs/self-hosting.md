@@ -123,6 +123,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `GITHUB_CLIENT_SECRET` | yes | Client secret from step 1 | secret |
 | `AUTH_RETURN_URLS` | yes | Exact callback URLs a login may return to | `https://forge.example.com/auth/callback` |
 | `ADMIN_GITHUB_IDS` | no | Comma-separated numeric GitHub IDs of admins | `1234567` |
+| `ADMIN_STATS_ROLES` | no | Roles that see `/admin/stats`: `admin`, `moderator` (default both) | `admin` |
 
 **Website (`forge-web`)**
 

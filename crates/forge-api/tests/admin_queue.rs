@@ -140,10 +140,10 @@ async fn admins_grant_and_revoke_admin_rights(pool: PgPool) {
     let (app, owner, admin) = setup(pool).await;
     let alice = app.get("/v1/me", Some(&owner)).await.json();
     let alice_id = alice["github_id"].as_i64().unwrap();
-    let grant = |id: i64, admin_flag: bool| json!({ "admin": admin_flag, "note": format!("set {id}") });
+    let grant = |id: i64, admin_flag: bool| json!({ "role": if admin_flag { "admin" } else { "user" }, "note": format!("set {id}") });
 
     assert_eq!(app.put(&format!("/v1/admin/users/{alice_id}/role"), Some(&owner), grant(alice_id, true)).await.status, StatusCode::FORBIDDEN);
-    assert_eq!(app.put(&format!("/v1/admin/users/{alice_id}/role"), Some(&admin), json!({ "admin": true })).await.error(), "note_required");
+    assert_eq!(app.put(&format!("/v1/admin/users/{alice_id}/role"), Some(&admin), json!({ "role": "admin" })).await.error(), "note_required");
     assert_eq!(app.put(&format!("/v1/admin/users/{alice_id}/role"), Some(&admin), grant(alice_id, true)).await.status, StatusCode::NO_CONTENT);
     assert_eq!(app.get("/v1/me", Some(&owner)).await.json()["role"], "admin", "at once, without a new login");
 

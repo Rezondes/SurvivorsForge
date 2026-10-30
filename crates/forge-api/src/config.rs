@@ -31,6 +31,8 @@ pub struct Config {
     pub auth_return_urls: Vec<String>,
     /// GitHub user IDs that are admins.
     pub admin_github_ids: Vec<i64>,
+    /// Roles that see the detailed statistics on `/admin/stats`.
+    pub stats_roles: Vec<forge_core::roles::Role>,
     /// Public base URL of uploaded images, e.g. `https://forge.example.com/img`.
     pub public_image_url: String,
     /// Secret of the GitHub App webhook, checked against `X-Hub-Signature-256`.
@@ -83,6 +85,7 @@ impl Config {
         "GITHUB_CLIENT_SECRET",
         "AUTH_RETURN_URLS",
         "ADMIN_GITHUB_IDS",
+        "ADMIN_STATS_ROLES",
         "PUBLIC_IMAGE_URL",
         "GITHUB_WEBHOOK_SECRET",
         "SOURCE_CHECK_BATCH",
@@ -139,6 +142,9 @@ impl Config {
             admin_github_ids: list(&parse("ADMIN_GITHUB_IDS", "")?)
                 .map(|id| id.parse().map_err(|_| invalid("ADMIN_GITHUB_IDS", id)))
                 .collect::<Result<_, _>>()?,
+            stats_roles: list(&parse("ADMIN_STATS_ROLES", "admin,moderator")?)
+                .map(|role| role.parse().map_err(|_| invalid("ADMIN_STATS_ROLES", role)))
+                .collect::<Result<_, _>>()?,
             public_image_url: required("PUBLIC_IMAGE_URL")?.trim_end_matches('/').to_string(),
             github_webhook_secret: required("GITHUB_WEBHOOK_SECRET")?,
             source_check_batch: {
@@ -179,6 +185,7 @@ impl Config {
             github_client_secret: "client-secret".into(),
             auth_return_urls: vec!["https://web.test/auth/callback".into()],
             admin_github_ids: Vec::new(),
+            stats_roles: vec![forge_core::roles::Role::Admin, forge_core::roles::Role::Moderator],
             public_image_url: "https://web.test/img".into(),
             github_webhook_secret: "webhook-secret".into(),
             source_check_batch: 200,
@@ -202,6 +209,7 @@ fn list(value: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_core::roles::Role;
 
     fn env(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
@@ -253,10 +261,16 @@ mod tests {
         let mut bad = env(MINIMAL);
         bad.insert("ADMIN_GITHUB_IDS".into(), "12, octocat".into());
         assert!(Config::from_map(&bad).unwrap_err().0.contains("ADMIN_GITHUB_IDS"));
+        let mut bad = env(MINIMAL);
+        bad.insert("ADMIN_STATS_ROLES".into(), "admin, root".into());
+        assert!(Config::from_map(&bad).unwrap_err().0.contains("ADMIN_STATS_ROLES"));
+        assert_eq!(Config::from_map(&env(MINIMAL)).unwrap().stats_roles, [Role::Admin, Role::Moderator], "the default");
         let mut good = env(MINIMAL);
         good.insert("ADMIN_GITHUB_IDS".into(), "12, 34".into());
         good.insert("AUTH_RETURN_URLS".into(), "https://a/cb, https://b/cb".into());
+        good.insert("ADMIN_STATS_ROLES".into(), "admin".into());
         let config = Config::from_map(&good).unwrap();
+        assert_eq!(config.stats_roles, [Role::Admin]);
         assert_eq!(config.admin_github_ids, [12, 34]);
         assert_eq!(config.auth_return_urls, ["https://a/cb", "https://b/cb"]);
     }

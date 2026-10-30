@@ -315,10 +315,10 @@ async fn admins_are_listed_and_granted_on_the_users_page() {
     assert!(!page.body.contains("/admin/users/99/remove-admin"), "config admins cannot");
     assert!(page.body.contains("Make eve an admin"));
 
-    expect(&web, "PUT", "/v1/admin/users/5/role", json!({ "admin": true, "note": "helps out" })).await;
+    expect(&web, "PUT", "/v1/admin/users/5/role", json!({ "role": "admin", "note": "helps out" })).await;
     let done = web.post_form("/admin/users/5/make-admin", &[("note", "helps out"), ("login", "eve")]).await;
     assert!(done.location().starts_with("/admin/users?login=eve&msg="), "{}", done.location());
-    expect(&web, "PUT", "/v1/admin/users/7/role", json!({ "admin": false, "note": "left" })).await;
+    expect(&web, "PUT", "/v1/admin/users/7/role", json!({ "role": "user", "note": "left" })).await;
     web.post_form("/admin/users/7/remove-admin", &[("note", "left"), ("login", "")]).await;
 }
 

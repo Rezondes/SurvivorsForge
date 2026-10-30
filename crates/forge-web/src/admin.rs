@@ -285,7 +285,7 @@ pub async fn ban(State(state): State<AppState>, jar: PrivateCookieJar, Path((git
             (result, if action == "unban" { "Ban lifted." } else { "User banned." })
         }
         "make-admin" | "remove-admin" => {
-            let body = json!({ "admin": action == "make-admin", "note": form.note });
+            let body = json!({ "role": if action == "make-admin" { "admin" } else { "user" }, "note": form.note });
             let result = state.api.call(Method::PUT, &format!("/v1/admin/users/{github_id}/role"), Some(&token), Some(&body)).await;
             (result, if action == "make-admin" { "Admin rights granted." } else { "Admin rights taken." })
         }

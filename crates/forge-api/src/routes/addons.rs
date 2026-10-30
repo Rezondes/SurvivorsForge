@@ -282,7 +282,7 @@ pub async fn public_repo(state: &AppState, full_name: &str) -> ApiResult<(crate:
 /// checks, like an entry of the old verified list. Nobody owns it until its author claims it.
 pub async fn admin_create(
     State(state): State<AppState>,
-    crate::auth::AdminUser(admin): crate::auth::AdminUser,
+    crate::auth::StaffUser(admin): crate::auth::StaffUser,
     Json(body): Json<CreateAddon>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     validate_slug(&body.slug)?;
@@ -345,7 +345,7 @@ pub async fn user_permissions(pool: &PgPool, addon: &AddonRow, user: &CurrentUse
             .bind(user.id)
             .fetch_optional(pool)
             .await?;
-    Ok(permissions(user.id, user.is_admin(), addon.owner_id, member))
+    Ok(permissions(user.id, user.is_staff(), addon.owner_id, member))
 }
 
 /// Blocked addons stay as they are until an admin lifts the block.
