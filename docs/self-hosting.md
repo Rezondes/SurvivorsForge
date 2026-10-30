@@ -106,6 +106,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `PACK_RETENTION_DAYS` | no | Days a built pack is kept without a download; the next download builds it again | `7` |
 | `PACK_STORAGE_MB` | no | All built packs together; above it the least recently downloaded are deleted | `2048` |
 | `BIND_ADDR` | no | Address the API listens on in its container | `0.0.0.0:8080` |
+| `METRICS_BIND_ADDR` | no | Address of the Prometheus metrics of the API and the worker; never published | `0.0.0.0:9100` |
 | `MIGRATE_ON_START` | no | Apply database migrations when the API starts | `true` |
 | `RATE_LIMIT_PER_MINUTE` | no | Requests per minute and client IP, for the API and the website each | `120` |
 | `CACHE_SECONDS` | no | How long public answers stay in the API's memory cache; a write through the API empties it, worker changes show after this time; `0` turns it off | `60` |

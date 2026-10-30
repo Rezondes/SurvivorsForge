@@ -39,7 +39,7 @@ impl TestApp {
             let now = now.clone();
             Arc::new(move || *now.lock().unwrap())
         };
-        let state = AppState { pool: pool.clone(), config: Arc::new(config), github: github.clone(), clock };
+        let state = AppState { pool: pool.clone(), config: Arc::new(config), github: github.clone(), clock, request_stats: Default::default() };
         TestApp { router: router(state.clone()), app_state: state, pool, github, now }
     }
 
@@ -151,6 +151,7 @@ pub fn state(pool: PgPool) -> AppState {
         config: Arc::new(Config::for_tests("postgres://unused")),
         github: Arc::new(FakeGitHub::default()),
         clock,
+        request_stats: Default::default(),
     }
 }
 

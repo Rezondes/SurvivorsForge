@@ -71,7 +71,7 @@ fn build_state(config: Config, pool: sqlx::PgPool) -> Result<AppState, String> {
         client_secret: config.github_client_secret.clone(),
     };
     let github = GitHubClient::new(&config.github_api_url, &config.github_app_id, key, Arc::new(chrono::Utc::now)).with_oauth(oauth).with_read_token(config.github_read_token.clone());
-    Ok(AppState { pool, config: Arc::new(config), github: Arc::new(github), clock: Arc::new(chrono::Utc::now) })
+    Ok(AppState { pool, config: Arc::new(config), github: Arc::new(github), clock: Arc::new(chrono::Utc::now), request_stats: Default::default() })
 }
 
 /// `import-verified <file>` adds the entries of a verified.json; `export-verified [file]` writes one.
@@ -108,6 +108,7 @@ async fn work(config: Config, pool: sqlx::PgPool) -> Result<(), String> {
         shutdown_signal().await;
         token.cancel();
     });
+    forge_api::request_stats::spawn_metrics_server(state.config.metrics_bind_addr);
     tracing::info!("forge-api worker started");
     worker::platform(state).run(&pool, shutdown).await;
     Ok(())
@@ -118,13 +119,33 @@ async fn serve(config: Config, pool: sqlx::PgPool) -> Result<(), String> {
         MIGRATOR.run(&pool).await.map_err(|e| e.to_string())?;
     }
     let bind_addr = config.bind_addr;
-    let app = router(build_state(config, pool)?);
+    forge_api::request_stats::spawn_metrics_server(config.metrics_bind_addr);
+    let state = build_state(config, pool.clone())?;
+    let stats = state.request_stats.clone();
+    let app = router(state);
+    let flusher = {
+        let (stats, pool) = (stats.clone(), pool.clone());
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                every.tick().await;
+                if let Err(e) = stats.flush(&pool).await {
+                    tracing::warn!(error = %e, "cannot write request stats");
+                }
+            }
+        })
+    };
     let listener = tokio::net::TcpListener::bind(bind_addr).await.map_err(|e| e.to_string())?;
     tracing::info!(addr = %bind_addr, "forge-api listening");
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+    let served = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    flusher.abort();
+    if let Err(e) = stats.flush(&pool).await {
+        tracing::warn!(error = %e, "cannot write the last request stats");
+    }
+    served
 }
 
 /// `healthcheck <url>` asks a running server, `healthcheck db` the database; for container

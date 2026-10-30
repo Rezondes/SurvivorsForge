@@ -96,7 +96,9 @@ pub async fn middleware(State(cache): State<Arc<ResponseCache>>, request: Reques
     let key = request.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_default();
     let if_none_match = request.headers().get(header::IF_NONE_MATCH).cloned();
     let now = Instant::now();
-    if let Some((status, headers, body)) = cache.get(&key, now) {
+    let cached = cache.get(&key, now);
+    metrics::counter!("forge_cache_lookups_total", "result" => if cached.is_some() { "hit" } else { "miss" }).increment(1);
+    if let Some((status, headers, body)) = cached {
         if let (Some(sent), Some(etag)) = (&if_none_match, headers.get(header::ETAG))
             && etag_matches(sent, etag.as_bytes())
         {

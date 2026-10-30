@@ -30,6 +30,7 @@ pub fn platform(state: AppState) -> Worker {
     let scan_state = state.clone();
     let source_state = state.clone();
     let pack_state = state.clone();
+    let stats_state = state.clone();
     let prune_state = state;
     Worker::default()
         .handle(sync::SYNC_ADDON, move |job| {
@@ -59,9 +60,14 @@ pub fn platform(state: AppState) -> Worker {
             let state = prune_state.clone();
             async move { crate::pack_job::prune(&state).await }
         })
+        .handle(crate::request_stats::PRUNE, move |_| {
+            let state = stats_state.clone();
+            async move { crate::request_stats::prune(&state.pool, (state.clock)()).await }
+        })
         .every(sync::POLL_RELEASES, Duration::minutes(15))
         .every(crate::pack_job::PRUNE, Duration::hours(1))
         .every(crate::source_check::CHECK_SOURCES, Duration::hours(6))
+        .every(crate::request_stats::PRUNE, Duration::days(1))
 }
 
 impl Worker {
@@ -90,10 +96,14 @@ impl Worker {
     /// Runs one job if there is one. `false` when the queue is empty.
     pub async fn run_once(&self, pool: &PgPool) -> sqlx::Result<bool> {
         let Some(job) = jobs::claim_next(pool, Utc::now()).await? else { return Ok(false) };
+        let started = std::time::Instant::now();
         let result = match self.handlers.get(job.kind.as_str()) {
             Some(handler) => handler(job.clone()).await,
             None => Err(format!("no handler for job kind {}", job.kind)),
         };
+        let outcome = if result.is_ok() { "done" } else { "failed" };
+        metrics::counter!("forge_jobs_total", "kind" => job.kind.clone(), "outcome" => outcome).increment(1);
+        metrics::histogram!("forge_job_duration_seconds", "kind" => job.kind.clone()).record(started.elapsed().as_secs_f64());
         match result {
             Ok(()) => jobs::complete(pool, job.id, Utc::now()).await?,
             Err(e) => {

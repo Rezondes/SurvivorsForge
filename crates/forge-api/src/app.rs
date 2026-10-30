@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::auth::oauth;
 use crate::error::ApiError;
 use crate::github::{Clock, GitHubApi};
+use crate::request_stats::{self, Recorder, RequestStats};
 use crate::routes;
 use crate::rate_limit::{self, RateLimiter};
 use axum::http::{HeaderValue, StatusCode, header};
@@ -23,10 +24,13 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub github: Arc<dyn GitHubApi>,
     pub clock: Clock,
+    /// API requests since the last flush to `api_request_stats`.
+    pub request_stats: Arc<RequestStats>,
 }
 
 pub fn router(state: AppState) -> Router {
     let config = state.config.clone();
+    let recorder = Recorder { stats: state.request_stats.clone(), clock: state.clock.clone(), website: config.website_ip };
     let routes = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/auth/github/start", get(oauth::start))
@@ -116,7 +120,7 @@ pub fn router(state: AppState) -> Router {
         )
         .fallback(|| async { ApiError::not_found() })
         .with_state(state);
-    with_layers(routes, &config)
+    with_layers(routes, &config).layer(middleware::from_fn_with_state(recorder, request_stats::middleware))
 }
 
 /// The layers every response passes through: panic guard, rate limit, default headers.

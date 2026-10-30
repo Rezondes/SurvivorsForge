@@ -12,6 +12,7 @@ pub mod images;
 pub mod jobs;
 pub mod pack_job;
 pub mod rate_limit;
+pub mod request_stats;
 pub mod routes;
 pub mod scan_job;
 pub mod source_check;

@@ -252,6 +252,10 @@ async fn parse<T: serde::de::DeserializeOwned>(response: reqwest::Response) -> G
 
 /// Maps error statuses; a `403`/`429` with no requests left is a rate limit.
 async fn check(response: reqwest::Response) -> GitHubResult<reqwest::Response> {
+    let remaining = response.headers().get("x-ratelimit-remaining").and_then(|v| v.to_str().ok()?.parse::<f64>().ok());
+    if let Some(remaining) = remaining {
+        metrics::gauge!("forge_github_rate_remaining").set(remaining);
+    }
     let status = response.status();
     if status.is_success() {
         return Ok(response);
