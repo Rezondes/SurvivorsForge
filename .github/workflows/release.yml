@@ -1,25 +1,66 @@
 name: Release
 
+# Two ways in: a tag `v*` pushed by hand, or the "Run workflow" button under Actions -> Release with
+# the new version. The button sets it in Cargo.toml and Cargo.lock, commits, tags and pushes, and the
+# jobs below build from that tag in the same run (a tag pushed with GITHUB_TOKEN starts no workflow).
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version without v, for example 0.5.2 or 0.6.0-rc.1"
+        required: true
 
 jobs:
   version:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check tag matches Cargo.toml version
+      - name: Set the version, commit, tag and push
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::Write the version as 0.5.2 or 0.6.0-rc.1 (no v in front)"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "::error::v$VERSION exists already"
+            exit 1
+          fi
+          # The first `version =` of Cargo.toml is the package's; in Cargo.lock the line after its name.
+          perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' Cargo.toml
+          perl -0pi -e 's/(\nname = "survivorsforge"\nversion = ")[^"]*/$1$ENV{VERSION}/' Cargo.lock
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): bump version to $VERSION" || echo "Cargo.toml had $VERSION already"
+          git tag "v$VERSION"
+          git push origin HEAD "v$VERSION"
+      - name: Check tag matches Cargo.toml and Cargo.lock
         id: check
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
         run: |
           version=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+          if ! grep -A1 '^name = "survivorsforge"$' Cargo.lock | grep -qx "version = \"$version\""; then
+            echo "::error::Cargo.lock still has another version of survivorsforge than $version"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
 
   # Asset names are what the self-update looks for, see src/self_update.rs.
   windows:
@@ -27,6 +68,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
@@ -45,6 +88,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -75,6 +120,8 @@ jobs:
         image: [api, web, grafana]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       - name: Image name
         id: name
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/survivorsforge-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
@@ -88,11 +135,12 @@ jobs:
         id: meta
         with:
           images: ${{ steps.name.outputs.name }}
+          # From the tag, also when the button started the run on main.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.tag }}
           # `latest` (and `{{major}}.{{minor}}`) only for final versions, never for v0.4.0-rc.1 and the like.
-          flavor: latest=auto
+          flavor: latest=${{ needs.version.outputs.prerelease == 'false' }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -111,6 +159,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
       # Only the launcher builds: the image jobs leave build records (*.dockerbuild) as artifacts too,
       # and those cannot be downloaded this way.
       - uses: actions/download-artifact@v4
@@ -140,16 +190,17 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         # A final release lists everything since the previous final one (v0.3.2...v0.4.0), not just
         # since its last release candidate; a candidate lists what changed since the tag before it.
         run: |
           options=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+          if [[ "$TAG" == *-* ]]; then
             options=(--prerelease)
           elif previous=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null); then
             options=(--notes-start-tag "$previous")
           fi
-          gh release create "$GITHUB_REF_NAME" assets/* "${options[@]}" \
+          gh release create "$TAG" assets/* "${options[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "SurvivorsForge ${{ needs.version.outputs.version }}" \
             --generate-notes

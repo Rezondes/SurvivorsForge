@@ -335,12 +335,13 @@ turns off the events (and with them the ID) or only the ID.
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request: launcher tests and Clippy on Windows and Ubuntu 22.04, the platform tests against Postgres, the compose files and images, and a gitleaks secret scan.
 
-`.github/workflows/release.yml` runs on tags `v*`:
+`.github/workflows/release.yml` runs on tags `v*` and on its *Run workflow* button:
 
-1. Fails if the tag does not match the `Cargo.toml` version.
-2. Builds on Windows and on Ubuntu 22.04 in parallel.
-3. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once both builds succeeded.
-4. Publishes one GitHub release, only if all of that succeeded, with `compose.yaml`, `env.example` and each launcher under a fixed and a versioned name:
+1. The button only: sets the typed version in `Cargo.toml` and `Cargo.lock`, commits `chore(release): bump version to <version>`, tags `v<version>` and pushes both. The jobs below build from that tag in the same run.
+2. Fails if the tag does not match the version in `Cargo.toml` and `Cargo.lock`.
+3. Builds on Windows and on Ubuntu 22.04 in parallel.
+4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once both builds succeeded.
+5. Publishes one GitHub release, only if all of that succeeded, with `compose.yaml`, `env.example` and each launcher under a fixed and a versioned name:
    - `SurvivorsForge-windows-x86_64.zip` and `SurvivorsForge-<version>-x86_64-pc-windows-msvc.zip`
    - `SurvivorsForge-linux-x86_64.AppImage` and `SurvivorsForge-<version>-x86_64.AppImage`
 
@@ -351,7 +352,7 @@ pre-release for testing: installed launchers do not update to it, and the images
 `0.4.0-rc.1`, not `latest`. Run it on a server with `FORGE_VERSION=0.4.0-rc.1`. The final `v0.4.0`
 later updates everyone, the testers included.
 
-To cut a release: bump `version` in `Cargo.toml`, commit, then tag and push:
+To cut a release: on GitHub, *Actions → Release → Run workflow*, type the version (`0.5.2`, or `0.6.0-rc.1` for a pre-release) and run it. Afterwards pull the bump commit. By hand instead: bump `version` in `Cargo.toml`, build once so `Cargo.lock` follows, commit, then tag and push:
 
 ```bash
 git tag v0.2.0
