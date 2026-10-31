@@ -1,11 +1,14 @@
-<article class="panel card">
-  <div class="card-head">
-    {% if let Some(icon) = c.icon_url %}<img class="icon" src="{{ icon }}" alt="" width="48" height="48">{% endif %}
-    <div>
-      <h2><a href="/addons/{{ c.slug }}">{{ c.name }}</a></h2>
-      <p class="muted">by {{ c.author }} · <a href="/addons?category={{ c.category|urlencode }}">{{ c.category }}</a></p>
+<article class="card addon-card">
+  <div class="addon-art">{% if let Some(icon) = c.icon_url %}<img src="{{ icon }}" alt="" width="256" height="256" loading="lazy">{% else %}<span aria-hidden="true">{{ c.initial() }}</span>{% endif %}</div>
+  <div class="addon-body">
+    <h2><a href="/addons/{{ c.slug }}">{{ c.name }}</a></h2>
+    <p class="addon-by muted">by {{ c.author }}</p>
+    <p class="addon-summary">{{ c.summary }}</p>
+    <div class="addon-meta">
+      <p><a class="tag" href="/addons?category={{ c.category|urlencode }}">{{ c.category }}</a>
+      <span class="badge {{ c.notice.class }}">{{ c.notice.badge }}</span></p>
+      <p>{% if let Some(n) = c.downloads %}<span class="addon-stat" title="Downloads"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9M4 6.5 8 10.5l4-4M2 14h12"/></svg>{{ n }}<span class="sr-only"> downloads</span></span>{% endif %}
+      {% if c.updated != "" %}<span class="addon-stat" title="Updated"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/></svg><span class="sr-only">Updated </span>{{ c.updated }}</span>{% endif %}</p>
     </div>
   </div>
-  <p>{{ c.summary }}</p>
-  <p><span class="badge {{ c.notice.class }}">{{ c.notice.badge }}</span> <span class="muted">{% match c.downloads %}{% when Some with (n) %}{{ n }} downloads{% when None %}Updated {{ c.updated }}{% endmatch %}</span></p>
 </article>

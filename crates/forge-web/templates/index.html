@@ -26,7 +26,7 @@
 {% if !popular.is_empty() %}
 <section class="home-section">
   <div class="title-row"><h2>Popular addons</h2><a href="/addons">All addons</a></div>
-  <div class="grid">
+  <div class="grid addon-grid">
     {% for c in popular %}
     {% include "card.html" %}
     {% endfor %}

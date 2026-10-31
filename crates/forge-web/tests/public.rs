@@ -65,7 +65,7 @@ async fn list_renders_items_without_js() {
     let page = web.get("/addons?q=lucky").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     // Only the results scroll; search and filters stay in view.
-    for text in ["Lucky Odds", "by alice", "42 downloads", "Flagged", "<form class=\"search\" method=\"get\" action=\"/addons\"", "<div id=\"results\" class=\"list\">",
+    for text in ["Lucky Odds", "by alice", r#"42<span class="sr-only"> downloads</span>"#, "Flagged", "<form id=\"search\" class=\"search browse-side\" method=\"get\" action=\"/addons\"", "<div id=\"results\" class=\"browse-results\">",
         "href=\"https://github.com/Rezondes/SurvivorsForge\"", "href=\"https://rezondes.github.io/SurvivorsForge/\""] {
         assert!(page.body.contains(text), "missing {text}");
     }
@@ -84,7 +84,7 @@ async fn addons_without_a_download_count_show_their_last_update() {
     ] }))
     .await;
     let page = web.get("/addons").await;
-    assert!(page.body.contains("Updated 2026-05-01") && !page.body.contains("downloads</span>"), "{}", page.body);
+    assert!(page.body.contains(r#"<span class="sr-only">Updated </span>2026-05-01"#) && !page.body.contains("downloads</span>"), "{}", page.body);
 }
 
 fn categories() -> Value {
@@ -268,6 +268,17 @@ async fn scrollbars_use_the_theme() {
 }
 
 #[tokio::test]
+async fn the_addon_results_scroll_beside_the_filters() {
+    // The row of the browser takes the height of the page, not of the results, so the results scroll.
+    let mut web = TestWeb::new().await;
+    let css = web.get("/static/app.css").await.body;
+    let browse = css.split("\n.browse {").nth(1).and_then(|r| r.split('}').next()).expect("rule for .browse");
+    assert!(browse.contains("grid-template-rows: minmax(0, 1fr)"), "{browse}");
+    // `main:has(> .browse) > * { flex: none }` would win over `.browse`, so the browser needs its own rule.
+    assert!(css.contains("main:has(> .browse) > .browse { flex: 1 1 auto;"), "the browser does not fill main");
+}
+
+#[tokio::test]
 async fn card_lists_switch_between_tiles_and_a_list() {
     // The choice lives in the browser (view.js, localStorage); the pages only offer the switch.
     let mut web = TestWeb::new().await;
@@ -340,7 +351,7 @@ async fn the_result_count_is_announced() {
     for (page, count) in [("/addons", "3 addons"), ("/packs", "1 pack")] {
         let body = web.get(page).await.body;
         assert!(body.contains(&format!(r#"<p id="result-status" class="sr-only" role="status">{count}</p>"#)), "{page}: {body}");
-        assert!(body.contains(r##"hx-select-oob="#result-status""##), "{page}");
+        assert!(body.contains(r##"hx-select-oob="#result-status"##), "{page}");
     }
 }
 
@@ -369,7 +380,7 @@ async fn large_download_counts_are_grouped() {
           "author": "bob", "verified_author": false, "downloads": 1234567, "updated_at": "2026-05-01" }
     ] }))
     .await;
-    assert!(web.get("/addons").await.body.contains("1,234,567 downloads"));
+    assert!(web.get("/addons").await.body.contains(r#"1,234,567<span class="sr-only"> downloads</span>"#));
 }
 
 #[tokio::test]
@@ -573,7 +584,7 @@ async fn the_home_page_shows_popular_addons() {
         .mount(&web.api)
         .await;
     let page = web.get("/").await.body;
-    for text in ["Popular addons", r#"<a href="/addons/lucky">Lucky Odds</a>"#, "4,200 downloads", r#"href="/addons">All addons</a>"#] {
+    for text in ["Popular addons", r#"<a href="/addons/lucky">Lucky Odds</a>"#, r#"4,200<span class="sr-only"> downloads</span>"#, r#"href="/addons">All addons</a>"#] {
         assert!(page.contains(text), "missing {text}: {page}");
     }
 

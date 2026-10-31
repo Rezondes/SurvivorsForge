@@ -120,6 +120,13 @@ pub struct Card {
     pub updated: String,
 }
 
+impl Card {
+    /// The first letter of the name, drawn in place of a missing icon.
+    pub fn initial(&self) -> String {
+        self.name.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().collect()).unwrap_or_default()
+    }
+}
+
 #[derive(Template)]
 #[template(path = "stats.html")]
 pub struct StatsPage {
