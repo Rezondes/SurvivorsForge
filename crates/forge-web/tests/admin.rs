@@ -314,13 +314,56 @@ async fn audit_filters() {
     Mock::given(method("GET"))
         .and(path("/v1/admin/audit"))
         .and(wiremock::matchers::query_param("action", "ban_user"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 1, "entries": [
-            { "admin": "root", "action": "ban_user", "target_type": "user", "target_id": "5", "note": "spam", "created_at": "2026-05-01T10:00:00Z" }
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 2, "entries": [
+            { "id": 12, "admin": "root", "action": "ban_user", "target_type": "user", "target_id": "5", "target": { "label": "eve", "login": "eve" },
+              "note": "spam", "details": {}, "created_at": "2026-05-01T10:00:00Z" },
+            { "id": 11, "admin": "root", "action": "verify", "target_type": "version", "target_id": "333",
+              "target": { "label": "Lucky Odds v1.2.0", "addon_slug": "lucky", "addon_name": "Lucky Odds", "tag": "v1.2.0" },
+              "note": "", "details": {}, "created_at": "2026-05-01T09:00:00Z" }
         ] })))
         .mount(&web.api)
         .await;
     let page = web.get("/admin/audit?action=ban_user").await;
-    assert!(page.body.contains("ban_user") && page.body.contains("user 5") && page.body.contains("spam"));
+    for text in [
+        "ban_user",
+        "spam",
+        r#"<a href="/admin/users?login=eve">eve</a>"#,
+        r#"<a href="/admin/addons/lucky">Lucky Odds v1.2.0</a>"#,
+        r#"<a href="/admin/audit/12">Details</a>"#,
+    ] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+}
+
+#[tokio::test]
+async fn an_audit_entry_shows_everything_and_its_history() {
+    let mut web = as_admin().await;
+    get_json(&web, "/v1/admin/audit/11", json!({
+        "id": 11, "admin": "root", "action": "verify", "target_type": "version", "target_id": "333",
+        "target": { "label": "Lucky Odds v1.2.0", "addon_slug": "lucky", "addon_name": "Lucky Odds", "tag": "v1.2.0" },
+        "note": "read the code", "details": { "sha256": "abc123", "trust_before": "flagged" }, "created_at": "2026-05-01T09:00:00.123Z",
+        "history": [{ "id": 9, "admin": "mia", "action": "block_addon", "target_type": "addon", "target_id": "4",
+                      "target": { "label": "Lucky Odds", "addon_slug": "lucky" }, "note": "malware", "details": {}, "created_at": "2026-04-30T08:00:00Z" }]
+    })).await;
+    let page = web.get("/admin/audit/11").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    for text in [
+        "2026-05-01 09:00:00 UTC",
+        "verify",
+        "version 333",
+        r#"<a href="/admin/addons/lucky">Lucky Odds</a>"#,
+        r#"<a href="/addons/lucky/versions/v1.2.0">v1.2.0</a>"#,
+        "read the code",
+        "<th>sha256</th><td><code>abc123</code></td>",
+        "<th>trust_before</th><td><code>flagged</code></td>",
+        r#"<a href="/admin/audit/9">"#,
+        "malware",
+        r#"href="/admin/audit""#,
+    ] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+    Mock::given(method("GET")).and(path("/v1/admin/audit/77")).respond_with(ResponseTemplate::new(404).set_body_json(json!({ "error": "not_found", "message": "Not found" }))).mount(&web.api).await;
+    assert_eq!(web.get("/admin/audit/77").await.status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

@@ -100,19 +100,16 @@ pub const AUDIT_PAGE: i64 = 50;
 pub async fn audit_log(State(state): State<AppState>, StaffUser(_): StaffUser, Query(q): Query<AuditQuery>) -> ApiResult<Json<Value>> {
     let page = q.page.unwrap_or(1).max(1);
     let empty = |v: &Option<String>| v.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let page_json: Value = sqlx::query_scalar(
-        "WITH hits AS (
-             SELECT l.*, u.login::text AS admin_login FROM audit_log l JOIN users u ON u.id = l.admin_id
-             WHERE ($1::text IS NULL OR u.login = $1::citext) AND ($2::text IS NULL OR l.action = $2)
+    let page_json: Value = sqlx::query_scalar(&format!(
+        "WITH {AUDIT_RESOLVED}, hits AS (
+             SELECT * FROM resolved l
+             WHERE ($1::text IS NULL OR l.admin_login = $1::citext) AND ($2::text IS NULL OR l.action = $2)
                AND ($3::text IS NULL OR l.target_type = $3) AND ($4::text IS NULL OR l.target_id = $4))
          SELECT json_build_object(
              'total', (SELECT count(*) FROM hits), 'page', $5::bigint, 'per_page', $6::bigint,
-             'entries', coalesce((SELECT json_agg(json_build_object(
-                             'id', h.id, 'admin', h.admin_login, 'action', h.action, 'target_type', h.target_type,
-                             'target_id', h.target_id, 'note', h.note, 'details', h.details, 'created_at', h.created_at)
-                             ORDER BY h.id DESC)
-                          FROM (SELECT * FROM hits ORDER BY id DESC LIMIT $6 OFFSET ($5 - 1) * $6) h), '[]'))",
-    )
+             'entries', coalesce((SELECT json_agg({AUDIT_ENTRY} ORDER BY h.id DESC)
+                          FROM (SELECT * FROM hits ORDER BY id DESC LIMIT $6 OFFSET ($5 - 1) * $6) h), '[]'))"
+    ))
     .bind(empty(&q.admin))
     .bind(empty(&q.action))
     .bind(empty(&q.target_type))
@@ -123,6 +120,58 @@ pub async fn audit_log(State(state): State<AppState>, StaffUser(_): StaffUser, Q
     .await?;
     Ok(Json(page_json))
 }
+
+/// `GET /v1/admin/audit/{id}`: one entry, and the other entries on the same addon (its versions
+/// included) or else on the same target, newest first.
+pub async fn audit_entry(State(state): State<AppState>, StaffUser(_): StaffUser, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    let entry: Option<Value> = sqlx::query_scalar(&format!(
+        "WITH {AUDIT_RESOLVED}
+         SELECT jsonb_build_object(
+             'history', coalesce((SELECT json_agg({AUDIT_ENTRY} ORDER BY h.id DESC)
+                                  FROM (SELECT o.* FROM resolved o
+                                        WHERE o.id <> h.id
+                                          AND (o.addon_id = h.addon_id OR (o.target_type = h.target_type AND o.target_id = h.target_id))
+                                        ORDER BY o.id DESC LIMIT {AUDIT_PAGE}) h), '[]')
+         ) || ({AUDIT_ENTRY})::jsonb
+         FROM resolved h WHERE h.id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    entry.map(Json).ok_or_else(ApiError::not_found)
+}
+
+/// Audit entries with what their target is: the addon (also of a version or a report), the
+/// version's tag, the user's login, the game version's name. `label` names it for people.
+const AUDIT_RESOLVED: &str = "resolved AS (
+    SELECT l.*, u.login::text AS admin_login, coalesce(va.id, aa.id, ra.id) AS addon_id,
+           json_build_object(
+               'label', CASE l.target_type
+                   WHEN 'version' THEN coalesce(va.name || ' ' || v.tag, 'version ' || l.target_id)
+                   WHEN 'addon' THEN coalesce(aa.name, l.details->>'slug', 'addon ' || l.target_id)
+                   WHEN 'user' THEN coalesce(tu.login::text, 'user ' || l.target_id)
+                   WHEN 'report' THEN 'report ' || l.target_id || coalesce(' on ' || ra.name, '')
+                   WHEN 'game_version' THEN coalesce(g.name, l.details->>'name', 'game version ' || l.target_id)
+                   WHEN 'category' THEN l.target_id
+                   ELSE l.target_type || ' ' || l.target_id END,
+               'addon_slug', coalesce(va.slug, aa.slug, ra.slug), 'addon_name', coalesce(va.name, aa.name, ra.name),
+               'tag', coalesce(v.tag, rv.tag), 'login', tu.login, 'report_reason', r.reason) AS target
+    FROM audit_log l
+    JOIN users u ON u.id = l.admin_id
+    LEFT JOIN versions v ON l.target_type = 'version' AND v.id::text = l.target_id
+    LEFT JOIN addons va ON va.id = v.addon_id
+    LEFT JOIN addons aa ON l.target_type = 'addon' AND aa.id::text = l.target_id
+    LEFT JOIN users tu ON l.target_type = 'user' AND tu.github_id::text = l.target_id
+    LEFT JOIN reports r ON l.target_type = 'report' AND r.id::text = l.target_id
+    LEFT JOIN versions rv ON r.target_type = 'version' AND rv.id = r.target_id
+    LEFT JOIN images ri ON r.target_type = 'image' AND ri.id = r.target_id
+    LEFT JOIN addons ra ON ra.id = CASE r.target_type WHEN 'addon' THEN r.target_id WHEN 'version' THEN rv.addon_id WHEN 'image' THEN ri.addon_id END
+    LEFT JOIN game_versions g ON l.target_type = 'game_version' AND g.id::text = l.target_id)";
+
+/// One row of `resolved`, as `h`, as JSON.
+const AUDIT_ENTRY: &str = "json_build_object(
+    'id', h.id, 'admin', h.admin_login, 'action', h.action, 'target_type', h.target_type, 'target_id', h.target_id,
+    'target', h.target, 'note', h.note, 'details', h.details, 'created_at', h.created_at)";
 
 /// A platform user by GitHub login, for the ban and owner forms.
 pub async fn user(State(state): State<AppState>, StaffUser(_): StaffUser, Path(login): Path<String>) -> ApiResult<Json<Value>> {

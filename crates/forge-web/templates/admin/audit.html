@@ -12,10 +12,10 @@
 </form>
 <div class="table-wrap list">
 <table>
-  <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Note</th></tr></thead>
+  <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Note</th><th><span class="sr-only">Details</span></th></tr></thead>
   <tbody>
   {% for e in entries %}
-    <tr><td>{{ e.when }}</td><td>{{ e.admin }}</td><td>{{ e.action }}</td><td>{{ e.target }}</td><td>{{ e.note }}</td></tr>
+    {% include "admin/audit_row.html" %}
   {% endfor %}
   </tbody>
 </table>

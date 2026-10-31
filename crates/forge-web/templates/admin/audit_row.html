@@ -1,0 +1,3 @@
+<tr><td>{{ e.when }}</td><td>{{ e.admin }}</td><td>{{ e.action }}</td>
+  <td>{% if let Some(href) = e.target_href %}<a href="{{ href }}">{{ e.target }}</a>{% else %}{{ e.target }}{% endif %}</td>
+  <td>{{ e.note }}</td><td><a href="/admin/audit/{{ e.id }}">Details</a></td></tr>

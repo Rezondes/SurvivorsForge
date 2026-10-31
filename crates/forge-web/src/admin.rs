@@ -582,13 +582,7 @@ pub async fn audit(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         .as_array()
         .into_iter()
         .flatten()
-        .map(|e| crate::templates::AuditRow {
-            when: s(&e["created_at"]).chars().take(16).collect(),
-            admin: s(&e["admin"]),
-            action: s(&e["action"]),
-            target: format!("{} {}", s(&e["target_type"]), s(&e["target_id"])),
-            note: s(&e["note"]),
-        })
+        .map(audit_row)
         .collect();
     let total = data["total"].as_i64().unwrap_or(0);
     let link = |p: i64| {
@@ -606,5 +600,55 @@ pub async fn audit(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         entries,
         prev: (page > 1).then(|| link(page - 1)),
         next: (page * 50 < total).then(|| link(page + 1)),
+    }))
+}
+
+/// One audit entry for the list: its target named, linked to the admin page of the addon or user.
+fn audit_row(e: &Value) -> crate::templates::AuditRow {
+    let t = &e["target"];
+    let href = if !s(&t["addon_slug"]).is_empty() {
+        Some(format!("/admin/addons/{}", s(&t["addon_slug"])))
+    } else if !s(&t["login"]).is_empty() {
+        Some(format!("/admin/users?login={}", s(&t["login"])))
+    } else {
+        None
+    };
+    let label = Some(s(&t["label"])).filter(|l| !l.is_empty()).unwrap_or_else(|| format!("{} {}", s(&e["target_type"]), s(&e["target_id"])));
+    crate::templates::AuditRow {
+        id: e["id"].as_i64().unwrap_or(0),
+        when: s(&e["created_at"]).chars().take(16).collect::<String>().replace('T', " "),
+        admin: s(&e["admin"]),
+        action: s(&e["action"]),
+        target: label,
+        target_href: href,
+        note: s(&e["note"]),
+    }
+}
+
+/// `GET /admin/audit/{id}`: everything about one audit entry and the other entries on its addon
+/// or target.
+pub async fn audit_entry(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(id): Path<i64>) -> WebResult<Html<String>> {
+    let (user, token) = admin(&state, &jar).await?;
+    let e = state.api.get(&format!("/v1/admin/audit/{id}"), Some(&token)).await?;
+    let created = s(&e["created_at"]);
+    let details = e["details"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(k, v)| (k.clone(), v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())))
+        .collect();
+    Ok(render(&crate::templates::AdminAuditEntryPage {
+        user: Some(user),
+        csrf: csrf.0,
+        when: format!("{} UTC", created.chars().take(19).collect::<String>().replace('T', " ")),
+        target_type: s(&e["target_type"]),
+        target_id: s(&e["target_id"]),
+        addon_slug: s(&e["target"]["addon_slug"]),
+        addon_name: s(&e["target"]["addon_name"]),
+        tag: s(&e["target"]["tag"]),
+        login: s(&e["target"]["login"]),
+        details,
+        history: e["history"].as_array().into_iter().flatten().map(audit_row).collect(),
+        entry: audit_row(&e),
     }))
 }

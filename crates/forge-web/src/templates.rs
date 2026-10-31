@@ -788,11 +788,38 @@ pub struct AdminListPage {
 }
 
 pub struct AuditRow {
+    pub id: i64,
     pub when: String,
     pub admin: String,
     pub action: String,
+    /// What the entry is about, for people: "Lucky Odds v1.2.0", a login, a category.
     pub target: String,
+    /// The admin page of the target's addon or user.
+    pub target_href: Option<String>,
     pub note: String,
+}
+
+#[derive(Template)]
+#[template(path = "admin/audit_entry.html")]
+pub struct AdminAuditEntryPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub entry: AuditRow,
+    /// To the second, in UTC.
+    pub when: String,
+    pub target_type: String,
+    pub target_id: String,
+    /// The addon of the target (also of a version or a report); empty for other targets.
+    pub addon_slug: String,
+    pub addon_name: String,
+    /// Tag of a version target.
+    pub tag: String,
+    /// Login of a user target.
+    pub login: String,
+    /// Every key the action stored, values as text.
+    pub details: Vec<(String, String)>,
+    /// The other entries on the same addon or target, newest first.
+    pub history: Vec<AuditRow>,
 }
 
 #[derive(Template)]

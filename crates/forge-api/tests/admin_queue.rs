@@ -186,3 +186,39 @@ async fn staff_list_every_addon_also_blocked_ones(pool: PgPool) {
     assert_eq!(app.get("/v1/admin/addons?q=LUCK", Some(&admin)).await.json()["addons"][0]["slug"], "lucky");
     assert_eq!(app.get("/v1/admin/addons", Some(&owner)).await.status, StatusCode::FORBIDDEN);
 }
+
+#[sqlx::test]
+async fn audit_entries_name_their_target_and_show_their_history(pool: PgPool) {
+    let (app, _, admin) = setup(pool).await;
+    let v1 = version(&app, "v1.2.0", 2, false).await;
+    app.post(&format!("/v1/admin/versions/{v1}/verification"), Some(&admin), json!({ "note": "read the code" })).await;
+    app.post("/v1/admin/addons/lucky/block", Some(&admin), json!({ "note": "malware" })).await;
+    app.post("/v1/admin/users/1/ban", Some(&admin), json!({ "note": "spam" })).await;
+    app.post("/v1/admin/categories", Some(&admin), json!({ "name": "Maps", "sort_key": 70 })).await;
+
+    let list = app.get("/v1/admin/audit", Some(&admin)).await.json();
+    let targets: Vec<(&str, &str)> = list["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["action"].as_str().unwrap(), e["target"]["label"].as_str().unwrap()))
+        .collect();
+    assert_eq!(targets, [("category_create", "Maps"), ("ban_user", "alice"), ("block_addon", "Addon lucky"), ("verify", "Addon lucky v1.2.0")], "{list}");
+    let verify = &list["entries"][3];
+    assert_eq!(
+        (verify["target"]["addon_slug"].as_str(), verify["target"]["addon_name"].as_str(), verify["target"]["tag"].as_str()),
+        (Some("lucky"), Some("Addon lucky"), Some("v1.2.0"))
+    );
+    assert_eq!(list["entries"][1]["target"]["login"], "alice");
+
+    let id = verify["id"].as_i64().unwrap();
+    let entry = app.get(&format!("/v1/admin/audit/{id}"), Some(&admin)).await.json();
+    assert_eq!((entry["action"].as_str(), entry["admin"].as_str(), entry["note"].as_str()), (Some("verify"), Some("root"), Some("read the code")));
+    assert_eq!(entry["details"]["trust_before"], "scanned", "{entry}");
+    let history: Vec<&str> = entry["history"].as_array().unwrap().iter().map(|e| e["action"].as_str().unwrap()).collect();
+    assert_eq!(history, ["block_addon"], "the other entries on the same addon, also on the addon itself");
+
+    assert_eq!(app.get("/v1/admin/audit/999999", Some(&admin)).await.status, StatusCode::NOT_FOUND);
+    let carol = app.login(3, "carol").await;
+    assert_eq!(app.get(&format!("/v1/admin/audit/{id}"), Some(&carol)).await.status, StatusCode::FORBIDDEN);
+}

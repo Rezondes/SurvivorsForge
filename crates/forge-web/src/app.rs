@@ -148,6 +148,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/addons/{slug}", get(crate::admin::addon))
         .route("/admin/addons/{slug}/{action}", post(crate::admin::addon_action))
         .route("/admin/audit", get(crate::admin::audit))
+        .route("/admin/audit/{id}", get(crate::admin::audit_entry))
         .route("/admin/stats", get(crate::stats::admin_stats))
         .route("/admin/stats/{section}", get(crate::stats::admin_stats_section))
         .route("/admin/list/{kind}", get(crate::admin::list_page).post(crate::admin::list_create))

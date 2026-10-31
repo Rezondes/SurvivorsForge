@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Audit entry {{ entry.id }} - Admin - SurvivorsForge{% endblock %}
+{% block content %}
+<p><a href="/admin">Admin</a> · <a href="/admin/audit">Audit log</a></p>
+<h1>{{ entry.action }}</h1>
+<section class="panel">
+<div class="table-wrap">
+<table>
+  <tbody>
+    <tr><th>When</th><td>{{ when }}</td></tr>
+    <tr><th>Admin</th><td>{{ entry.admin }}</td></tr>
+    <tr><th>Action</th><td><code>{{ entry.action }}</code></td></tr>
+    <tr><th>Target</th><td>{{ entry.target }} <span class="muted">({{ target_type }} {{ target_id }})</span></td></tr>
+    {% if addon_slug != "" %}<tr><th>Addon</th><td><a href="/admin/addons/{{ addon_slug }}">{{ addon_name }}</a> · <a href="/addons/{{ addon_slug }}">public page</a></td></tr>{% endif %}
+    {% if tag != "" %}<tr><th>Version</th><td><a href="/addons/{{ addon_slug }}/versions/{{ tag }}">{{ tag }}</a></td></tr>{% endif %}
+    {% if login != "" %}<tr><th>User</th><td><a href="/admin/users?login={{ login }}">{{ login }}</a></td></tr>{% endif %}
+    <tr><th>Note</th><td>{% if entry.note != "" %}{{ entry.note }}{% else %}<span class="muted">none</span>{% endif %}</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+<h2>Details</h2>
+{% if details.is_empty() %}<p class="muted">The action stored no details.</p>{% else %}
+<section class="panel">
+<div class="table-wrap">
+<table>
+  <tbody>
+  {% for (key, value) in details %}
+    <tr><th>{{ key }}</th><td><code>{{ value }}</code></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</section>
+{% endif %}
+<h2>{% if addon_slug != "" %}Other entries on this addon{% else %}Other entries on this target{% endif %}</h2>
+{% if history.is_empty() %}<p class="muted">None.</p>{% else %}
+<div class="table-wrap list">
+<table>
+  <thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Note</th><th><span class="sr-only">Details</span></th></tr></thead>
+  <tbody>
+  {% for e in history %}
+    {% include "admin/audit_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
