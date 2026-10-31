@@ -360,7 +360,12 @@ configs:
             uri /auth/grafana
             copy_headers X-Grafana-User
           }
-          reverse_proxy grafana:3000
+          # Grafana checks its accept list against X-Forwarded-For when it is there; without it
+          # Grafana sees Caddy's own address.
+          reverse_proxy grafana:3000 {
+            header_up -X-Forwarded-For
+            header_up -X-Real-Ip
+          }
         }
         handle {
           reverse_proxy web:8080 {
