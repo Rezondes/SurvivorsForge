@@ -363,7 +363,7 @@ git push origin v0.2.0
 
 On startup the app checks the latest SurvivorsForge release. If its version is higher (semver), a banner offers "Update and restart":
 
-- Windows downloads the zip, writes the new exe next to the running one (`SurvivorsForge.exe.new`), moves the running one aside (`.old`) and the new one into its place, then starts it. Each rename is tried again for about ten seconds while a virus scanner holds the fresh file; if the new exe cannot take the name, the old one moves back. The next start removes `.old`, `.new` and the leftovers of the self-update before 0.5.3 (`.SurvivorsForge.<random>.__relocated__.exe`, `__temp__.exe`).
+- Windows downloads the zip, writes the new exe next to the running one (`SurvivorsForge.exe.new`), moves the running one aside (`.old`) and the new one into its place, then starts it. Each rename is tried again for about ten seconds while a virus scanner holds the fresh file; if the new exe cannot take the name, the old one moves back. The next start removes `.old`, `.new` and the leftovers of the self-update before 0.5.2 (`.SurvivorsForge.<random>.__relocated__.exe`, `__temp__.exe`).
 - Linux downloads the new AppImage next to the running one (`$APPIMAGE`), makes it executable and renames it over the old file. A bare binary outside an AppImage can't replace itself; its banner opens the download page instead.
 
 ## Steam Deck

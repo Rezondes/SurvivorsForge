@@ -135,7 +135,7 @@ fn retry(mut step: impl FnMut() -> std::io::Result<()>) -> std::io::Result<()> {
 }
 
 /// Removes what updates left next to `exe`: the old exe set aside, an unfinished new one, and
-/// the files of the self-update before 0.5.3 (`.SurvivorsForge.<random>.__relocated__.exe`, ...).
+/// the files of the self-update before 0.5.2 (`.SurvivorsForge.<random>.__relocated__.exe`, ...).
 /// The old exe may still run for a moment after a restart, so it is tried a few times.
 pub fn clean_up_after_update(exe: &Path) {
     let Some(dir) = exe.parent() else { return };
