@@ -680,7 +680,10 @@ async fn addons_page_shows_check_times() {
     Mock::given(method("GET")).and(path("/v1/addons")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "addons": [] }))).mount(&web.api).await;
     let page = web.get("/addons").await;
     assert!(page.body.contains(r#"<p class="muted checks">Updates checked <time datetime="2026-10-31T10:00:00+00:00">"#), "{}", page.body);
-    assert!(page.body.contains("next check <time datetime=\"2099-01-01T00:15:00+00:00\">in "));
+    assert!(page.body.contains("<span class=\"next\">next check <time datetime=\"2099-01-01T00:15:00+00:00\">in "), "{}", page.body);
+    // In the narrow filter column the next check gets its own line instead of " · ".
+    let css = web.get("/static/app.css").await.body;
+    assert!(css.contains(".browse-side .checks .sep { display: none; }") && css.contains(".browse-side .checks .next { display: block; }"));
 }
 
 #[tokio::test]

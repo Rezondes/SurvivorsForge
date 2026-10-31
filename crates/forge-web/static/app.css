@@ -263,6 +263,8 @@ main:has(> .browse) > .bottom { padding: 8px 16px; }
 .browse-side .filters { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
 .browse-side .filters > div { min-width: 0; }
 .browse-side .checks { margin-top: 28px; font-size: var(--meta); }
+.browse-side .checks .sep { display: none; }
+.browse-side .checks .next { display: block; }
 .browse-main { display: flex; flex-direction: column; min-height: 0; }
 .browse-main .result-bar { padding-bottom: 12px; }
 .result-tools { display: flex; align-items: center; gap: 10px; }
