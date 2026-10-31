@@ -230,7 +230,7 @@ pub async fn admin_stats(
         stat(n(&sc["flagged"]), "scans with findings"),
         stat(n(&sc["errors"]), "scans that failed"),
         stat(n(&sc["blocked_versions"]), "versions blocked"),
-        stat(github, "public GitHub requests left this hour"),
+        stat(github, "public GitHub requests left now"),
         stat(n(&g["total"]), "GitHub requests"),
     ];
     let t = &s["telemetry"];
@@ -256,12 +256,12 @@ pub async fn admin_stats(
             table("Status codes", &["Status", "Requests"], &r["statuses"], |x| vec![text(&x["status"]), n(&x["count"])], "No requests yet."),
         ]),
         group("jobs", "Jobs and scans", vec![
-            table("Jobs", &["Kind", "Waiting", "Running", "Done", "Failed", "Last error"], &s["jobs"], |x| {
+            table("Jobs", &["Kind", "Waiting now", "Running now", "Done", "Failed", "Last error"], &s["jobs"], |x| {
                 vec![text(&x["kind"]), n(&x["open"]), n(&x["running"]), n(&x["done"]), n(&x["failed"]), text(&x["last_error"])]
             }, "No jobs."),
         ]),
         group("github", "GitHub", vec![
-            table("GitHub quotas", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
+            table("GitHub quotas now", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
                 let at = |v: &Value| when(v);
                 vec![
                     format!("{} ({})", text(&x["quota"]), text(&x["resource"])),
@@ -290,7 +290,8 @@ pub async fn admin_stats(
         ]),
     ];
     let attention = attention(&s, now);
-    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, range, totals, attention, groups }))
+    let since = when(&s["since"]).map_or_else(String::new, |t| t.format("%Y-%m-%d %H:%M UTC").to_string());
+    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, range, since, totals, attention, groups }))
 }
 
 #[cfg(test)]

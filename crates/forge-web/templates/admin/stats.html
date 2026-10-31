@@ -10,6 +10,7 @@
     {% endfor %}
   </nav>
 </div>
+{% if !since.is_empty() %}<p class="muted">Since {{ since }}. Numbers marked <em>now</em> show the present state.</p>{% endif %}
 {% if !attention.is_empty() %}
 <section class="notice bad home-section" role="status">
   <h2>Needs attention</h2>

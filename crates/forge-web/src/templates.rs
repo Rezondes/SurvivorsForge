@@ -508,6 +508,8 @@ pub struct AdminStatsPage {
     pub csrf: String,
     /// `24h`, `7d` or `30d`.
     pub range: String,
+    /// Where the range starts, e.g. `2026-10-30 10:00 UTC`.
+    pub since: String,
     pub totals: Vec<crate::stats::Stat>,
     /// Problems shown first; empty when all is well.
     pub attention: Vec<String>,
