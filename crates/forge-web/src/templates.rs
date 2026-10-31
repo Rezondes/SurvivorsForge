@@ -497,6 +497,8 @@ pub struct StatTable {
     pub title: String,
     pub head: Vec<String>,
     pub rows: Vec<Vec<String>>,
+    /// Per column: numbers, aligned right.
+    pub numeric: Vec<bool>,
     /// Shown instead of an empty table.
     pub empty: String,
 }

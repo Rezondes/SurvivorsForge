@@ -452,7 +452,15 @@ async fn no_problem_block_when_all_is_well() {
 async fn present_state_is_told_apart_from_the_range() {
     let page = admin_stats_page(admin_stats_body()).await;
     assert!(page.contains("Since 2026-10-30 10:00 UTC"), "the range in plain dates: {page}");
-    for text in ["<th>Waiting now</th>", "<th>Running now</th>", "<h3>GitHub quotas now</h3>", "public GitHub requests left now"] {
+    for text in [r#"<th class="num">Waiting now</th>"#, r#"<th class="num">Running now</th>"#, "<h3>GitHub quotas now</h3>", "public GitHub requests left now"] {
         assert!(page.contains(text), "missing {text}");
     }
+}
+
+#[tokio::test]
+async fn only_number_columns_align_right() {
+    let page = admin_stats_page(admin_stats_body()).await;
+    assert!(page.contains(r#"<td class="num">2</td><td>GitHub down</td>"#), "error text stays left: {page}");
+    assert!(page.contains(r#"<th>Endpoint</th><th>Quota</th><th class="num">Requests</th>"#), "quota is text");
+    assert!(page.contains(r#"<td>/repositories/{id}/releases</td><td>installation:7</td><td class="num">50</td>"#));
 }

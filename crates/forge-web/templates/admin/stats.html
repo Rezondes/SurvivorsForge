@@ -31,9 +31,9 @@
   {% else %}
   <div class="table-wrap">
     <table class="stats-table">
-      <thead><tr>{% for h in t.head %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <thead><tr>{% for h in t.head %}<th{% if t.numeric[loop.index0] %} class="num"{% endif %}>{{ h }}</th>{% endfor %}</tr></thead>
       <tbody>
-        {% for row in t.rows %}<tr>{% for cell in row %}<td{% if !loop.first %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+        {% for row in t.rows %}<tr>{% for cell in row %}<td{% if t.numeric[loop.index0] %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
       </tbody>
     </table>
   </div>

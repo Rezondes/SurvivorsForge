@@ -158,13 +158,16 @@ pub struct RangeQuery {
     range: Option<String>,
 }
 
+/// `1,234`, `75%`, `-`: a cell that aligns right with the other numbers of its column.
+fn is_number(cell: &str) -> bool {
+    !cell.is_empty() && cell.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '.' | '%' | '-'))
+}
+
 fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec<String>, empty: &str) -> StatTable {
-    StatTable {
-        title: title.into(),
-        head: head.iter().map(|h| h.to_string()).collect(),
-        rows: list.as_array().into_iter().flatten().map(cells).collect(),
-        empty: empty.into(),
-    }
+    let rows: Vec<Vec<String>> = list.as_array().into_iter().flatten().map(cells).collect();
+    // The first column names the row; any other is a number column when all its cells are numbers.
+    let numeric = (0..head.len()).map(|i| i > 0 && !rows.is_empty() && rows.iter().all(|r| r.get(i).is_some_and(|c| is_number(c)))).collect();
+    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into() }
 }
 
 /// What needs a look first: failing jobs, scans and installs, and a GitHub quota near its end.
