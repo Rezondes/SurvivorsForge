@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, Dropdown, AddonDetail, DetailView, PickBox,
-    AboutBlock, Shot, PictureViewer
+    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles
 } from "components.slint";
 
 export { AddonRow, AddonDetail, AboutBlock, Shot, Theme }
@@ -357,6 +357,10 @@ export component AppWindow inherits Window {
     // The detail view of one addon, shown on the page it was opened from (-1: none).
     in-out property <int> detail-page: -1;
     in property <AddonDetail> detail;
+    // Each list shows tiles or rows, as its page last chose (kept in the config).
+    in-out property <bool> installed-tiles;
+    in-out property <bool> browse-tiles;
+    callback view-changed(int, bool);
     // A screenshot or description image shown large over everything.
     property <bool> zoom-open;
     property <[Shot]> zoom-shots;
@@ -551,6 +555,14 @@ export component AppWindow inherits Window {
                         current-index <=> root.category-index;
                         selected => { root.category-changed(self.current-index); }
                     }
+                    if root.page == 0 : ViewToggle {
+                        tiles <=> root.installed-tiles;
+                        changed(on) => { root.view-changed(0, on); }
+                    }
+                    if root.page == 1 : ViewToggle {
+                        tiles <=> root.browse-tiles;
+                        changed(on) => { root.view-changed(1, on); }
+                    }
                     Rectangle { horizontal-stretch: 1; }
                     if root.page == 0 : ActionButton {
                         text: root.checking ? "Checking..." : "Check for updates";
@@ -595,12 +607,22 @@ export component AppWindow inherits Window {
 
                 if root.page == 0 && !root.showing-detail : ScrollPanel {
                     vertical-stretch: 1;
-                    for row in root.installed-rows : AddonRowView {
-                        addon: row;
-                        action => { root.row-action(row.id); }
-                        remove => { root.row-remove(row.id); }
-                        open => { root.row-open(row.id); }
-                        details => { root.row-details(row.id); }
+                    if root.installed-tiles : AddonTiles {
+                        rows: root.installed-rows;
+                        action(id) => { root.row-action(id); }
+                        remove(id) => { root.row-remove(id); }
+                        open(id) => { root.row-open(id); }
+                        details(id) => { root.row-details(id); }
+                    }
+                    if !root.installed-tiles : VerticalLayout {
+                        spacing: 6px;
+                        for row in root.installed-rows : AddonRowView {
+                            addon: row;
+                            action => { root.row-action(row.id); }
+                            remove => { root.row-remove(row.id); }
+                            open => { root.row-open(row.id); }
+                            details => { root.row-details(row.id); }
+                        }
                     }
                     if root.installed-rows.length == 0 : Text {
                         text: root.search != "" ? "No installed addon matches your search." : "No addons installed yet. Browse the verified addons, install a zip or add a GitHub repo.";
@@ -643,12 +665,22 @@ export component AppWindow inherits Window {
 
                 if root.page == 1 && !root.showing-detail : ScrollPanel {
                     vertical-stretch: 1;
-                    for row in root.browse-rows : AddonRowView {
-                        addon: row;
-                        action => { root.row-action(row.id); }
-                        open => { root.row-open(row.id); }
-                        details => { root.row-details(row.id); }
-                        pick => { root.row-pick(row.id); }
+                    if root.browse-tiles : AddonTiles {
+                        rows: root.browse-rows;
+                        action(id) => { root.row-action(id); }
+                        open(id) => { root.row-open(id); }
+                        details(id) => { root.row-details(id); }
+                        pick(id) => { root.row-pick(id); }
+                    }
+                    if !root.browse-tiles : VerticalLayout {
+                        spacing: 6px;
+                        for row in root.browse-rows : AddonRowView {
+                            addon: row;
+                            action => { root.row-action(row.id); }
+                            open => { root.row-open(row.id); }
+                            details => { root.row-details(row.id); }
+                            pick => { root.row-pick(row.id); }
+                        }
                     }
                     if root.browse-rows.length == 0 : Text {
                         text: "No verified addon matches your search.";

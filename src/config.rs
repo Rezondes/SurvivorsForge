@@ -24,6 +24,9 @@ pub struct Config {
     /// Random, made on the first start; it says nothing about the user or the computer.
     #[serde(default = "new_install_id")]
     pub install_id: Option<String>,
+    /// The lists shown as tiles instead of rows (`installed`, `browse`), each chosen on its page.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tile_pages: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -44,6 +47,7 @@ impl Default for Config {
             telemetry: true,
             send_install_id: true,
             install_id: new_install_id(),
+            tile_pages: Vec::new(),
         }
     }
 }
@@ -74,6 +78,17 @@ pub fn data_dir() -> PathBuf {
 }
 
 impl Config {
+    pub fn tiles(&self, page: &str) -> bool {
+        self.tile_pages.iter().any(|p| p == page)
+    }
+
+    pub fn set_tiles(&mut self, page: &str, on: bool) {
+        self.tile_pages.retain(|p| p != page);
+        if on {
+            self.tile_pages.push(page.to_string());
+        }
+    }
+
     /// The saved settings. A file from before `install_id` gets one now and keeps it.
     pub fn load(dir: &Path) -> Option<Config> {
         let text = std::fs::read_to_string(dir.join(FILE)).ok()?;
@@ -278,6 +293,22 @@ mod tests {
         assert!(is_game_mode(None, true));
         assert!(!is_game_mode(Some("KDE"), false));
         assert!(!is_game_mode(None, false));
+    }
+
+    #[test]
+    fn each_list_keeps_its_view() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = Config::default();
+        assert!(!config.tiles("browse"), "lists until the user picks tiles");
+        config.set_tiles("browse", true);
+        config.save(dir.path()).unwrap();
+        let loaded = Config::load(dir.path()).unwrap();
+        assert!(loaded.tiles("browse") && !loaded.tiles("installed"), "one page's choice leaves the other alone");
+        let mut back = loaded.clone();
+        back.set_tiles("browse", false);
+        assert!(!back.tiles("browse"));
+        std::fs::write(dir.path().join(FILE), r#"{"addons_dir": "x"}"#).unwrap();
+        assert!(!Config::load(dir.path()).unwrap().tiles("installed"), "a config from before still loads");
     }
 
     #[test]

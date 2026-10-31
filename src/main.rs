@@ -63,8 +63,9 @@ struct Core {
 
 type Pixels = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
 
-/// Longer side in pixels the launcher keeps of an icon, and of a screenshot or description image.
-const ICON_EDGE: u32 = 128;
+/// Longer side in pixels the launcher keeps of an icon (the platform's full 256, for the tiles), and
+/// of a screenshot or description image.
+const ICON_EDGE: u32 = 256;
 const SHOT_EDGE: u32 = 1600;
 
 type Shared = Arc<Mutex<Core>>;
@@ -1188,6 +1189,8 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_web_default(registry::web_url(None).into());
     ui.set_settings_telemetry(core.config.telemetry);
     ui.set_settings_send_install_id(core.config.send_install_id);
+    ui.set_installed_tiles(core.config.tiles("installed"));
+    ui.set_browse_tiles(core.config.tiles("browse"));
     fill_game_versions(ui, &core);
 }
 
@@ -1431,6 +1434,14 @@ fn main() -> Result<(), slint::PlatformError> {
         refresh(&ui, shared);
     });
     on!(on_check_updates, |ui, shared| check_updates(&ui, shared));
+    ui.on_view_changed({
+        let shared = shared.clone();
+        move |page, tiles| {
+            let mut core = lock(&shared);
+            core.config.set_tiles(if page == 0 { "installed" } else { "browse" }, tiles);
+            let _ = core.config.save(&core.data_dir);
+        }
+    });
     on!(on_launch_game, |ui, shared| on_launch_game(&ui, shared));
     on!(on_update_all, |ui, shared| on_update_all(&ui, shared));
     on!(on_install_zip, |ui, shared| on_install_zip(&ui, shared));
