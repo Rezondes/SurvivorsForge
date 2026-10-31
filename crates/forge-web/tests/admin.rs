@@ -477,3 +477,14 @@ async fn hourly_github_table_is_capped() {
     assert!(table.contains("2026-10-30 11:00") && !table.contains("2026-10-28 00:00"), "newest first");
     assert!(table.contains("The last 48 hours; Grafana has the rest."));
 }
+
+#[tokio::test]
+async fn grafana_is_linked_for_those_who_may_open_it() {
+    let page = admin_stats_page(admin_stats_body()).await;
+    assert!(page.contains(r#"<a href="/grafana/">Grafana</a> has response times"#), "admins: {page}");
+
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("mia", "moderator")).await;
+    Mock::given(method("GET")).and(path("/v1/admin/stats")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
+    assert!(!web.get("/admin/stats").await.body.contains("Grafana"), "moderators cannot go there");
+}

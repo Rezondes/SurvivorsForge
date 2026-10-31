@@ -42,5 +42,5 @@
   {% endfor %}
 </section>
 {% endfor %}
-<p class="muted">Response times, job durations and the whole history are in Grafana.</p>
+{% if grafana %}<p class="muted"><a href="/grafana/">Grafana</a> has response times, job durations and the whole history.</p>{% endif %}
 {% endblock %}

@@ -306,7 +306,8 @@ pub async fn admin_stats(
     ];
     let attention = attention(&s, now);
     let since = when(&s["since"]).map_or_else(String::new, |t| t.format("%Y-%m-%d %H:%M UTC").to_string());
-    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, range, since, totals, attention, groups }))
+    let grafana = user.can(Permission::ViewGrafana);
+    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, grafana, range, since, totals, attention, groups }))
 }
 
 #[cfg(test)]

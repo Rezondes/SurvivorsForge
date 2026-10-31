@@ -514,6 +514,8 @@ pub struct AdminStatsPage {
     pub range: String,
     /// Where the range starts, e.g. `2026-10-30 10:00 UTC`.
     pub since: String,
+    /// The viewer may open Grafana.
+    pub grafana: bool,
     pub totals: Vec<crate::stats::Stat>,
     /// Problems shown first; empty when all is well.
     pub attention: Vec<String>,
