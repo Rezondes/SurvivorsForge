@@ -632,7 +632,8 @@ fn stats_body() -> Value {
         "top_addons_30d": [{ "slug": "lucky", "name": "Lucky Odds", "installs": 5 }],
         "platform": { "addons": 31, "verified_addons": 12, "creators": 9, "game_versions": 3, "scanned_versions": 200, "blocked_versions": 2,
                       "github_downloads": 5000, "website_downloads": 70, "packs": 6, "public_packs": 2, "pack_downloads": 11 },
-        "checks": { "releases": { "last": "2026-10-31T10:00:00Z", "next": soon(15) }, "sources": { "last": null, "next": soon(30) } }
+        "checks": { "releases": { "last": "2026-10-31T10:00:00Z", "last_run": "2026-10-31T10:00:00Z", "failed": false, "next": soon(15) },
+                    "sources": { "last": "2026-10-29T05:30:00Z", "last_run": "2026-10-31T00:15:00Z", "failed": true, "next": soon(30) } }
     })
 }
 
@@ -642,7 +643,7 @@ async fn stats_page_renders_groups_and_privacy() {
     mock(&web, "/v1/stats", stats_body()).await;
     let page = web.get("/stats").await;
     assert_eq!(page.status, StatusCode::OK);
-    for text in ["12,345", "345", "visits in the last 30 days (each visitor once a day)", "without cookies", "downloads of v0.4.3, the newest version", "75%", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", "not yet"] {
+    for text in ["12,345", "345", "visits in the last 30 days (each visitor once a day)", "without cookies", "downloads of v0.4.3, the newest version", "75%", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", r#"<span class="failed">last run <time datetime="2026-10-31T00:15:00+00:00">"#, "failed</span>, last success"] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     assert!(web.get("/").await.body.contains(r#"<a href="/stats">Statistics</a>"#), "linked in the footer");
@@ -665,4 +666,17 @@ async fn pages_show_without_check_times() {
     let page = web.get("/addons/lucky").await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(!page.body.contains("Updates checked"), "the API did not tell");
+}
+
+#[tokio::test]
+async fn a_failed_update_check_says_so() {
+    let mut web = TestWeb::new().await;
+    let mut body = stats_body();
+    body["checks"]["releases"] = json!({ "last": "2026-10-29T05:30:00Z", "last_run": "2026-10-31T00:15:00Z", "failed": true, "next": "2099-01-01T00:15:00Z" });
+    mock(&web, "/v1/stats", body).await;
+    mock(&web, "/v1/categories", categories()).await;
+    Mock::given(method("GET")).and(path("/v1/addons")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "addons": [] }))).mount(&web.api).await;
+    let page = web.get("/addons").await;
+    assert!(page.body.contains(r#"<span class="failed">Update check failed"#), "{}", page.body);
+    assert!(page.body.contains("last success <time datetime=\"2026-10-29T05:30:00+00:00\">"));
 }

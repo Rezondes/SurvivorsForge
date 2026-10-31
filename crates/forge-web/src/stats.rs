@@ -15,7 +15,12 @@ use serde_json::Value;
 /// One periodic check in words: "4 min ago", "in 11 min".
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Check {
+    /// The last successful run.
     pub last: String,
+    /// The last run that ended, and whether it failed (then it is later than `last`).
+    pub last_run: String,
+    pub failed: bool,
+    pub last_run_at: String,
     pub next: String,
     /// The exact times, for `<time datetime>`.
     pub last_at: String,
@@ -68,9 +73,12 @@ pub fn until(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
 }
 
 fn check(v: &Value, now: DateTime<Utc>) -> Check {
-    let (last, next) = (when(&v["last"]), when(&v["next"]));
+    let (last, next, last_run) = (when(&v["last"]), when(&v["next"]), when(&v["last_run"]));
     Check {
-        last: last.map_or_else(|| "not yet".into(), |t| ago(t, now)),
+        last: last.map_or_else(|| "never".into(), |t| ago(t, now)),
+        last_run: last_run.map_or_else(|| "not yet".into(), |t| ago(t, now)),
+        failed: v["failed"] == true,
+        last_run_at: last_run.map(|t| t.to_rfc3339()).unwrap_or_default(),
         next: next.map_or_else(|| "soon".into(), |t| until(t, now)),
         last_at: last.map(|t| t.to_rfc3339()).unwrap_or_default(),
         next_at: next.map(|t| t.to_rfc3339()).unwrap_or_default(),
@@ -268,6 +276,6 @@ mod tests {
     #[test]
     fn missing_times_say_so() {
         let checks = checks_of(&serde_json::json!({}), Utc::now());
-        assert_eq!((checks.releases.last.as_str(), checks.releases.next.as_str()), ("not yet", "soon"));
+        assert_eq!((checks.releases.last_run.as_str(), checks.releases.next.as_str(), checks.releases.failed), ("not yet", "soon", false));
     }
 }

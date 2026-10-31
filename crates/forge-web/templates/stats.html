@@ -36,8 +36,8 @@
 <section class="home-section">
   <h2>Checks</h2>
   <dl class="stats">
-    <div class="stat"><dt>New releases, every 15 minutes</dt><dd class="small">last <time datetime="{{ checks.releases.last_at }}">{{ checks.releases.last }}</time>, next <time datetime="{{ checks.releases.next_at }}">{{ checks.releases.next }}</time></dd></div>
-    <div class="stat"><dt>Files unchanged on GitHub, every 6 hours</dt><dd class="small">last <time datetime="{{ checks.sources.last_at }}">{{ checks.sources.last }}</time>, next <time datetime="{{ checks.sources.next_at }}">{{ checks.sources.next }}</time></dd></div>
+    <div class="stat"><dt>New releases, every 15 minutes</dt><dd class="small">{% let c = checks.releases %}{% include "check_line.html" %}</dd></div>
+    <div class="stat"><dt>Files unchanged on GitHub, every 6 hours</dt><dd class="small">{% let c = checks.sources %}{% include "check_line.html" %}</dd></div>
   </dl>
 </section>
 

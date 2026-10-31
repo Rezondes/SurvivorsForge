@@ -82,6 +82,19 @@ async fn checks_from_jobs_table(pool: PgPool) {
     assert_eq!(checks["releases"]["next"], json!("2026-10-31T10:15:00Z"), "the next 15-minute slot");
     assert_eq!(checks["sources"]["next"], json!("2026-10-31T12:00:00Z"), "the next 6-hour slot");
 
+    assert_eq!((checks["releases"]["failed"].as_bool(), checks["releases"]["last_run"].clone()), (Some(false), json!("2026-10-31T10:02:00Z")));
+
+    // Later runs that failed: `last` stays at the success, `last_run` and `failed` tell.
+    sqlx::query("INSERT INTO jobs (kind, run_at, failed_at, last_error) VALUES ('check_sources', $1, $1, 'GitHub rate limit'), ('check_sources', $2, NULL, NULL)")
+        .bind(at - Duration::hours(1))
+        .bind(at - Duration::hours(30))
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE jobs SET done_at = run_at WHERE kind = 'check_sources' AND failed_at IS NULL").execute(&app.pool).await.unwrap();
+    let sources = app.get("/v1/stats", None).await.json()["checks"]["sources"].clone();
+    assert_eq!((sources["last"].clone(), sources["last_run"].clone(), sources["failed"].as_bool()), (json!("2026-10-30T04:07:00Z"), json!("2026-10-31T09:07:00Z"), Some(true)));
+
     sqlx::query("INSERT INTO jobs (kind, run_at) VALUES ('poll_releases', $1)").bind(at).execute(&app.pool).await.unwrap();
     assert_eq!(app.get("/v1/stats", None).await.json()["checks"]["releases"]["next"], json!("2026-10-31T10:07:00Z"), "running now");
 }

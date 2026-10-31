@@ -10,20 +10,24 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
-/// When a periodic job last finished and when it runs next: the start of its next time slot
+/// When a periodic job last succeeded (`last`), when it last ran at all and whether that run failed
+/// (`last_run`, `failed`), and when it runs next: the start of its next time slot
 /// (`jobs::enqueue_periodic`), or now while one is waiting or running.
 async fn check(pool: &PgPool, kind: &str, every: TimeDelta, now: DateTime<Utc>) -> sqlx::Result<Value> {
-    let (last, waiting): (Option<DateTime<Utc>>, bool) = sqlx::query_as(
-        "SELECT max(done_at), bool_or(done_at IS NULL AND failed_at IS NULL AND run_at <= $2) FROM jobs WHERE kind = $1",
+    type Row = (Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<bool>);
+    let (last, last_failed, waiting): Row = sqlx::query_as(
+        "SELECT max(done_at), max(failed_at), bool_or(done_at IS NULL AND failed_at IS NULL AND run_at <= $2) FROM jobs WHERE kind = $1",
     )
     .bind(kind)
     .bind(now)
     .fetch_one(pool)
-    .await
-    .map(|(last, waiting): (Option<DateTime<Utc>>, Option<bool>)| (last, waiting.unwrap_or(false)))?;
+    .await?;
+    let failed = last_failed.is_some_and(|f| last.is_none_or(|l| f > l));
+    let last_run = if failed { last_failed } else { last };
     let seconds = every.num_seconds().max(1);
     let next_slot = DateTime::from_timestamp((now.timestamp() / seconds + 1) * seconds, 0).unwrap_or(now);
-    Ok(json!({ "last": last, "next": if waiting { now } else { next_slot }, "every_minutes": every.num_minutes() }))
+    let next = if waiting.unwrap_or(false) { now } else { next_slot };
+    Ok(json!({ "last": last, "last_run": last_run, "failed": failed, "next": next, "every_minutes": every.num_minutes() }))
 }
 
 pub async fn checks(pool: &PgPool, now: DateTime<Utc>) -> sqlx::Result<Value> {

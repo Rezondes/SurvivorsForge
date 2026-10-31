@@ -1,0 +1,1 @@
+{% if c.failed %}<span class="failed">last run <time datetime="{{ c.last_run_at }}">{{ c.last_run }}</time> failed</span>, last success <time datetime="{{ c.last_at }}">{{ c.last }}</time>{% else %}last <time datetime="{{ c.last_at }}">{{ c.last }}</time>{% endif %}, next <time datetime="{{ c.next_at }}">{{ c.next }}</time>
