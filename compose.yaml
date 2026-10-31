@@ -163,8 +163,9 @@ services:
       - monitoring
     restart: unless-stopped
 
+  # Not 3.5.0: it logs "negative structured metadata bytes received" for every push (grafana/loki#17371).
   loki:
-    image: grafana/loki:3.5.0
+    image: grafana/loki:3.5.12
     profiles: [monitoring]
     command: ["-config.file=/etc/loki/forge.yaml"]
     configs:
