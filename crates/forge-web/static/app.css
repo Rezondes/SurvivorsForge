@@ -375,6 +375,18 @@ pre { background: var(--field); border: 1px solid var(--line); border-radius: va
 .drag-handle { display: inline-grid; place-items: center; width: 38px; height: 38px; color: var(--muted); cursor: grab; border: 1px dashed var(--line); border-radius: var(--radius); }
 .drag-handle:hover { color: var(--gold); border-color: var(--outline); }
 .shots figure.dragging { opacity: .4; }
+/* File pickers (view.js): a dashed zone that takes dropped files, lit while a file is over it, and
+   the picked files below it, each enlargeable and removable. */
+.drop-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px; border: 1px dashed var(--outline); border-radius: var(--radius); background: var(--field); }
+.drop-zone.over { border-style: solid; border-color: var(--outline-active); background: var(--control); }
+.drop-zone input[type="file"] { width: auto; min-height: 0; padding: 0; border: 0; background: none; }
+.drop-hint { margin: 0; }
+.file-previews { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin: 10px 0 0; }
+.file-previews figure { position: relative; }
+.file-previews figcaption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 44px; }
+.file-previews figure > a + figcaption { padding-right: 0; }
+.file-previews [data-remove-file] { position: absolute; top: 6px; right: 6px; background: var(--field); }
+.file-previews figure:not(:has(img)) [data-remove-file] { top: -9px; }
 @media (pointer: coarse) { .drag-handle { display: none; } }
 .icon-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .icon-row button svg { margin-right: 6px; }

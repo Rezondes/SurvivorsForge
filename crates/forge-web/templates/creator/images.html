@@ -18,7 +18,7 @@
   <h2>Upload an icon</h2>
   <input type="hidden" name="kind" value="icon">
   <label for="file">Image (PNG, JPEG or WebP, at most 5 MB; cropped to a 256 px square)</label>
-  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" required>
+  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" required data-drop>
   <div class="cropper" data-cropper hidden>
     <p class="muted">Drag the square over the part that becomes the icon, or move it with the arrow keys; the slider sets its size.</p>
     <div class="cropper-row">
@@ -63,7 +63,7 @@
   <h2>Upload screenshots</h2>
   <input type="hidden" name="kind" value="screenshot">
   <label for="file">Images (PNG, JPEG or WebP, at most 5 MB each, scaled to at most 1920 px; pick several at once)</label>
-  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required>
+  <input id="file" type="file" name="file" accept="image/png,image/jpeg,image/webp" multiple required data-drop>
   <label for="caption">Caption (for every picked screenshot)</label>
   <input id="caption" name="caption" maxlength="200">
   <p><button type="submit">Upload</button> <span class="htmx-indicator muted">Uploading...</span></p>
@@ -105,4 +105,6 @@
   </div>
 </section>
 {% endif %}
+{# Previews of picked images open in the viewer. #}
+{% include "lightbox.html" %}
 {% endblock %}

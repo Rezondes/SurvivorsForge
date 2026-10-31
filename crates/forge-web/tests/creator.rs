@@ -282,6 +282,30 @@ async fn without_an_icon_the_page_says_how_to_add_one() {
 }
 
 #[tokio::test]
+async fn every_file_picker_takes_a_drop_and_shows_a_preview() {
+    // view.js turns each picker with data-drop into a drop zone with previews; image previews open in
+    // the website's viewer, so pages with image pickers carry it.
+    let mut web = logged_in(owner()).await;
+    let pages = [
+        ("/addons/lucky/images?tab=icon", 1, true),
+        ("/addons/lucky/images?tab=screenshots", 1, true),
+        ("/addons/new", 2, true),
+        ("/scan", 1, false),
+    ];
+    for (page, pickers, images) in pages {
+        let body = web.get(page).await.body;
+        assert_eq!(body.matches(r#"type="file""#).count(), pickers, "{page}");
+        assert_eq!(body.matches(" data-drop").count(), pickers, "every picker of {page} takes a drop");
+        assert_eq!(body.contains(r#"<dialog class="lightbox""#), images, "{page}: previews can be enlarged");
+    }
+    let script = web.get("/static/view.js").await.body;
+    for text in ["[data-drop]", "dragover", "DataTransfer", "data-remove-file", "htmx:load"] {
+        assert!(script.contains(text), "view.js misses {text}");
+    }
+    assert!(web.get("/static/app.css").await.body.contains(".drop-zone.over"), "the zone shows a file is over it");
+}
+
+#[tokio::test]
 async fn icon_and_screenshots_have_their_own_tab() {
     let mut web = logged_in(owner()).await;
     let icon = web.get("/addons/lucky/images").await.body;
@@ -368,7 +392,7 @@ async fn several_screenshots_in_one_upload() {
     assert!(form.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" multiple"#));
     // The icon takes one file; the server keeps one anyway.
     let icon = web.get("/addons/lucky/images?tab=icon").await.body;
-    assert!(icon.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" required>"#), "{icon}");
+    assert!(icon.contains(r#"name="file" accept="image/png,image/jpeg,image/webp" required data-drop>"#), "{icon}");
 }
 
 #[tokio::test]

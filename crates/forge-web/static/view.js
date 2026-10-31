@@ -451,6 +451,139 @@
     head.addEventListener("pointercancel", stop);
   });
 
+  // File pickers with data-drop: a zone that also takes dropped files, and a preview of what is
+  // picked below it. Images open in the viewer, every file can be taken out again. Without script
+  // the plain picker stays.
+  function accepts(input, file) {
+    var accept = (input.getAttribute("accept") || "").toLowerCase().split(",").map(function (a) {
+      return a.trim();
+    });
+    var name = file.name.toLowerCase();
+    return accept.some(function (a) {
+      return a === "" || (a.charAt(0) === "." ? name.slice(-a.length) === a : a === (file.type || "").toLowerCase());
+    });
+  }
+  function setFiles(input, files) {
+    var list = new DataTransfer();
+    files.forEach(function (f) {
+      list.items.add(f);
+    });
+    input.files = list.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  function sizeText(bytes) {
+    return bytes < 1048576 ? Math.ceil(bytes / 1024) + " KB" : (bytes / 1048576).toFixed(1) + " MB";
+  }
+  function previews(input) {
+    return input.closest(".drop-zone").nextElementSibling;
+  }
+  function showPicked(input) {
+    var box = previews(input);
+    box.querySelectorAll("img").forEach(function (img) {
+      URL.revokeObjectURL(img.src);
+    });
+    box.textContent = "";
+    Array.prototype.forEach.call(input.files, function (file, i) {
+      var figure = document.createElement("figure");
+      if (file.type.indexOf("image/") === 0) {
+        var url = URL.createObjectURL(file);
+        var link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("data-lightbox", "");
+        link.title = "Enlarge";
+        var img = document.createElement("img");
+        img.src = url;
+        img.alt = file.name;
+        link.appendChild(img);
+        figure.appendChild(link);
+      }
+      var caption = document.createElement("figcaption");
+      caption.textContent = file.name + " (" + sizeText(file.size) + ")";
+      figure.appendChild(caption);
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "danger icon-button";
+      remove.setAttribute("data-remove-file", String(i));
+      remove.setAttribute("aria-label", "Remove " + file.name);
+      remove.title = "Remove";
+      remove.innerHTML =
+        '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M4.5 4l.7 9.5h5.6l.7-9.5M7 6.5v5M9 6.5v5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+      figure.appendChild(remove);
+      box.appendChild(figure);
+    });
+    box.hidden = input.files.length === 0;
+  }
+  function dropZones(root) {
+    root.querySelectorAll("input[type=file][data-drop]").forEach(function (input) {
+      if (input.closest(".drop-zone")) return;
+      var zone = document.createElement("div");
+      zone.className = "drop-zone";
+      input.parentNode.insertBefore(zone, input);
+      zone.appendChild(input);
+      var hint = document.createElement("p");
+      hint.className = "muted drop-hint";
+      hint.textContent = input.multiple ? "or drop the files here" : "or drop the file here";
+      zone.appendChild(hint);
+      var box = document.createElement("div");
+      box.className = "shots file-previews";
+      box.hidden = true;
+      box.setAttribute("aria-live", "polite");
+      zone.parentNode.insertBefore(box, zone.nextSibling);
+      if (input.files.length) showPicked(input);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    dropZones(document);
+  });
+  document.addEventListener("htmx:load", function (event) {
+    dropZones(event.target);
+  });
+  document.addEventListener("change", function (event) {
+    if (event.target.matches && event.target.matches("input[type=file][data-drop]") && event.target.closest(".drop-zone")) showPicked(event.target);
+  });
+  function carriesFiles(event) {
+    return event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types, "Files") !== -1;
+  }
+  document.addEventListener("dragover", function (event) {
+    var zone = event.target.closest && event.target.closest(".drop-zone");
+    if (!zone || !carriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    zone.classList.add("over");
+  });
+  document.addEventListener("dragleave", function (event) {
+    var zone = event.target.closest && event.target.closest(".drop-zone");
+    if (zone && !zone.contains(event.relatedTarget)) zone.classList.remove("over");
+  });
+  document.addEventListener("drop", function (event) {
+    var zone = event.target.closest && event.target.closest(".drop-zone");
+    if (!zone || !carriesFiles(event)) return;
+    event.preventDefault();
+    zone.classList.remove("over");
+    var input = zone.querySelector("input[type=file]");
+    var hint = zone.querySelector(".drop-hint");
+    var dropped = Array.prototype.filter.call(event.dataTransfer.files, function (f) {
+      return accepts(input, f);
+    });
+    hint.textContent = dropped.length < event.dataTransfer.files.length ? "Skipped a file of a type this field does not take." : input.multiple ? "or drop the files here" : "or drop the file here";
+    if (!dropped.length) return;
+    // Several pickers add to what was picked before; a single one takes the new file.
+    setFiles(input, input.multiple ? Array.prototype.slice.call(input.files).concat(dropped) : dropped.slice(0, 1));
+  });
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-remove-file]");
+    if (!button) return;
+    var input = button.closest(".file-previews").previousElementSibling.querySelector("input[type=file]");
+    var index = Number(button.getAttribute("data-remove-file"));
+    setFiles(
+      input,
+      Array.prototype.filter.call(input.files, function (f, i) {
+        return i !== index;
+      })
+    );
+    input.focus();
+  });
+
   // htmx keeps the old results when a reload fails; say so above them.
   function failed(event) {
     var target = event.detail && event.detail.target;

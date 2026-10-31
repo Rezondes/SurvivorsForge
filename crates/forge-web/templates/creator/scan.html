@@ -9,7 +9,7 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <p class="muted">Runs the same checks as a new release on GitHub, before you publish it. The zip is not stored. A clean result means nothing was found, not that the addon is safe.</p>
   <label for="file">Addon zip (at most 50 MB)</label>
-  <input id="file" type="file" name="file" accept=".zip,application/zip" required>
+  <input id="file" type="file" name="file" accept=".zip,application/zip" required data-drop>
   <p><button type="submit">Scan</button></p>
 </form>
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}

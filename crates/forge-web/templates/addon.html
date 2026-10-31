@@ -68,19 +68,7 @@
   </figure>
   {% endfor %}
 </section>
-<dialog class="lightbox" aria-label="Screenshot">
-  <div class="lightbox-stage"><img alt=""></div>
-  <div class="lightbox-bar">
-    <p class="lightbox-caption"></p>
-    <span class="lightbox-count muted"></span>
-    <button type="button" class="secondary icon-button" data-step="-1" aria-label="Previous screenshot" title="Previous"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-    <button type="button" class="secondary icon-button" data-step="1" aria-label="Next screenshot" title="Next"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-    <button type="button" class="secondary icon-button" data-zoom="out" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-    <button type="button" class="secondary icon-button" data-zoom="in" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10M8 3v10" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-    <button type="button" class="secondary icon-button" data-zoom="fit" aria-label="Fit to the screen" title="Fit"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-    <form method="dialog"><button class="icon-button" aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 3l10 10M13 3 3 13" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></form>
-  </div>
-</dialog>
+{% include "lightbox.html" %}
 {% endif %}
 
 <section class="panel description">

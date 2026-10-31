@@ -66,10 +66,12 @@
   <h2>4. Icon and screenshots</h2>
   <p class="muted">Optional, and you can change them any time later. PNG, JPEG or WebP, at most 5 MB each.</p>
   <label for="icon">Icon (cropped to a 256 px square)</label>
-  <input id="icon" type="file" name="icon" accept="image/png,image/jpeg,image/webp">
+  <input id="icon" type="file" name="icon" accept="image/png,image/jpeg,image/webp" data-drop>
   <label for="screenshots">Screenshots (up to 10, scaled to at most 1920 px)</label>
-  <input id="screenshots" type="file" name="screenshots" accept="image/png,image/jpeg,image/webp" multiple>
+  <input id="screenshots" type="file" name="screenshots" accept="image/png,image/jpeg,image/webp" multiple data-drop>
 
   <p><button type="submit">Publish</button></p>
 </form>
+{# Previews of picked images open in the viewer. #}
+{% include "lightbox.html" %}
 {% endblock %}
