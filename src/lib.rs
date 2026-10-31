@@ -74,7 +74,7 @@ impl fmt::Display for Error {
                 &actual[..actual.len().min(12)]
             ),
             Error::ForbiddenHost(url) => write!(f, "Downloads are only allowed from GitHub, not from {url}"),
-            Error::Offline => write!(f, "The SurvivorsForge server cannot be reached. Installing and updating resume when it is back"),
+            Error::Offline => write!(f, "The SurvivorsForge server cannot be reached. Addon packs need it; addons themselves install from GitHub"),
             Error::InvalidRepo(input) => write!(f, "\"{input}\" is not a GitHub repo (expected owner/repo or a GitHub URL)"),
         }
     }

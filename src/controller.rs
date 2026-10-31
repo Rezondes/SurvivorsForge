@@ -471,6 +471,16 @@ pub fn addon_info(json: &str) -> Option<AddonInfo> {
     })
 }
 
+/// The version label of an update of a verified addon that the platform did not scan: found on
+/// GitHub directly while the server could not be reached. Installing it needs the user's consent.
+pub fn unchecked_update(state: &State, statuses: &HashMap<String, UpdateStatus>, id: &str) -> Option<String> {
+    let verified = matches!(state.get(id).map(|e| &e.source), Some(Source::Verified { .. }));
+    match statuses.get(id) {
+        Some(UpdateStatus::UpdateAvailable(remote)) if verified && remote.sha256.is_none() => Some(remote.label.clone()),
+        _ => None,
+    }
+}
+
 /// What the platform last showed, kept across starts: icon URLs and the detail pages by addon id.
 /// The pictures themselves sit in `cache/images`; with this the launcher finds them offline too.
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -600,6 +610,24 @@ mod tests {
         assert!(more, "51 addons do not fit on one page of 50");
         assert!(!icon_page(r#"{"total": 2, "page": 1, "per_page": 50, "addons": []}"#).unwrap().1);
         assert!(icon_page("not json").is_none());
+    }
+
+    #[test]
+    fn an_update_without_a_scan_of_a_verified_addon_is_unchecked() {
+        let mut state = State::default();
+        for (id, source) in [
+            ("lucky", Source::Verified { registry_id: "lucky".into() }),
+            ("mine", Source::GitHub { repo: "me/mine".into(), spec: crate::registry::SourceSpec::Tag }),
+        ] {
+            state.upsert(Entry { id: id.into(), name: id.into(), source, folders: vec![id.into()], version: "v1".into(), installed_at: 0 });
+        }
+        let update = |sha256: Option<String>| UpdateStatus::UpdateAvailable(RemoteVersion { id: "v2".into(), label: "v2".into(), download: String::new(), sha256 });
+        let mut statuses = HashMap::from([("lucky".to_string(), update(None)), ("mine".to_string(), update(None))]);
+        assert_eq!(unchecked_update(&state, &statuses, "lucky").as_deref(), Some("v2"));
+        assert_eq!(unchecked_update(&state, &statuses, "mine"), None, "an own GitHub addon was never checked by the platform");
+        statuses.insert("lucky".into(), update(Some("ab".repeat(32))));
+        assert_eq!(unchecked_update(&state, &statuses, "lucky"), None, "a scanned version is checked");
+        assert_eq!(unchecked_update(&state, &statuses, "gone"), None);
     }
 
     #[test]

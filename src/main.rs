@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use survivorsforge::config::{self, Config};
 use survivorsforge::controller::{self, Badge, Row, RowState, UNMANAGED_PREFIX};
 use survivorsforge::deep_link;
-use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub};
+use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, WebGitHub};
 use survivorsforge::install::{self, Request};
 use survivorsforge::registry::{self, Origin, Registry, SourceSpec};
 use survivorsforge::repo_detect;
@@ -150,8 +150,9 @@ impl Core {
     }
 
     /// Release and tag metadata, through the platform.
-    fn github(&self) -> ApiGitHub {
-        ApiGitHub::new(self.client(), &self.api_url())
+    /// GitHub through the SurvivorsForge server, or straight from github.com while it is unreachable.
+    fn github(&self) -> Box<dyn GitHub + Send> {
+        if self.offline { Box::new(WebGitHub::new(self.client())) } else { Box::new(ApiGitHub::new(self.client(), &self.api_url())) }
     }
 
     fn rescan(&mut self) {
@@ -598,14 +599,11 @@ fn download_and_install(
 ) -> survivorsforge::Result<String> {
     let (client, github, downloads, addons) = {
         let core = lock(shared);
-        if core.offline {
-            return Err(Error::Offline);
-        }
         (core.client(), core.github(), core.downloads(), core.addons_dir().to_path_buf())
     };
     let remote = match remote {
         Some(remote) => remote,
-        None => updates::resolve_remote(&github, repo, spec)?,
+        None => updates::resolve_remote(&*github, repo, spec)?,
     };
     *version = Some(remote.id.clone());
     let zip = downloads.join(format!("{}.zip", unique_name()));
@@ -678,6 +676,14 @@ fn on_row_action(ui: &AppWindow, shared: &Shared, id: String) {
                     }
                     if !plan.optional.is_empty() {
                         lines.push(format!("Works with, not installed: {}.", plan.optional.join(", ")));
+                    }
+                    if let Some(label) = controller::unchecked_update(&core.state, &core.statuses, &id) {
+                        danger = true;
+                        warned = true;
+                        lines.insert(0, format!(
+                            "{label} is not checked for harmful code: the SurvivorsForge server cannot be reached and it is newer than the last checked version. It comes straight from GitHub ({})."
+                            , addon.repo
+                        ));
                     }
                     let asks = !plan.install.is_empty() || warned;
                     Ok(asks.then(|| (format!("Install {}?", addon.name), lines.join("\n\n"), danger, plan.install)))
@@ -774,8 +780,10 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
         let ids: Vec<String> =
             controller::update_all_ids(&core.statuses).into_iter().filter(|id| !core.busy.contains(id)).collect();
         // Updates that need a confirmation are left for the user to install one by one.
-        let (ids, skipped) =
+        let (ids, mut skipped) =
             controller::split_confirmations(ids, &core.registry, &core.state, core.config.game_version.as_deref(), &core.game_versions);
+        let (ids, unchecked): (Vec<String>, Vec<String>) = ids.into_iter().partition(|id| controller::unchecked_update(&core.state, &core.statuses, id).is_none());
+        skipped.extend(unchecked);
         let skipped_names: Vec<String> = skipped.iter().map(|id| core.state.get(id).map(|e| e.name.clone()).unwrap_or(id.clone())).collect();
         let jobs: Vec<_> = ids
             .into_iter()
@@ -809,7 +817,9 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
         } else {
             format!(". Needs your confirmation, update one by one: {}", skipped.join(", "))
         };
-        if failed.is_empty() {
+        if failed.is_empty() && total == 0 && !skipped.is_empty() {
+            Ok(format!("Nothing updated. Needs your confirmation, update one by one: {}", skipped.join(", ")))
+        } else if failed.is_empty() {
             Ok(format!("Updated {total} addons{skipped_note}"))
         } else {
             Err(Error::Io(format!("{} of {total} updates failed. {}", failed.len(), failed.join(" | "))))
@@ -835,16 +845,19 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         };
         let (registry, origin) = registry::load(Some(client.get_text(&registry::registry_url(&api))), &cache);
         let offline = origin != Origin::Api;
-        // Offline every check would fail: keep the last statuses instead of a wall of errors.
-        let (game_versions, results, self_update) = if offline {
-            (Vec::new(), None, None)
-        } else {
-            let self_update = match github.latest_release(APP_REPO) {
-                Ok(Some(release)) => self_update::available(APP_VERSION, &release),
-                _ => None,
-            };
-            (fetch_game_versions(&client, &api), Some(updates::check_all(&github, &mut state, &registry)), self_update)
+        // Without the server every addon (and the launcher itself) is checked on github.com directly,
+        // against the stored list; what the server did not scan is marked as unchecked.
+        let github: Box<dyn GitHub + Send> = if offline { Box::new(WebGitHub::new(client.clone())) } else { github };
+        let self_update = match github.latest_release(APP_REPO) {
+            Ok(Some(release)) => self_update::available(APP_VERSION, &release),
+            _ => None,
         };
+        let (game_versions, results) = if offline {
+            (Vec::new(), updates::check_all_direct(&*github, &mut state, &registry))
+        } else {
+            (fetch_game_versions(&client, &api), updates::check_all(&*github, &mut state, &registry))
+        };
+        let results = Some(results);
         let categories = if offline { Vec::new() } else { client.get_text(&format!("{api}/v1/categories")).map(|t| controller::parse_categories(&t)).unwrap_or_default() };
 
         let mut core = lock(shared);
@@ -877,8 +890,14 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
                 .filter(|_| origin == Origin::Cache)
                 .map(|age| format!("the list from {} ago", registry::describe_age(age)))
                 .unwrap_or_else(|| "the built-in list".into());
+            let unchecked = core.state.entries.iter().filter(|e| controller::unchecked_update(&core.state, &core.statuses, &e.id).is_some()).count();
+            let note = match unchecked {
+                0 => String::new(),
+                1 => " 1 update is not checked yet and asks before it installs.".into(),
+                n => format!(" {n} updates are not checked yet and ask before they install."),
+            };
             return Err(Error::NotInstallable(format!(
-                "Offline: the SurvivorsForge server cannot be reached, showing {age}. Installing and updating is paused."
+                "The SurvivorsForge server cannot be reached: showing {age}, updates come straight from GitHub.{note}"
             )));
         }
 
@@ -998,7 +1017,7 @@ fn on_repo_submit(ui: &AppWindow, shared: &Shared) {
             let core = lock(&shared);
             (core.client(), core.github(), core.registry.clone(), core.downloads())
         };
-        let result = repo_detect::detect(&github, &registry, &repo, &mut |url| {
+        let result = repo_detect::detect(&*github, &registry, &repo, &mut |url| {
             let zip = downloads.join(format!("{}.zip", unique_name()));
             client.download(url, &zip)?;
             archive::analyze(&zip).map_err(Error::from).map(|addons| (zip.clone(), addons)).inspect_err(|_| {

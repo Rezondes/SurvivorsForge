@@ -249,9 +249,87 @@ impl GitHub for ApiGitHub {
     }
 }
 
+/// Release and tag metadata straight from github.com, for when the SurvivorsForge server cannot be
+/// reached: the same pages and parsers the server reads (not the REST API, so no hourly limit).
+pub struct WebGitHub {
+    client: Client,
+}
+
+const GITHUB_WEB: &str = "https://github.com";
+/// No release page or ref list comes near this.
+const MAX_PAGE: u64 = 4 << 20;
+
+impl WebGitHub {
+    pub fn new(client: Client) -> WebGitHub {
+        WebGitHub { client }
+    }
+
+    /// The page at `path` on github.com, or `Err` with the target of a redirect (`Ok(None)` without one).
+    fn page(&self, path: &str) -> Result<std::result::Result<String, Option<String>>> {
+        // The download agent follows no redirect, so /releases/latest can be read.
+        let resp = Client::call(self.client.downloads.get(&format!("{GITHUB_WEB}{path}")))?;
+        if (300..400).contains(&resp.status()) {
+            return Ok(Err(resp.header("location").map(str::to_string)));
+        }
+        let mut text = String::new();
+        resp.into_reader().take(MAX_PAGE).read_to_string(&mut text).map_err(|e| Error::Network(e.to_string()))?;
+        Ok(Ok(text))
+    }
+
+    fn refs(&self, repo: &str) -> Result<Refs> {
+        let repo = normalize_repo(repo)?;
+        let body = self.page(&format!("/{repo}.git/info/refs?service=git-upload-pack"))?.map_err(|_| Error::Network(format!("{repo}: unexpected redirect")))?;
+        Ok(parse_refs(&body))
+    }
+}
+
+impl GitHub for WebGitHub {
+    fn latest_release(&self, repo: &str) -> Result<Option<Release>> {
+        let repo = normalize_repo(repo)?;
+        match self.page(&format!("/{repo}/releases/latest"))? {
+            Err(Some(location)) => match parse_latest_location(&location) {
+                Some(tag) => self.release(&repo, &tag).map(Some),
+                None => Ok(None),
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn release(&self, repo: &str, tag: &str) -> Result<Release> {
+        let repo = normalize_repo(repo)?;
+        let html = self.page(&format!("/{repo}/releases/expanded_assets/{}", encode_segment(tag)))?.unwrap_or_default();
+        Ok(Release { assets: parse_assets(&html, GITHUB_WEB, &repo, tag), tag: tag.to_string() })
+    }
+
+    fn tags(&self, repo: &str) -> Result<Vec<Tag>> {
+        Ok(tags_from_refs(&self.refs(repo)?.refs))
+    }
+
+    fn default_branch(&self, repo: &str) -> Result<String> {
+        self.refs(repo)?.head.ok_or_else(|| Error::Parse("the repo has no default branch".into()))
+    }
+
+    fn commit_sha(&self, repo: &str, git_ref: &str) -> Result<String> {
+        let wanted = format!("refs/heads/{git_ref}");
+        self.refs(repo)?.refs.into_iter().find(|(_, name)| *name == wanted).map(|(sha, _)| sha).ok_or_else(|| Error::Parse(format!("branch {git_ref} not found")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Talks to github.com: `cargo test -- --ignored web_github_live`.
+    #[test]
+    #[ignore]
+    fn web_github_live() {
+        let gh = WebGitHub::new(Client::new());
+        let release = gh.latest_release("cadoky/LuckyOdds").unwrap().expect("LuckyOdds has releases");
+        assert!(release.assets.iter().any(|a| a.name.ends_with(".zip")), "{release:?}");
+        assert!(!gh.tags("cadoky/LuckyOdds").unwrap().is_empty());
+        let branch = gh.default_branch("cadoky/LuckyOdds").unwrap();
+        assert_eq!(gh.commit_sha("cadoky/LuckyOdds", &branch).unwrap().len(), 40);
+    }
 
     #[test]
     fn parses_latest_location() {

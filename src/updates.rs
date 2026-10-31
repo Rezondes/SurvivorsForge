@@ -115,12 +115,36 @@ pub fn remote_of(source: &Source, registry: &Registry) -> Option<Result<(String,
     }
 }
 
+/// Without the platform: the newest version on GitHub. When it is the version the platform scanned
+/// last (the stored list's), that scan still holds; a newer one comes without a SHA-256, unchecked.
+pub fn direct_remote(gh: &dyn GitHub, addon: &VerifiedAddon) -> Result<RemoteVersion> {
+    let mut remote = resolve_remote(gh, &addon.repo, &addon.source)?;
+    if addon.latest.as_ref().is_some_and(|l| l.tag == remote.id)
+        && let Some(scanned) = platform_remote(addon)
+    {
+        // Blocked or changed after the scan: that stays so offline too.
+        remote.sha256 = scanned?.sha256;
+    }
+    Ok(remote)
+}
+
 /// Checks every entry. One failing repo does not stop the others. Adopted versions that turn
 /// out to be current are rewritten to the remote id in `state`.
 pub fn check_all(gh: &dyn GitHub, state: &mut State, registry: &Registry) -> Vec<(String, UpdateStatus)> {
+    check_entries(gh, state, registry, false)
+}
+
+/// `check_all` when the platform cannot be reached: verified addons too are asked on GitHub
+/// (`direct_remote`), as the stored list's versions may be old.
+pub fn check_all_direct(gh: &dyn GitHub, state: &mut State, registry: &Registry) -> Vec<(String, UpdateStatus)> {
+    check_entries(gh, state, registry, true)
+}
+
+fn check_entries(gh: &dyn GitHub, state: &mut State, registry: &Registry, direct: bool) -> Vec<(String, UpdateStatus)> {
     let mut results = Vec::new();
     for entry in &mut state.entries {
         let platform = match &entry.source {
+            Source::Verified { registry_id } if direct => registry.get(registry_id).map(|a| direct_remote(gh, a)),
             Source::Verified { registry_id } => registry.get(registry_id).and_then(platform_remote),
             _ => None,
         };
@@ -372,5 +396,49 @@ mod tests {
         addon.latest.as_mut().unwrap().trust = forge_core::trust::Trust::Blocked;
         let results = check_all(&gh, &mut state, &registry);
         assert!(matches!(&results[0].1, UpdateStatus::CheckFailed(m) if m.contains("blocked")), "{:?}", results[0].1);
+    }
+
+    #[test]
+    fn without_the_platform_github_is_asked_directly() {
+        // The stored list knows v9 as scanned. GitHub may still show v9 (then its scan holds) or
+        // already a newer version, which no one checked: it comes without a SHA-256.
+        let mut registry = crate::registry::embedded();
+        let addon = registry.addons.iter_mut().find(|a| a.id == "luckyodds").unwrap();
+        addon.latest = Some(crate::registry::LatestVersion {
+            tag: "v9".into(),
+            asset_url: "https://github.com/cadoky/LuckyOdds/releases/download/v9/LuckyOdds-v9.zip".into(),
+            sha256: Some("ab".repeat(32)),
+            size: Some(10),
+            trust: forge_core::trust::Trust::Scanned,
+            findings: Default::default(),
+            game_min: None,
+            game_max: None,
+        });
+        let mut state = State::default();
+        state.upsert(crate::state::Entry {
+            id: "luckyodds".into(),
+            name: "LuckyOdds".into(),
+            source: Source::Verified { registry_id: "luckyodds".into() },
+            folders: vec!["LuckyOdds".into()],
+            version: "v8".into(),
+            installed_at: 0,
+        });
+        let remote = |gh: &FakeGitHub, registry: &Registry, state: &mut State| match check_all_direct(gh, state, registry).remove(0).1 {
+            UpdateStatus::UpdateAvailable(remote) => remote,
+            other => panic!("{other:?}"),
+        };
+
+        let same = FakeGitHub::default().release("cadoky/LuckyOdds", "v9", &["LuckyOdds-v9.zip"]);
+        let r = remote(&same, &registry, &mut state);
+        assert_eq!((r.id.as_str(), r.sha256), ("v9", Some("ab".repeat(32))), "the scanned version keeps its check");
+
+        let newer = FakeGitHub::default().release("cadoky/LuckyOdds", "v10", &["LuckyOdds-v10.zip"]);
+        let r = remote(&newer, &registry, &mut state);
+        assert_eq!((r.id.as_str(), r.sha256), ("v10", None), "a version the platform never saw is unchecked");
+
+        let addon = registry.addons.iter_mut().find(|a| a.id == "luckyodds").unwrap();
+        addon.latest.as_mut().unwrap().trust = forge_core::trust::Trust::Blocked;
+        let results = check_all_direct(&same, &mut state, &registry);
+        assert!(matches!(&results[0].1, UpdateStatus::CheckFailed(m) if m.contains("blocked")), "a blocked version stays blocked: {:?}", results[0].1);
     }
 }
