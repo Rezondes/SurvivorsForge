@@ -292,6 +292,8 @@ async fn card_lists_switch_between_tiles_and_a_list() {
     }
     let script = web.get("/static/view.js").await;
     assert!(script.headers["content-type"].to_str().unwrap().starts_with("text/javascript") && script.body.contains("localStorage"));
+    // Each page keeps its own view: lists on /addons leave the tiles on / and /packs alone.
+    assert!(script.body.contains(r#"var key = "forge-view:" + location.pathname;"#), "one view for all pages");
 }
 
 #[tokio::test]

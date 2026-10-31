@@ -2,7 +2,8 @@
 // when a search cannot reload them. Loaded in the head, so the saved view is set on <html>
 // before the page is drawn and survives htmx swaps.
 (function () {
-  var key = "forge-view";
+  // One view per page: /addons in a list leaves the tiles of / and /packs alone.
+  var key = "forge-view:" + location.pathname;
   function apply(view) {
     view = view === "list" ? "list" : "tiles";
     document.documentElement.setAttribute("data-view", view);
