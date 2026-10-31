@@ -713,3 +713,24 @@ async fn findings_say_whether_someone_looked_at_them() {
     let mut flagged = with_addon("flagged", "available").await;
     assert!(flagged.get("/addons/lucky").await.body.contains("Reported by the automatic scan. Nobody has checked them by hand."));
 }
+
+/// One finding of each severity on a flagged version.
+async fn three_severities() -> TestWeb {
+    let web = TestWeb::new().await;
+    mock(&web, "/v1/addons/lucky", addon("flagged")).await;
+    mock(&web, "/v1/addons/lucky/versions", versions("flagged", "available")).await;
+    mock(&web, "/v1/addons/lucky/versions/v1/findings", json!({ "tag": "v1", "scan": { "result": "flagged", "findings": [
+        { "rule": "a", "severity": "critical", "file": "L/a.lua", "line": 1, "message": "Runs code from the web", "snippet": null },
+        { "rule": "b", "severity": "warn", "file": "L/b.lua", "line": 2, "message": "Replaces a game function", "snippet": null },
+        { "rule": "c", "severity": "notice", "file": "L/c.lua", "line": 3, "message": "Calls collectgarbage", "snippet": null }
+    ] } })).await;
+    web
+}
+
+#[tokio::test]
+async fn only_warnings_and_worse_look_alarming() {
+    let mut web = three_severities().await;
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"<span class="badge bad">"#) && page.contains(r#"<span class="badge warn">"#), "{page}");
+    assert!(page.contains(r#"<span class="badge">"#), "a note stays neutral");
+}
