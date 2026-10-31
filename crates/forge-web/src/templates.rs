@@ -868,6 +868,8 @@ pub struct PackListRow {
     pub created: String,
     /// Addon names, comma-separated.
     pub addons: String,
+    /// On the public pack list; only staff see the other ones.
+    pub listed: bool,
 }
 
 #[derive(Template)]
@@ -881,6 +883,10 @@ pub struct PacksPage {
     pub next: Option<String>,
     /// The search text.
     pub q: String,
+    /// A moderator or admin, who may switch to every pack.
+    pub staff: bool,
+    /// Every pack, also the unlisted ones (staff only).
+    pub every: bool,
 }
 
 #[derive(Template)]

@@ -169,6 +169,41 @@ async fn the_public_pack_list() {
 }
 
 #[tokio::test]
+async fn staff_also_see_unlisted_packs() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("root", "admin")).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/packs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "page": 1, "per_page": 20, "packs": [] })))
+        .mount(&web.api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/admin/packs"))
+        .and(wiremock::matchers::header("authorization", "Bearer tok"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 1, "page": 1, "per_page": 20, "packs": [
+            { "id": "Hidden1234", "name": "Hidden", "created_at": "2026-10-29T10:00:00Z", "created_by": "alice", "listed": false, "addons": ["Lucky"] }
+        ] })))
+        .mount(&web.api)
+        .await;
+    let page = web.get("/packs").await;
+    assert!(page.body.contains(r#"href="/packs?all=1""#), "staff can switch to every pack: {}", page.body);
+    let page = web.get("/packs?all=1").await;
+    for text in [r#"href="/packs/Hidden1234""#, "Not listed", r#"href="/packs""#, r#"<input type="hidden" name="all" value="1">"#] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+
+    let mut visitor = TestWeb::new().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/packs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "page": 1, "per_page": 20, "packs": [] })))
+        .mount(&visitor.api)
+        .await;
+    let page = visitor.get("/packs?all=1").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(!page.body.contains("all=1"), "visitors get the public list: {}", page.body);
+}
+
+#[tokio::test]
 async fn packs_can_be_searched() {
     let mut web = TestWeb::new().await;
     Mock::given(method("GET"))

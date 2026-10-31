@@ -261,6 +261,42 @@ async fn only_listed_and_available_packs_are_public(pool: PgPool) {
 }
 
 /// Another checked version `tag` of `slug`, published after the ones before.
+#[sqlx::test]
+async fn staff_list_every_pack_with_its_listing(pool: PgPool) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_string_lossy().into_owned();
+    let app = TestApp::with_config(pool, |c| {
+        c.pack_dir = path;
+        c.admin_github_ids = vec![99];
+    });
+    let token = app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
+    checked_version(&app, "lucky", "clean").await;
+    checked_version(&app, "odds", "clean").await;
+    for body in [
+        json!({ "name": "Hidden", "addons": [{ "slug": "lucky" }] }),
+        json!({ "name": "Shown", "listed": true, "addons": [{ "slug": "lucky" }] }),
+        json!({ "name": "Odds only", "addons": [{ "slug": "odds" }] }),
+    ] {
+        assert_eq!(app.post("/v1/packs", Some(&token), body).await.status, StatusCode::CREATED);
+    }
+    sqlx::query("UPDATE addons SET blocked_at = now() WHERE slug = 'odds'").execute(&app.pool).await.unwrap();
+    let admin = app.login(99, "root").await;
+
+    let list = app.get("/v1/admin/packs", Some(&admin)).await.json();
+    let packs: Vec<(&str, bool)> =
+        list["packs"].as_array().unwrap().iter().map(|p| (p["name"].as_str().unwrap(), p["listed"].as_bool().unwrap())).collect();
+    assert_eq!(packs, [("Odds only", false), ("Shown", true), ("Hidden", false)], "also unlisted and blocked ones, newest first");
+    assert_eq!(list["total"], 3);
+    assert_eq!(list["packs"][2]["created_by"], "alice");
+    let found = app.get("/v1/admin/packs?q=hid", Some(&admin)).await.json();
+    assert_eq!(found["total"], 1, "searched like the public list: {found}");
+
+    assert_eq!(app.get("/v1/admin/packs", Some(&token)).await.status, StatusCode::FORBIDDEN, "the creator is no moderator");
+    assert_eq!(app.get("/v1/admin/packs", None).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(app.get("/v1/packs", None).await.json()["packs"][0]["listed"], true, "the public list says it too");
+}
+
 async fn newer_version(app: &TestApp, slug: &str, tag: &str) {
     let version: i64 = sqlx::query_scalar(
         "INSERT INTO versions (addon_id, tag, published_at, asset_name, asset_url, asset_size, sha256, scan_status, created_at)

@@ -6,11 +6,13 @@
   <h1>Addon packs</h1>
   <a class="button" href="/packs/new">Build a pack</a>
 </div>
-<p class="muted">Several addons in one zip, for the browser version of the game. These are the packs their authors chose to show.</p>
+{% if every %}<p class="muted">Every pack, also the ones their authors did not list. Only moderators and admins see this. <a href="/packs">Only listed packs</a></p>
+{% else %}<p class="muted">Several addons in one zip, for the browser version of the game. These are the packs their authors chose to show.{% if staff %} <a href="/packs?all=1">Show unlisted packs too</a>{% endif %}</p>{% endif %}
 <form class="search" method="get" action="/packs" role="search"
       hx-get="/packs" hx-trigger="input changed delay:300ms from:input, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status" hx-swap="innerHTML scroll:top">
   <label for="q">Search</label>
   <input id="q" type="search" name="q" value="{{ q }}" placeholder="Pack name or an addon in it" autocomplete="off">
+  {% if every %}<input type="hidden" name="all" value="1">{% endif %}
   <noscript><button type="submit">Search</button></noscript>
 </form>
 
@@ -26,7 +28,7 @@
   <div class="grid">
     {% for p in rows %}
     <article class="panel card">
-      <h2><a href="/packs/{{ p.id }}">{{ p.name }}</a></h2>
+      <h2><a href="/packs/{{ p.id }}">{{ p.name }}</a>{% if !p.listed %} <span class="badge">Not listed</span>{% endif %}</h2>
       <p class="muted">{% if p.created_by != "" %}by {{ p.created_by }} · {% endif %}{{ p.created }}</p>
       <p>{{ p.addons }}</p>
     </article>

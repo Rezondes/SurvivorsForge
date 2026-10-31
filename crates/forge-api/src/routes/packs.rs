@@ -3,7 +3,7 @@
 //! them. The worker builds the zip on the first download (`crate::pack_job`).
 
 use crate::app::AppState;
-use crate::auth::CurrentUser;
+use crate::auth::{CurrentUser, StaffUser};
 use crate::error::{ApiError, ApiResult};
 use crate::jobs;
 use axum::Json;
@@ -352,6 +352,15 @@ pub struct ListQuery {
 
 /// `GET /v1/packs?page=`: the listed packs that can be downloaded, newest first.
 pub async fn list(State(state): State<AppState>, axum::extract::Query(query): axum::extract::Query<ListQuery>) -> ApiResult<Json<Value>> {
+    list_packs(&state, query, false).await
+}
+
+/// `GET /v1/admin/packs?page=`: every pack, also unlisted ones and ones that cannot be downloaded.
+pub async fn admin_list(State(state): State<AppState>, _staff: StaffUser, axum::extract::Query(query): axum::extract::Query<ListQuery>) -> ApiResult<Json<Value>> {
+    list_packs(&state, query, true).await
+}
+
+async fn list_packs(state: &AppState, query: ListQuery, every: bool) -> ApiResult<Json<Value>> {
     let page = query.page.unwrap_or(1).max(1);
     // A LIKE pattern of the search text; its own % and _ count literally.
     let pattern = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty()).map(|q| {
@@ -359,13 +368,13 @@ pub async fn list(State(state): State<AppState>, axum::extract::Query(query): ax
     });
     let list: Value = sqlx::query_scalar(
         "WITH open AS (
-             SELECT p.id, p.public_id, p.name, p.created_at, u.login::text AS creator
+             SELECT p.id, p.public_id, p.name, p.created_at, p.listed, u.login::text AS creator
              FROM packs p LEFT JOIN users u ON u.id = p.created_by
-             WHERE p.listed AND NOT EXISTS (
+             WHERE ($5 OR p.listed AND NOT EXISTS (
                  SELECT 1 FROM pack_versions pv
                  JOIN versions v ON v.id = pv.version_id JOIN addons a ON a.id = v.addon_id
                  JOIN version_trust t ON t.version_id = v.id
-                 WHERE pv.pack_id = p.id AND NOT (a.deleted_at IS NULL AND v.sha256 IS NOT NULL AND t.trust = ANY($1)))
+                 WHERE pv.pack_id = p.id AND NOT (a.deleted_at IS NULL AND v.sha256 IS NOT NULL AND t.trust = ANY($1))))
                AND ($4::text IS NULL OR p.name ILIKE $4 OR EXISTS (
                    SELECT 1 FROM pack_versions pv JOIN versions v ON v.id = pv.version_id JOIN addons a ON a.id = v.addon_id
                    WHERE pv.pack_id = p.id AND a.name ILIKE $4))
@@ -374,7 +383,7 @@ pub async fn list(State(state): State<AppState>, axum::extract::Query(query): ax
              'total', (SELECT count(*) FROM open), 'page', $2::bigint, 'per_page', $3::bigint,
              'packs', coalesce((SELECT json_agg(item ORDER BY created_at DESC, id DESC) FROM (
                  SELECT o.id, o.created_at, json_build_object(
-                     'id', o.public_id, 'name', o.name, 'created_at', o.created_at, 'created_by', o.creator,
+                     'id', o.public_id, 'name', o.name, 'created_at', o.created_at, 'created_by', o.creator, 'listed', o.listed,
                      'addons', (SELECT json_agg(a.name ORDER BY lower(a.name)) FROM pack_versions pv
                                 JOIN versions v ON v.id = pv.version_id JOIN addons a ON a.id = v.addon_id WHERE pv.pack_id = o.id)) AS item
                  FROM open o ORDER BY o.created_at DESC, o.id DESC LIMIT $3 OFFSET ($2 - 1) * $3) page), '[]'))",
@@ -383,6 +392,7 @@ pub async fn list(State(state): State<AppState>, axum::extract::Query(query): ax
     .bind(page)
     .bind(PER_PAGE)
     .bind(pattern)
+    .bind(every)
     .fetch_one(&state.pool)
     .await?;
     Ok(Json(list))

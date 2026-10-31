@@ -335,6 +335,7 @@ async fn moderator_sees_admin_pages() {
     for page in ["/admin", "/admin/review", "/admin/reports", "/admin/users"] {
         assert_eq!(web.get(page).await.status, StatusCode::OK, "{page}");
     }
+    assert!(web.get("/admin").await.body.contains(r#"href="/packs?all=1""#), "every pack, also the unlisted ones");
 }
 
 #[tokio::test]

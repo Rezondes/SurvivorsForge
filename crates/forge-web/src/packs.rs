@@ -95,11 +95,14 @@ pub async fn create_pack(State(state): State<AppState>, jar: PrivateCookieJar, E
     }
 }
 
-/// `GET /packs?page=`: the packs their authors chose to show, newest first.
+/// `GET /packs?page=`: the packs their authors chose to show, newest first. `all=1` shows staff
+/// every pack, also the unlisted ones.
 pub async fn packs(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, RawQuery(raw): RawQuery) -> WebResult<Html<String>> {
-    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let (user, token) = visitor(&state, &jar).await?.unzip();
     let page: i64 = values(raw.as_deref(), "page").pop().and_then(|p| p.parse().ok()).unwrap_or(1).max(1);
     let q = values(raw.as_deref(), "q").pop().unwrap_or_default().trim().to_string();
+    let staff = user.as_ref().is_some_and(|u| u.staff);
+    let every = staff && values(raw.as_deref(), "all").pop().as_deref() == Some("1");
     // The search and a page as a query string, for the API and the pager.
     let query = |page: i64| {
         let mut pairs = vec![("page", page.to_string())];
@@ -108,7 +111,12 @@ pub async fn packs(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         }
         reqwest::Url::parse_with_params("http://x/", &pairs).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default()
     };
-    let list = state.api.get(&format!("/v1/packs?{}", query(page)), None).await?;
+    let list = if every {
+        state.api.get(&format!("/v1/admin/packs?{}", query(page)), token.as_deref()).await?
+    } else {
+        state.api.get(&format!("/v1/packs?{}", query(page)), None).await?
+    };
+    let pager = |page: i64| if every { format!("/packs?all=1&{}", query(page)) } else { format!("/packs?{}", query(page)) };
     let rows = list["packs"]
         .as_array()
         .into_iter()
@@ -119,6 +127,7 @@ pub async fn packs(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
             created_by: s(&p["created_by"]),
             created: s(&p["created_at"]).chars().take(10).collect(),
             addons: p["addons"].as_array().into_iter().flatten().map(s).collect::<Vec<_>>().join(", "),
+            listed: p["listed"] != false,
         })
         .collect();
     let total = list["total"].as_i64().unwrap_or(0);
@@ -128,9 +137,11 @@ pub async fn packs(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         csrf: csrf.0,
         rows,
         total,
-        prev: (page > 1).then(|| format!("/packs?{}", query(page - 1))),
-        next: (page * per_page < total).then(|| format!("/packs?{}", query(page + 1))),
+        prev: (page > 1).then(|| pager(page - 1)),
+        next: (page * per_page < total).then(|| pager(page + 1)),
         q,
+        staff,
+        every,
     }))
 }
 
