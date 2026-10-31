@@ -101,19 +101,25 @@ async fn category_filter_lists_subcategories_and_reaches_the_api() {
     mock(&web, "/v1/categories", categories()).await;
     Mock::given(method("GET"))
         .and(path("/v1/addons"))
-        .and(query_param("category", "Classes"))
+        .and(query_param("category", "Warrior"))
+        .and(query_param("category", "Combat"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "addons": [] })))
         .expect(1)
         .mount(&web.api)
         .await;
-    let page = web.get("/addons?category=Classes").await;
+    let page = web.get("/addons?category=Warrior&category=Combat").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
-    // Subcategories sit in a group of their parent; its first option filters the whole group.
-    assert!(page.body.contains(r#"<optgroup label="Classes">"#), "{}", page.body);
-    assert!(page.body.contains(r#"<option value="Classes" selected>All Classes</option>"#), "{}", page.body);
-    assert!(page.body.contains(r#"<option value="Warrior">Warrior</option>"#));
-    assert!(page.body.contains(r#"<option value="Combat">Combat</option>"#), "a category without subcategories stays a plain option");
-    assert!(page.body.contains("All categories"));
+    // One tick box per category; subcategories fold out under their parent, open when one is ticked.
+    for text in [
+        r#"<input type="checkbox" name="category" value="Classes">"#,
+        r#"<details class="subcats" open><summary aria-label="Subcategories of Classes"></summary>"#,
+        r#"<input type="checkbox" name="category" value="Warrior" checked>"#,
+        r#"<input type="checkbox" name="category" value="Combat" checked>"#,
+        "0 addons in Warrior, Combat",
+    ] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+    assert!(!web.get("/addons").await.body.contains("subcats\" open"), "folded while nothing in it is ticked");
 }
 
 #[tokio::test]

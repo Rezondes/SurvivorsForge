@@ -6,7 +6,7 @@
 {% if !author.is_empty() %}<p class="muted">Addons by <strong>{{ author }}</strong> · <a href="/addons">Show all addons</a></p>{% endif %}
 <div class="browse">
 <form id="search" class="search browse-side" method="get" action="/addons" role="search"
-      hx-get="/addons" hx-trigger="input changed delay:300ms from:input, change from:select, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status,#result-count" hx-swap="innerHTML scroll:top">
+      hx-get="/addons" hx-trigger="input changed delay:300ms from:#q, change from:select, change from:.cats, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status,#result-count" hx-swap="innerHTML scroll:top">
   {% if !author.is_empty() %}<input type="hidden" name="author" value="{{ author }}">{% endif %}
   <label for="q" class="sr-only">Search</label>
   <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search addons..." autocomplete="off">
@@ -22,19 +22,20 @@
         <option value="unscanned" {% if trust == "unscanned" %}selected{% endif %}>Not checked</option>
       </select>
     </div>
-    <div>
-      <label for="category">Category</label>
-      <select id="category" name="category">
-        <option value="" {% if category == "" %}selected{% endif %}>All categories</option>
+    <fieldset class="cats">
+      <legend>Category</legend>
+      <ul>
         {% for (top, children) in categories %}
-        {% if children.is_empty() %}<option value="{{ top.name }}"{% if top.name.eq_ignore_ascii_case(category) %} selected{% endif %}>{{ top.name }}</option>
-        {% else %}<optgroup label="{{ top.name }}">
-          <option value="{{ top.name }}"{% if top.name.eq_ignore_ascii_case(category) %} selected{% endif %}>All {{ top.name }}</option>
-          {% for c in children %}<option value="{{ c.name }}"{% if c.name.eq_ignore_ascii_case(category) %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
-        </optgroup>{% endif %}
+        <li><label class="check"><input type="checkbox" name="category" value="{{ top.name }}"{% if self.is_chosen(top.name) %} checked{% endif %}> {{ top.name }}</label>
+          {% if !children.is_empty() %}<details class="subcats"{% if self.opens(children) %} open{% endif %}><summary aria-label="Subcategories of {{ top.name }}"></summary>
+          <ul>
+            {% for c in children %}<li><label class="check"><input type="checkbox" name="category" value="{{ c.name }}"{% if self.is_chosen(c.name) %} checked{% endif %}> {{ c.name }}</label></li>
+            {% endfor %}
+          </ul></details>{% endif %}
+        </li>
         {% endfor %}
-      </select>
-    </div>
+      </ul>
+    </fieldset>
   </div>
   <noscript><button type="submit">Search</button></noscript>
   {% if let Some(c) = checks %}{% include "checks.html" %}{% endif %}
@@ -42,7 +43,7 @@
 
 <div class="browse-main">
   <div class="result-bar">
-    <p id="result-count" class="muted">{{ total }} addon{% if total != 1 %}s{% endif %}{% if category != "" %} in {{ category }} (<a href="/addons">all categories</a>){% endif %}</p>
+    <p id="result-count" class="muted">{{ total }} addon{% if total != 1 %}s{% endif %}{% if !chosen_categories.is_empty() %} in {{ chosen_categories.join(", ") }} (<a href="/addons">all categories</a>){% endif %}</p>
     <div class="result-tools">
       <label for="sort" class="sr-only">Sort</label>
       <select id="sort" name="sort" form="search">

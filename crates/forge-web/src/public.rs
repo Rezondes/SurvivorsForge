@@ -130,8 +130,10 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
     let params: Vec<(String, String)> =
         reqwest::Url::parse(&format!("http://x/?{raw}")).map(|u| u.query_pairs().into_owned().collect()).unwrap_or_default();
     let param = |k: &str| params.iter().find(|(key, v)| key == k && !v.is_empty()).map(|(_, v)| v.clone());
-    let query: Vec<(&str, String)> =
-        ["q", "category", "trust", "sort", "author", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
+    // Every ticked category goes along; the other filters once.
+    let chosen_categories: Vec<String> = params.iter().filter(|(k, v)| k == "category" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
+    let mut query: Vec<(&str, String)> = ["q", "trust", "sort", "author", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
+    query.extend(chosen_categories.iter().map(|c| ("category", c.clone())));
     let api_query = reqwest::Url::parse_with_params("http://x/v1/addons", &query).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
     let list = state.api.get(&format!("/v1/addons?{api_query}"), None).await?;
 
@@ -149,7 +151,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         csrf: csrf.0,
         checks: crate::stats::checks(&state).await,
         q: param("q").unwrap_or_default(),
-        category: param("category").unwrap_or_default(),
+        chosen_categories,
         trust: param("trust").unwrap_or_default(),
         sort: param("sort").unwrap_or_default(),
         author: param("author").unwrap_or_default(),

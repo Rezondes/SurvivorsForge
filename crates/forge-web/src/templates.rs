@@ -148,7 +148,8 @@ pub struct AddonsPage {
     /// When the releases were checked; `None` when the API cannot tell.
     pub checks: Option<crate::stats::Checks>,
     pub q: String,
-    pub category: String,
+    /// The ticked categories; an addon in any of them (or their subcategories) is listed.
+    pub chosen_categories: Vec<String>,
     pub trust: String,
     pub sort: String,
     /// Only the addons of this author (`?author=`); empty for all.
@@ -160,6 +161,17 @@ pub struct AddonsPage {
     pub cards: Vec<Card>,
     pub prev: Option<String>,
     pub next: Option<String>,
+}
+
+impl AddonsPage {
+    pub fn is_chosen(&self, name: &str) -> bool {
+        self.chosen_categories.iter().any(|c| c.eq_ignore_ascii_case(name))
+    }
+
+    /// The subcategories of a group stay folded unless one of them is ticked.
+    pub fn opens(&self, children: &[CategoryOption]) -> bool {
+        children.iter().any(|c| self.is_chosen(&c.name))
+    }
 }
 
 pub struct FindingRow {

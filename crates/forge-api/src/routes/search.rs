@@ -16,7 +16,8 @@ const DEFAULT_PER_PAGE: i64 = 20;
 #[derive(Default, Debug)]
 pub struct SearchQuery {
     pub q: Option<String>,
-    pub category: Option<String>,
+    /// Any of these categories or their subcategories; `category` may repeat.
+    pub category: Vec<String>,
     pub trust: Vec<String>,
     pub game: Option<String>,
     /// GitHub login of the owner, or the author name of an unclaimed addon; any case.
@@ -26,7 +27,7 @@ pub struct SearchQuery {
     pub per_page: i64,
 }
 
-/// Parses the query string by hand, because `trust` may repeat.
+/// Parses the query string by hand, because `trust` and `category` may repeat.
 pub fn parse_query(raw: Option<&str>) -> SearchQuery {
     let mut query = SearchQuery { page: 1, per_page: DEFAULT_PER_PAGE, ..Default::default() };
     let pairs = reqwest::Url::parse(&format!("http://x/?{}", raw.unwrap_or_default())).map(|u| u.query_pairs().into_owned().collect::<Vec<_>>());
@@ -37,7 +38,7 @@ pub fn parse_query(raw: Option<&str>) -> SearchQuery {
         }
         match key.as_str() {
             "q" => query.q = Some(value),
-            "category" => query.category = Some(value),
+            "category" => query.category.push(value),
             "trust" => query.trust.extend(value.split(',').map(|t| t.trim().to_string())),
             "game" => query.game = Some(value),
             "author" => query.author = Some(value),
@@ -91,7 +92,7 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap, RawQuery(ra
              -- Blocked addons and addons whose version for players is blocked stay off the list.
              WHERE a.deleted_at IS NULL AND a.blocked_at IS NULL AND t.trust IS DISTINCT FROM 'blocked'
                AND ($1::text IS NULL OR ($2::text IS NOT NULL AND a.search @@ to_tsquery('simple', $2)) OR word_similarity($1, a.name) >= 0.3)
-               AND ($3::text IS NULL OR a.category IN (SELECT name FROM categories WHERE name = $3::citext OR parent = $3::citext))
+               AND (cardinality($3::text[]) = 0 OR a.category IN (SELECT name FROM categories WHERE name = ANY($3::citext[]) OR parent = ANY($3::citext[])))
                AND (cardinality($4::text[]) = 0 OR t.trust = ANY($4))
                AND ($5::int IS NULL OR game_compatible(relevant_version(a.id), $5) IS NOT FALSE)
                AND ($9::text IS NULL OR lower(coalesce((SELECT login::text FROM users WHERE id = a.owner_id), a.author_name)) = lower($9))

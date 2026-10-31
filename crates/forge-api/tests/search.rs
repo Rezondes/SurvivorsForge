@@ -81,6 +81,10 @@ async fn filters_combine(pool: PgPool) {
     assert_eq!(slugs(&app, "category=Unit%20Frames").await, ["plates"]);
     assert_eq!(slugs(&app, "category=Classes").await, ["builder"], "a category finds its subcategories");
     assert_eq!(slugs(&app, "category=warrior").await, ["builder"]);
+    // Several categories, as the ticked boxes of the website send them: any of them matches.
+    let mut both = slugs(&app, "category=Unit%20Frames&category=Classes").await;
+    both.sort();
+    assert_eq!(both, ["builder", "plates"]);
     assert_eq!(slugs(&app, "trust=scanned&sort=name").await, ["luckyodds", "plates"]);
     assert_eq!(slugs(&app, "trust=scanned&category=Miscellaneous").await, ["luckyodds"]);
     assert_eq!(slugs(&app, "trust=unscanned").await, ["builder"]);
