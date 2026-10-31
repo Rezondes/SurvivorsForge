@@ -34,6 +34,9 @@ struct Row {
     game_max: Option<String>,
     dep_slugs: Vec<String>,
     dep_required: Vec<bool>,
+    published_at: Option<chrono::DateTime<chrono::Utc>>,
+    icon_url: Option<String>,
+    downloads: Option<i64>,
 }
 
 fn parse_trust(s: &str) -> Option<Trust> {
@@ -55,7 +58,12 @@ pub async fn build(state: &AppState, only_verified: bool) -> sqlx::Result<Regist
                 ARRAY(SELECT b.slug::text FROM addon_dependencies d JOIN addons b ON b.id = d.depends_on_id
                       WHERE d.addon_id = a.id AND b.deleted_at IS NULL ORDER BY b.slug) AS dep_slugs,
                 ARRAY(SELECT d.required FROM addon_dependencies d JOIN addons b ON b.id = d.depends_on_id
-                      WHERE d.addon_id = a.id AND b.deleted_at IS NULL ORDER BY b.slug) AS dep_required
+                      WHERE d.addon_id = a.id AND b.deleted_at IS NULL ORDER BY b.slug) AS dep_required,
+                v.published_at,
+                (SELECT $1 || '/' || i.file FROM images i WHERE i.addon_id = a.id AND i.kind = 'icon') AS icon_url,
+                -- GitHub counts downloads of release files only; addons from tags have no count.
+                CASE WHEN a.source_type = 'tag' THEN NULL
+                     ELSE (SELECT coalesce(sum(download_count), 0) FROM versions WHERE addon_id = a.id)::bigint END AS downloads
          FROM addons a
          LEFT JOIN users u ON u.id = a.owner_id
          LEFT JOIN versions v ON v.id = relevant_version(a.id)
@@ -63,6 +71,7 @@ pub async fn build(state: &AppState, only_verified: bool) -> sqlx::Result<Regist
          WHERE a.deleted_at IS NULL AND a.blocked_at IS NULL
          ORDER BY a.slug",
     )
+    .bind(&state.config.public_image_url)
     .fetch_all(&state.pool)
     .await?;
     let addons = rows
@@ -80,6 +89,7 @@ pub async fn build(state: &AppState, only_verified: bool) -> sqlx::Result<Regist
                     findings: FindingCounts { critical: r.critical.unwrap_or(0) as u32, warn: r.warn.unwrap_or(0) as u32 },
                     game_min: r.game_min,
                     game_max: r.game_max,
+                    published_at: r.published_at.map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
                 }),
                 _ => None,
             };
@@ -100,6 +110,8 @@ pub async fn build(state: &AppState, only_verified: bool) -> sqlx::Result<Regist
                 verified_author: Some(r.verified_author),
                 latest,
                 dependencies: r.dep_slugs.into_iter().zip(r.dep_required).map(|(id, required)| DependencyRef { id, required }).collect(),
+                icon_url: r.icon_url,
+                downloads: r.downloads,
             }
         })
         .collect();

@@ -373,6 +373,7 @@ mod tests {
             findings: Default::default(),
             game_min: None,
             game_max: None,
+            published_at: None,
         });
         let mut state = State::default();
         state.upsert(crate::state::Entry {
@@ -413,6 +414,7 @@ mod tests {
             findings: Default::default(),
             game_min: None,
             game_max: None,
+            published_at: None,
         });
         let mut state = State::default();
         state.upsert(crate::state::Entry {

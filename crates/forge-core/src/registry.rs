@@ -40,6 +40,12 @@ pub struct VerifiedAddon {
     pub latest: Option<LatestVersion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<DependencyRef>,
+    /// The square icon; its file name is the hash of the picture, so it never changes in place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+    /// Downloads of every version as GitHub counts them; none for addons from tags.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downloads: Option<i64>,
 }
 
 /// The version the launcher installs, as the platform scanned it.
@@ -54,6 +60,9 @@ pub struct LatestVersion {
     pub findings: FindingCounts,
     pub game_min: Option<String>,
     pub game_max: Option<String>,
+    /// When the release was published on GitHub, RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

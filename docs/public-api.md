@@ -23,7 +23,7 @@ Anyone may use this API on these conditions:
 
 ## How often
 
-- **`/v1/registry`:** fetch it when your launcher starts, then at most once every 5 minutes. Once an hour is plenty. Always send the `ETag` of your last copy as `If-None-Match`: an unchanged list answers `304 Not Modified` without a body. The answer carries `Cache-Control: public, max-age=300`.
+- **`/v1/registry`:** fetch it when your launcher starts, then at most once every 5 minutes. Once an hour is plenty. Always send the `ETag` of your last copy as `If-None-Match`: an unchanged list answers `304 Not Modified` without a body. The answer carries `Cache-Control: public, max-age=300`. Download counts are refreshed about every 15 minutes, so the list (and its `ETag`) changes that often while people download addons.
 - **The other three:** fetch them when a user opens an addon or is about to install a version. Do not poll them.
 - **Limit:** 120 requests per minute and IP address, counted over all routes. Above it the API answers `429` with the error code `rate_limited`. Wait a minute before the next request, and back off the same way on `5xx` answers.
 - **User-Agent:** send one with your launcher's name, version and a URL, e.g. `MyLauncher/1.2 (+https://github.com/me/mylauncher)`. That lets us reach you before a change hits you.
@@ -279,6 +279,8 @@ Types: `string`, `integer`, `boolean`, `T[]` (array) and `object`. "nullable" me
 | `addons[].source.asset` | `string`, optional | Name pattern of the release asset; only with `release`. |
 | `addons[].trust` | `string`, optional | Trust level of `latest`. Missing while the addon has no version. |
 | `addons[].verified_author` | `boolean`, optional | An admin verified at least one version of this addon. |
+| `addons[].icon_url` | `string`, optional | Square icon. The file is named after its hash and never changes in place: cache it for good. Missing while the addon has no icon. |
+| `addons[].downloads` | `integer`, optional | Downloads of every version, as GitHub counts them. Missing for `tag` addons: GitHub counts no source zips. |
 | `addons[].latest` | `object`, optional | The version to install. Missing while the addon has no installable version. |
 | `addons[].latest.tag` | `string` | Git tag of the version. |
 | `addons[].latest.asset_url` | `string` | Download URL on GitHub. |
@@ -288,6 +290,7 @@ Types: `string`, `integer`, `boolean`, `T[]` (array) and `object`. "nullable" me
 | `addons[].latest.findings` | `object` | `critical` and `warn`, each an `integer`: number of findings of the scan. |
 | `addons[].latest.game_min` | `string`, nullable | Oldest compatible game version; `null` means no limit. |
 | `addons[].latest.game_max` | `string`, nullable | Newest compatible game version; `null` means no limit. |
+| `addons[].latest.published_at` | `string`, optional | When the release was published on GitHub. |
 | `addons[].dependencies` | `object[]`, optional | Other addons this one needs. Missing when there are none. |
 | `addons[].dependencies[].id` | `string` | `id` of the other addon. |
 | `addons[].dependencies[].required` | `boolean` | `false` means optional. |

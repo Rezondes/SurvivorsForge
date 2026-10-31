@@ -785,6 +785,7 @@ mod tests {
                 findings: Default::default(),
                 game_min: None,
                 game_max: None,
+                published_at: None,
             });
         }
         registry
@@ -831,6 +832,7 @@ mod tests {
             findings: forge_core::registry::FindingCounts { critical: 1, warn: 2 },
             game_min: min.map(str::to_string),
             game_max: max.map(str::to_string),
+            published_at: None,
         });
         addon
     }
@@ -980,6 +982,7 @@ mod tests {
             findings: Default::default(),
             game_min: None,
             game_max: None,
+            published_at: None,
         };
         for (trust, sha, ok) in [(Trust::Scanned, Some("ab"), true), (Trust::Verified, Some("ab"), true), (Trust::Verified, None, false), (Trust::Flagged, Some("ab"), false)] {
             addon.latest = Some(latest(trust, sha));

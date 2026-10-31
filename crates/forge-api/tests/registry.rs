@@ -69,6 +69,41 @@ async fn response_parses_with_new_and_old_schema(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn carries_icon_release_date_and_downloads(pool: PgPool) {
+    let app = TestApp::new(pool);
+    app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
+    let v1 = with_version(&app, "lucky").await;
+    sqlx::query("UPDATE versions SET published_at = '2026-10-01T12:00:00Z', download_count = 40 WHERE id = $1").bind(v1).execute(&app.pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO versions (addon_id, tag, published_at, asset_name, asset_url, sha256, scan_status, created_at, download_count)
+         SELECT id, 'v0', '2026-09-01T12:00:00Z', 'a.zip', 'https://github.com/a0.zip', 'abc', 'done', now(), 2 FROM addons WHERE slug = 'lucky'",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO images (addon_id, kind, file, width, height, uploaded_by, uploaded_at)
+         SELECT a.id, 'icon', 'f00d.webp', 256, 256, a.owner_id, now() FROM addons a WHERE slug = 'lucky'",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE addons SET source_type = 'tag', asset_pattern = NULL WHERE slug = 'odds'").execute(&app.pool).await.unwrap();
+
+    let body: serde_json::Value = app.get("/v1/registry", None).await.json();
+    let lucky = &body["addons"][0];
+    assert_eq!(lucky["icon_url"], "https://web.test/img/f00d.webp", "{body}");
+    assert_eq!(lucky["downloads"], 42, "every version of the addon");
+    assert!(lucky["latest"]["published_at"].as_str().unwrap().starts_with("2026-10-01T12:00:00"), "{body}");
+    let odds = &body["addons"][1];
+    assert_eq!((odds["icon_url"].clone(), odds["downloads"].clone()), (json!(null), json!(null)), "GitHub counts no tag zips: {body}");
+
+    let registry = Registry::parse(&body.to_string()).expect("the launcher reads it");
+    assert_eq!((registry.addons[0].downloads, registry.addons[0].icon_url.as_deref()), (Some(42), Some("https://web.test/img/f00d.webp")));
+}
+
+#[sqlx::test]
 async fn excludes_blocked_and_handles_no_version(pool: PgPool) {
     let app = TestApp::new(pool);
     app.publish(1, "alice", "lucky").await;
