@@ -277,7 +277,7 @@ code { word-break: break-all; color: var(--gold-bright); }
 pre { background: var(--field); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; overflow-x: auto; white-space: pre-wrap; }
 .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .shots figure { margin: 0; }
-.shots img { width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--line); }
+.shots img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: contain; background: var(--row); padding: 4px; border-radius: var(--radius); border: 1px solid var(--outline); }
 .shots figcaption { color: var(--muted); font-size: var(--meta); }
 .caption-form { display: flex; gap: 6px; margin: 6px 0; }
 .caption-form input { flex: 1; min-width: 0; min-height: 34px; }

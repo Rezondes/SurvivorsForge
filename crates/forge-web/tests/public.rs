@@ -809,3 +809,10 @@ async fn code_snippets_say_where_they_come_from() {
     let page = web.get("/addons/lucky").await.body;
     assert!(page.contains(r#"<pre aria-label="Code at Lucky/Lucky.lua:12">"#), "{page}");
 }
+
+#[tokio::test]
+async fn screenshots_sit_in_visible_tiles() {
+    let mut web = TestWeb::new().await;
+    let css = web.get("/static/app.css").await.body;
+    assert!(css.contains(".shots img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: contain; background: var(--row); padding: 4px;"), "dark screenshots still read as pictures");
+}
