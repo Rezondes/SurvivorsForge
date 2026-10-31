@@ -1,10 +1,11 @@
 import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
-    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, Dropdown, AddonDetail, DetailView, PickBox
+    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, Dropdown, AddonDetail, DetailView, PickBox,
+    AboutBlock, Shot, PictureViewer
 } from "components.slint";
 
-export { AddonRow, AddonDetail, Theme }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme }
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
 export struct Suggestion {
@@ -356,6 +357,10 @@ export component AppWindow inherits Window {
     // The detail view of one addon, shown on the page it was opened from (-1: none).
     in-out property <int> detail-page: -1;
     in property <AddonDetail> detail;
+    // A screenshot or description image shown large over everything.
+    property <bool> zoom-open;
+    property <[Shot]> zoom-shots;
+    property <int> zoom-index;
     callback row-details(string);
     callback detail-website();
     property <bool> showing-detail: root.detail-page == root.page;
@@ -576,6 +581,16 @@ export component AppWindow inherits Window {
                     remove => { root.row-remove(root.detail.row.id); }
                     open => { root.row-open(root.detail.row.id); }
                     website => { root.detail-website(); }
+                    enlarge-shot(i) => {
+                        root.zoom-shots = root.detail.shots;
+                        root.zoom-index = i;
+                        root.zoom-open = true;
+                    }
+                    enlarge(image, caption) => {
+                        root.zoom-shots = [{ image: image, caption: caption }];
+                        root.zoom-index = 0;
+                        root.zoom-open = true;
+                    }
                 }
 
                 if root.page == 0 && !root.showing-detail : ScrollPanel {
@@ -726,6 +741,15 @@ export component AppWindow inherits Window {
                 }
             }
         }
+    }
+
+    if root.zoom-open : PictureViewer {
+        y: root.title-height;
+        width: parent.width;
+        height: parent.height - root.title-height;
+        shots: root.zoom-shots;
+        index <=> root.zoom-index;
+        close => { root.zoom-open = false; }
     }
 
     if root.confirm-open : Overlay {

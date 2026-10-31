@@ -3,6 +3,7 @@ pub mod controller;
 pub mod deep_link;
 pub mod github;
 pub mod install;
+pub mod pictures;
 pub mod registry;
 pub mod repo_detect;
 pub mod scan;

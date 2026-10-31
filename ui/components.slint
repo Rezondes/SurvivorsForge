@@ -4,6 +4,8 @@ export struct AddonRow {
     id: string,
     name: string,
     initial: string,
+    // The platform's icon; empty (width 0) without one, then the initial stands in.
+    icon: image,
     author: string,
     version: string,
     badge: string,
@@ -22,6 +24,19 @@ export struct AddonRow {
     picked: bool,
 }
 
+// One block of a description: 0 paragraph, 1 heading, 2 list item, 3 code, 4 quote, 5 image.
+export struct AboutBlock {
+    kind: int,
+    marker: string,
+    text: string,
+    image: image,
+}
+
+export struct Shot {
+    image: image,
+    caption: string,
+}
+
 // An addon opened from a list: its row plus what the list has no room for.
 export struct AddonDetail {
     row: AddonRow,
@@ -30,9 +45,10 @@ export struct AddonDetail {
     game: string,
     folders: string,
     needs: string,
-    // The long description from the platform; empty when it has none.
-    about: string,
-    about-loading: bool,
+    // The description in blocks, the summary while it loads or when there is none.
+    about: [AboutBlock],
+    // Screenshots in the website's order; an image stays empty while it loads.
+    shots: [Shot],
     // The addon has a page on the platform website.
     on-website: bool,
 }
@@ -99,9 +115,13 @@ export component ActionButton inherits Rectangle {
     }
 }
 
-// Square outlined button with a bin, for removing an addon; turns red on hover.
-export component RemoveButton inherits Rectangle {
-    in property <string> label: "Remove";
+// Square outlined button with a drawn glyph (16x16 path), for icon-only actions.
+export component GlyphButton inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    // Red on hover (remove), or the deep red of a closing action (the viewer's X).
+    in property <bool> danger;
+    in property <bool> primary;
     callback clicked;
 
     accessible-role: button;
@@ -110,17 +130,19 @@ export component RemoveButton inherits Rectangle {
     height: Theme.touch ? 44px : 34px;
     border-radius: Theme.radius;
     border-width: focus.has-focus ? 2px : 1px;
-    border-color: focus.has-focus ? Theme.outline-active : touch.has-hover ? Theme.danger : Theme.outline;
-    background: Theme.control;
+    border-color: focus.has-focus ? Theme.outline-active
+        : root.danger && touch.has-hover ? Theme.danger
+        : touch.has-hover ? Theme.outline-hover : Theme.outline;
+    background: root.primary ? (touch.has-hover ? Theme.crimson-hover : Theme.crimson) : Theme.control;
 
     Path {
         width: 16px;
         height: 16px;
         viewbox-width: 16;
         viewbox-height: 16;
-        // Lid with its handle, the bin, two ribs.
-        commands: "M 2 4 L 14 4 M 6 4 L 6 2 L 10 2 L 10 4 M 3.5 4 L 4.5 14 L 11.5 14 L 12.5 4 M 6.5 7 L 6.5 11 M 9.5 7 L 9.5 11";
-        stroke: touch.has-hover ? Theme.danger : Theme.text-muted;
+        commands: root.glyph;
+        stroke: root.danger && touch.has-hover ? Theme.danger
+            : root.primary || touch.has-hover ? Theme.gold-bright : Theme.text-muted;
         stroke-width: 1.5px;
     }
 
@@ -141,6 +163,198 @@ export component RemoveButton inherits Rectangle {
                 return accept;
             }
             reject
+        }
+    }
+}
+
+// Square button with a bin, for removing an addon; turns red on hover.
+export component RemoveButton inherits GlyphButton {
+    label: "Remove";
+    danger: true;
+    // Lid with its handle, the bin, two ribs.
+    glyph: "M 2 4 L 14 4 M 6 4 L 6 2 L 10 2 L 10 4 M 3.5 4 L 4.5 14 L 11.5 14 L 12.5 4 M 6.5 7 L 6.5 11 M 9.5 7 L 9.5 11";
+}
+
+// Screenshots shown large over the window, as on the website: the wheel, the buttons, + and - or a
+// double click zoom around the pointer, dragging moves a zoomed picture, the arrows step through,
+// a click beside the picture, the X or Escape closes.
+export component PictureViewer inherits Rectangle {
+    in property <[Shot]> shots;
+    in-out property <int> index;
+    callback close();
+
+    property <Shot> shot: root.shots[root.index];
+    property <float> scale: 1;
+    property <length> pan-x;
+    property <length> pan-y;
+    // The picture fitted into the stage at scale 1.
+    property <float> ratio: root.shot.image.width > 0 ? root.shot.image.height / root.shot.image.width : 0.5625;
+    property <length> fit-width: min(stage.width - 48px, (stage.height - 48px) / root.ratio);
+    property <length> shown-width: root.fit-width * root.scale;
+    property <length> shown-height: root.shown-width * root.ratio;
+    property <length> left: (stage.width - root.shown-width) / 2 + root.pan-x;
+    property <length> top: (stage.height - root.shown-height) / 2 + root.pan-y;
+    property <length> drag-x;
+    property <length> drag-y;
+
+    function step(by: int) {
+        root.index = mod(root.index + by + root.shots.length, root.shots.length);
+        root.zoom-at(1 / root.scale, stage.width / 2, stage.height / 2);
+    }
+    // Zooms by `factor` keeping the point (x, y) of the stage where it is.
+    function zoom-at(factor: float, x: length, y: length) {
+        let scale = min(6, max(1, root.scale * factor));
+        let dx = x - stage.width / 2;
+        let dy = y - stage.height / 2;
+        root.pan-x = scale == 1 ? 0 : dx - (dx - root.pan-x) * scale / root.scale;
+        root.pan-y = scale == 1 ? 0 : dy - (dy - root.pan-y) * scale / root.scale;
+        root.scale = scale;
+    }
+
+    background: #050403F2;
+
+    stage := Rectangle {
+        width: parent.width;
+        height: parent.height - bar.height;
+        clip: true;
+        Image {
+            x: root.left;
+            y: root.top;
+            width: root.shown-width;
+            height: root.shown-height;
+            source: root.shot.image;
+            image-fit: fill;
+        }
+        TouchArea {
+            mouse-cursor: root.scale > 1 ? (self.pressed ? MouseCursor.grabbing : MouseCursor.grab) : MouseCursor.default;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.drag-x = root.pan-x;
+                    root.drag-y = root.pan-y;
+                }
+            }
+            moved => {
+                if (root.scale > 1) {
+                    root.pan-x = root.drag-x + self.mouse-x - self.pressed-x;
+                    root.pan-y = root.drag-y + self.mouse-y - self.pressed-y;
+                }
+            }
+            clicked => {
+                let inside = self.mouse-x >= root.left && self.mouse-x <= root.left + root.shown-width
+                    && self.mouse-y >= root.top && self.mouse-y <= root.top + root.shown-height;
+                if (!inside) {
+                    root.close();
+                }
+            }
+            double-clicked => { root.zoom-at(root.scale > 1 ? 1 / root.scale : 2.5, self.mouse-x, self.mouse-y); }
+            scroll-event(event) => {
+                root.zoom-at(event.delta-y > 0 ? 1.2 : 1 / 1.2, self.mouse-x, self.mouse-y);
+                accept
+            }
+        }
+    }
+
+    bar := Rectangle {
+        y: parent.height - self.height;
+        height: Theme.touch ? 64px : 54px;
+        background: Theme.bg;
+        Rectangle {
+            y: 0;
+            height: 1px;
+            background: Theme.line;
+        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 8px;
+            alignment: stretch;
+            Text {
+                horizontal-stretch: 1;
+                text: root.shot.caption;
+                font-size: Theme.body;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if root.shots.length > 1 : Text {
+                text: (root.index + 1) + " / " + root.shots.length;
+                font-size: Theme.body;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+            if root.shots.length > 1 : VerticalLayout {
+                alignment: center;
+                GlyphButton {
+                    label: "Previous screenshot";
+                    glyph: "M 10 3 L 5 8 L 10 13";
+                    clicked => { root.step(-1); }
+                }
+            }
+            if root.shots.length > 1 : VerticalLayout {
+                alignment: center;
+                GlyphButton {
+                    label: "Next screenshot";
+                    glyph: "M 6 3 L 11 8 L 6 13";
+                    clicked => { root.step(1); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                GlyphButton {
+                    label: "Zoom out";
+                    glyph: "M 3 8 L 13 8";
+                    clicked => { root.zoom-at(1 / 1.5, stage.width / 2, stage.height / 2); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                GlyphButton {
+                    label: "Zoom in";
+                    glyph: "M 3 8 L 13 8 M 8 3 L 8 13";
+                    clicked => { root.zoom-at(1.5, stage.width / 2, stage.height / 2); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                GlyphButton {
+                    label: "Fit to the window";
+                    glyph: "M 2 6 L 2 2 L 6 2 M 10 2 L 14 2 L 14 6 M 14 10 L 14 14 L 10 14 M 6 14 L 2 14 L 2 10";
+                    clicked => { root.zoom-at(1 / root.scale, stage.width / 2, stage.height / 2); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                GlyphButton {
+                    label: "Close";
+                    glyph: "M 3 3 L 13 13 M 13 3 L 3 13";
+                    primary: true;
+                    clicked => { root.close(); }
+                }
+            }
+        }
+    }
+
+    keys := FocusScope {
+        width: 0;
+        height: 0;
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close();
+            } else if (event.text == Key.RightArrow) {
+                root.step(1);
+            } else if (event.text == Key.LeftArrow) {
+                root.step(-1);
+            } else if (event.text == "+" || event.text == "=") {
+                root.zoom-at(1.5, stage.width / 2, stage.height / 2);
+            } else if (event.text == "-") {
+                root.zoom-at(1 / 1.5, stage.width / 2, stage.height / 2);
+            } else if (event.text == "0") {
+                root.zoom-at(1 / root.scale, stage.width / 2, stage.height / 2);
+            } else {
+                return reject;
+            }
+            accept
         }
     }
 }
@@ -545,6 +759,144 @@ export component Dropdown inherits Rectangle {
     }
 }
 
+// The addon's icon, or its initial in a gold-rimmed square while there is none.
+component AddonIcon inherits Rectangle {
+    in property <image> icon;
+    in property <string> initial;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.outline;
+    background: Theme.field;
+    clip: true;
+    if root.icon.width == 0 : Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.initial;
+        font-size: parent.height / 2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Theme.gold-heading;
+    }
+    if root.icon.width > 0 : Image {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        source: root.icon;
+        image-fit: cover;
+    }
+}
+
+// A screenshot or description image, at most `tallest` tall; a click asks to enlarge it.
+component Picture inherits Rectangle {
+    in property <image> source;
+    in property <string> caption;
+    in property <length> tallest: 360px;
+    callback enlarge();
+    property <float> ratio: root.source.width > 0 ? root.source.height / root.source.width : 0.5625;
+    height: min(root.tallest, root.width * root.ratio);
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: touch.has-hover ? Theme.outline-hover : Theme.line;
+    background: Theme.field;
+    clip: true;
+    accessible-role: button;
+    accessible-label: root.caption != "" ? "Enlarge " + root.caption : "Enlarge picture";
+    if root.source.width == 0 : Text {
+        width: parent.width;
+        height: parent.height;
+        text: "Loading...";
+        font-size: Theme.meta;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Theme.text-muted;
+    }
+    Image {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        source: root.source;
+        image-fit: contain;
+    }
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: root.source.width > 0 ? pointer : default;
+        clicked => {
+            if (root.source.width > 0) {
+                root.enlarge();
+            }
+        }
+    }
+}
+
+// One block of a description, styled as the website styles it.
+component AboutBlockView inherits VerticalLayout {
+    in property <AboutBlock> block;
+    callback enlarge(image, string);
+    padding-top: root.block.kind == 1 ? 8px : 0px;
+    if root.block.kind == 0 || root.block.kind == 1 : Text {
+        text: root.block.text;
+        font-family: root.block.kind == 1 ? Theme.font-display : Theme.font-body;
+        font-size: root.block.kind == 1 ? Theme.heading : Theme.body;
+        color: root.block.kind == 1 ? Theme.gold : Theme.text;
+        wrap: word-wrap;
+    }
+    if root.block.kind == 2 : HorizontalLayout {
+        spacing: 8px;
+        padding-left: 6px;
+        Text {
+            text: root.block.marker;
+            font-size: Theme.body;
+            color: Theme.gold;
+            min-width: 14px;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.block.text;
+            font-size: Theme.body;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+    }
+    if root.block.kind == 3 : Rectangle {
+        background: Theme.field;
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.line;
+        height: code.preferred-height + 20px;
+        code := Text {
+            x: 10px;
+            width: parent.width - 20px;
+            text: root.block.text;
+            font-family: "Consolas";
+            font-size: Theme.meta;
+            color: Theme.gold-bright;
+            wrap: word-wrap;
+        }
+    }
+    if root.block.kind == 4 : HorizontalLayout {
+        spacing: 12px;
+        Rectangle {
+            width: 3px;
+            background: Theme.outline;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.block.text;
+            font-size: Theme.body;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+        }
+    }
+    if root.block.kind == 5 : Picture {
+        source: root.block.image;
+        caption: root.block.text;
+        enlarge => { root.enlarge(root.block.image, root.block.text); }
+    }
+}
+
 // One fact of the detail view: a gold label over its text.
 component Fact inherits VerticalLayout {
     in property <string> label;
@@ -571,6 +923,9 @@ export component DetailView inherits VerticalLayout {
     callback remove();
     callback open();
     callback website();
+    // Screenshot `index` was clicked, or a picture of the description: show it large.
+    callback enlarge-shot(int);
+    callback enlarge(image, string);
 
     spacing: 14px;
 
@@ -586,18 +941,11 @@ export component DetailView inherits VerticalLayout {
         spacing: 16px;
         VerticalLayout {
             alignment: center;
-            Rectangle {
+            AddonIcon {
                 width: 64px;
                 height: 64px;
-                border-radius: Theme.radius;
-                border-width: 1px;
-                border-color: Theme.outline;
-                background: Theme.field;
-                Text {
-                    text: root.detail.row.initial;
-                    font-size: 32px;
-                    color: Theme.gold-heading;
-                }
+                icon: root.detail.row.icon;
+                initial: root.detail.row.initial;
             }
         }
         VerticalLayout {
@@ -677,11 +1025,50 @@ export component DetailView inherits VerticalLayout {
     ScrollPanel {
         vertical-stretch: 1;
         spacing: 18px;
-        Fact {
-            label: "About";
-            text: root.detail.about != "" ? root.detail.about
-                : root.detail.about-loading ? root.detail.row.description + "\n\nLoading the full description..."
-                : root.detail.row.description;
+        // Screenshots first, then the description, as on the website.
+        if root.detail.shots.length > 0 : Text {
+            text: "Screenshots";
+            font-size: Theme.body;
+            color: Theme.gold;
+        }
+        // A grid like the website's: as many columns of at least 240px as fit, wrapping.
+        if root.detail.shots.length > 0 : Rectangle {
+            property <length> gap: 12px;
+            property <int> columns: max(1, floor((self.width + self.gap) / (240px + self.gap)));
+            property <length> cell: (self.width - (self.columns - 1) * self.gap) / self.columns;
+            property <length> row-height: self.cell * 9 / 16 + 24px;
+            height: ceil(root.detail.shots.length / self.columns) * (self.row-height + self.gap) - self.gap;
+            for shot[i] in root.detail.shots : VerticalLayout {
+                x: mod(i, parent.columns) * (parent.cell + parent.gap);
+                y: floor(i / parent.columns) * (parent.row-height + parent.gap);
+                width: parent.cell;
+                height: parent.row-height;
+                spacing: 4px;
+                Picture {
+                    source: shot.image;
+                    caption: shot.caption;
+                    height: parent.width * 9 / 16;
+                    enlarge => { root.enlarge-shot(i); }
+                }
+                Text {
+                    text: shot.caption;
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    overflow: elide;
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 10px;
+            Text {
+                text: "About";
+                font-size: Theme.body;
+                color: Theme.gold;
+            }
+            for block in root.detail.about : AboutBlockView {
+                block: block;
+                enlarge(image, caption) => { root.enlarge(image, caption); }
+            }
         }
         if root.detail.safety != "" : Fact {
             label: "Safety check";
@@ -740,22 +1127,11 @@ export component AddonRowView inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            Rectangle {
+            AddonIcon {
                 width: 50px;
                 height: 50px;
-                border-radius: Theme.radius;
-                border-width: 1px;
-                border-color: Theme.outline;
-                background: Theme.field;
-                Text {
-                    width: parent.width;
-                    height: parent.height;
-                    text: root.addon.initial;
-                    font-size: 26px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    color: Theme.gold-heading;
-                }
+                icon: root.addon.icon;
+                initial: root.addon.initial;
             }
         }
 

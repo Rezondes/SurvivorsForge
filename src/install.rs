@@ -35,7 +35,7 @@ pub fn sha256_of(path: &Path) -> Result<String> {
     Ok(hex(&Sha256::digest(std::fs::read(path)?)))
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 

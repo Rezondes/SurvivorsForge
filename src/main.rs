@@ -52,9 +52,19 @@ struct Core {
     game_running: bool,
     /// The addon in the detail view, and whether it was opened from Browse (else Installed).
     detail: Option<(String, bool)>,
-    /// Long descriptions from the platform by addon id; `None` while one is fetched.
-    about: HashMap<String, Option<String>>,
+    /// Description, icon and screenshots from the platform by addon id; `None` while fetched.
+    info: HashMap<String, Option<controller::AddonInfo>>,
+    /// Icon URLs of the platform's addons by id.
+    icons: HashMap<String, String>,
+    /// Downloaded icons and screenshots by URL; `None` while loading or when it failed.
+    pictures: HashMap<String, Option<Pixels>>,
 }
+
+type Pixels = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+
+/// Longer side in pixels the launcher keeps of an icon, and of a screenshot or description image.
+const ICON_EDGE: u32 = 128;
+const SHOT_EDGE: u32 = 1600;
 
 type Shared = Arc<Mutex<Core>>;
 
@@ -87,7 +97,9 @@ impl Core {
             pack_busy: false,
             game_running: false,
             detail: None,
-            about: HashMap::new(),
+            info: HashMap::new(),
+            icons: HashMap::new(),
+            pictures: HashMap::new(),
         };
         if let Some(config) = config {
             core.switch_config(config);
@@ -180,6 +192,20 @@ fn initial(name: &str) -> SharedString {
     name.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().to_string()).unwrap_or_default().into()
 }
 
+/// The downloaded picture at `url`; empty (width 0) while it loads, when it failed or without one.
+fn picture(core: &Core, url: Option<&str>) -> slint::Image {
+    match url.and_then(|u| core.pictures.get(u)) {
+        Some(Some(pixels)) => slint::Image::from_rgba8(pixels.clone()),
+        _ => slint::Image::default(),
+    }
+}
+
+/// The icon of the platform addon `id` (an installed entry or a Browse row).
+fn icon(core: &Core, id: &str) -> slint::Image {
+    let slug = registry_entry(core, id).map_or(id, |a| a.id.as_str());
+    picture(core, core.icons.get(slug).map(String::as_str))
+}
+
 fn installed_row(row: &Row, core: &Core) -> AddonRow {
     let (status, kind, action) = match &row.state {
         RowState::Unchecked => (if core.checking { "Checking..." } else { "Not checked" }.to_string(), 0, ""),
@@ -199,6 +225,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         id: row.id.clone().into(),
         name: row.name.clone().into(),
         initial: initial(&row.name),
+        icon: icon(core, &row.id),
         author: row.author.clone().into(),
         version: row.version.clone().into(),
         badge: row.badge.label().into(),
@@ -218,6 +245,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
 fn browse_row(b: controller::BrowseRow, core: &Core) -> AddonRow {
     AddonRow {
         initial: initial(&b.name),
+        icon: icon(core, &b.id),
         id: b.id.clone().into(),
         name: b.name.into(),
         author: b.author.into(),
@@ -270,7 +298,15 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         row.version = controller::display_version(&latest.tag).into();
     }
     let facts = controller::details(entry, &core.registry, &folders);
-    let about = entry.and_then(|a| core.about.get(&a.id));
+    let info = entry.and_then(|a| core.info.get(&a.id));
+    let loaded = info.cloned().flatten().unwrap_or_default();
+    let base = loaded.image_origin().unwrap_or_default();
+    let mut about: Vec<AboutBlock> = forge_core::markdown::blocks(&loaded.about, &base).into_iter().map(|b| about_block(core, b)).collect();
+    if about.is_empty() {
+        let loading = if matches!(info, Some(None)) { "\n\nLoading the full description..." } else { "" };
+        about.push(about_block(core, forge_core::markdown::Block::Paragraph(format!("{}{loading}", row.description))));
+    }
+    let shots: Vec<Shot> = loaded.shots.iter().map(|(url, caption)| Shot { image: picture(core, Some(url)), caption: caption.into() }).collect();
     Some(AddonDetail {
         row,
         category: facts.category.into(),
@@ -278,20 +314,89 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         game: facts.game.into(),
         folders: facts.folders.into(),
         needs: facts.needs.into(),
-        about: about.cloned().flatten().map(|md| controller::plain_text(&md)).unwrap_or_default().into(),
-        about_loading: matches!(about, Some(None)),
+        about: ModelRc::new(VecModel::from(about)),
+        shots: ModelRc::new(VecModel::from(shots)),
         on_website: entry.is_some(),
     })
 }
 
-/// Opens the detail view of a row and fetches its long description once.
+/// One block of a description for the detail view; `kind` as `AboutBlock` in components.slint.
+fn about_block(core: &Core, block: forge_core::markdown::Block) -> AboutBlock {
+    use forge_core::markdown::Block;
+    let (kind, marker, text, url) = match block {
+        Block::Paragraph(t) => (0, String::new(), t, None),
+        Block::Heading(t) => (1, String::new(), t, None),
+        Block::Item { marker, text } => (2, marker, text, None),
+        Block::Code(t) => (3, String::new(), t, None),
+        Block::Quote(t) => (4, String::new(), t, None),
+        Block::Image { url, alt } => (5, String::new(), alt, Some(url)),
+    };
+    AboutBlock { kind, marker: marker.into(), text: text.into(), image: picture(core, url.as_deref()) }
+}
+
+/// Loads the pictures at `urls` that are not loaded yet, one after the other on this thread, and
+/// redraws after each. A failed one stays empty until the next start.
+fn load_pictures(weak: &slint::Weak<AppWindow>, shared: &Shared, client: &Client, urls: Vec<String>, edge: u32) {
+    use survivorsforge::pictures;
+    let mut todo = Vec::new();
+    let cache = {
+        let mut core = lock(shared);
+        for url in urls {
+            if !core.pictures.contains_key(&url) {
+                core.pictures.insert(url.clone(), None);
+                todo.push(url);
+            }
+        }
+        core.data_dir.join("cache").join("images")
+    };
+    for url in todo {
+        // A named picture comes from the cache while its hash matches, else once from the platform.
+        let bytes = match pictures::content_hash(&url) {
+            Some(hash) => pictures::cached(&cache, hash).or_else(|| {
+                let bytes = client.get_image(&url, pictures::MAX_BYTES).ok()?;
+                pictures::store(&cache, hash, &bytes).then_some(bytes)
+            }),
+            None => client.get_image(&url, pictures::MAX_BYTES).ok(),
+        };
+        let picture = bytes.and_then(|b| pictures::decode(&b, edge));
+        let Some(p) = picture else { continue };
+        lock(shared).pictures.insert(url, Some(Pixels::clone_from_slice(&p.rgba, p.width, p.height)));
+        let shared = shared.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+    }
+}
+
+/// Learns the icons of all platform addons and loads them, on a thread of its own.
+fn fetch_icons(ui: &AppWindow, shared: &Shared) {
+    let (client, api) = {
+        let core = lock(shared);
+        (core.client(), core.api_url())
+    };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let mut icons = Vec::new();
+        // ponytail: at most 20 pages of 50 addons; more pages when the platform grows past 1000.
+        for page in 1..=20 {
+            let Some((found, more)) = client.get_text(&format!("{api}/v1/addons?per_page=50&page={page}")).ok().and_then(|t| controller::icon_page(&t)) else { break };
+            icons.extend(found);
+            if !more {
+                break;
+            }
+        }
+        let urls = icons.iter().map(|(_, url)| url.clone()).collect();
+        lock(&shared).icons.extend(icons);
+        load_pictures(&weak, &shared, &client, urls, ICON_EDGE);
+    });
+}
+
+/// Opens the detail view of a row and fetches its description, icon and screenshots once.
 fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
     let fetch = {
         let mut core = lock(shared);
         core.detail = Some((id.clone(), ui.get_page() == 1));
         match registry_entry(&core, &id).map(|a| a.id.clone()) {
-            Some(rid) if !core.about.contains_key(&rid) => {
-                core.about.insert(rid.clone(), None);
+            Some(rid) if !core.info.contains_key(&rid) => {
+                core.info.insert(rid.clone(), None);
                 Some((rid, core.client(), core.api_url()))
             }
             _ => None,
@@ -303,14 +408,25 @@ fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
         let (weak, shared) = (ui.as_weak(), shared.clone());
         std::thread::spawn(move || {
             // Offline or without a description the summary stays; the next start asks again.
-            let about = client
-                .get_text(&format!("{api}/v1/addons/{rid}"))
-                .ok()
-                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-                .and_then(|v| v["description_md"].as_str().map(str::to_string))
-                .unwrap_or_default();
-            lock(&shared).about.insert(rid, Some(about));
-            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+            let info = client.get_text(&format!("{api}/v1/addons/{rid}")).ok().and_then(|t| controller::addon_info(&t)).unwrap_or_default();
+            let base = info.image_origin().unwrap_or_default();
+            let mut shots: Vec<String> = info.shots.iter().map(|(url, _)| url.clone()).collect();
+            shots.extend(forge_core::markdown::blocks(&info.about, &base).into_iter().filter_map(|b| match b {
+                forge_core::markdown::Block::Image { url, .. } => Some(url),
+                _ => None,
+            }));
+            let icon = info.icon.clone();
+            {
+                let mut core = lock(&shared);
+                if let Some(icon) = &icon {
+                    core.icons.insert(rid.clone(), icon.clone());
+                }
+                core.info.insert(rid, Some(info));
+            }
+            let redraw = shared.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+            load_pictures(&weak, &shared, &client, icon.into_iter().collect(), ICON_EDGE);
+            load_pictures(&weak, &shared, &client, shots, SHOT_EDGE);
         });
     }
 }
@@ -1358,6 +1474,7 @@ fn main() -> Result<(), slint::PlatformError> {
     refresh(&ui, &shared);
     if !needs_setup {
         check_updates(&ui, &shared);
+        fetch_icons(&ui, &shared);
     }
     let (weak, linked) = (ui.as_weak(), shared.clone());
     deep_link::listen(move |id| {

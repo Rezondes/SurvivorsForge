@@ -137,6 +137,21 @@ impl Client {
         Self::call(request)?.into_string().map_err(|e| Error::Network(e.to_string()))
     }
 
+    /// An image of the platform (icon, screenshot), at most `max` bytes; without the installation ID.
+    pub fn get_image(&self, url: &str, max: u64) -> Result<Vec<u8>> {
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return Err(Error::Network(format!("not a web address: {url}")));
+        }
+        let mut bytes = Vec::new();
+        let reader = Self::call(self.agent.get(url))?.into_reader();
+        std::io::Read::read_to_end(&mut std::io::Read::take(reader, max + 1), &mut bytes)
+            .map_err(|e| Error::Network(e.to_string()))?;
+        if bytes.len() as u64 > max {
+            return Err(Error::Network(format!("image larger than {max} bytes: {url}")));
+        }
+        Ok(bytes)
+    }
+
     /// Downloads into a temp file next to `dest` and renames it only when complete. Only from
     /// GitHub: the URL comes from the server, which must not point the launcher elsewhere, and
     /// every redirect is checked the same way.

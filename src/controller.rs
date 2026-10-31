@@ -429,26 +429,46 @@ pub fn details(addon: Option<&VerifiedAddon>, registry: &Registry, folders: &[St
     Details { category: addon.category.clone(), safety: safety.into(), game, folders: addon.folders.join(", "), needs: needs.join(", ") }
 }
 
-/// An addon's Markdown description as plain text for the launcher: no heading marks, emphasis,
-/// code ticks or images, links as their text.
-// ponytail: line-based, no nested or reference links; a Markdown parser if descriptions need more.
-pub fn plain_text(md: &str) -> String {
-    let lines: Vec<String> = md
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("!["))
-        .map(|l| {
-            let mut line = l.trim_start_matches('#').trim_start().replace("**", "").replace("__", "").replace('`', "");
-            while let (Some(open), Some(mid)) = (line.find('['), line.find("](")) {
-                let Some(close) = line[mid..].find(')').map(|c| mid + c) else { break };
-                if open > mid {
-                    break;
-                }
-                line = format!("{}{}{}", &line[..open], &line[open + 1..mid], &line[close + 1..]);
-            }
-            line
-        })
+/// The icons of one page of `/v1/addons` as (slug, URL), and whether another page follows.
+pub fn icon_page(json: &str) -> Option<(Vec<(String, String)>, bool)> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let icons = v["addons"]
+        .as_array()?
+        .iter()
+        .filter_map(|a| Some((a["slug"].as_str()?.to_string(), a["icon_url"].as_str()?.to_string())))
         .collect();
-    lines.join("\n").trim().to_string()
+    let (total, page, per_page) = (v["total"].as_i64()?, v["page"].as_i64()?, v["per_page"].as_i64()?);
+    Some((icons, page * per_page < total))
+}
+
+/// What the launcher shows of an addon's page on the platform (`/v1/addons/{slug}`).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct AddonInfo {
+    /// The long description as Markdown.
+    pub about: String,
+    pub icon: Option<String>,
+    /// Screenshots as (URL, caption) in display order.
+    pub shots: Vec<(String, String)>,
+}
+
+impl AddonInfo {
+    /// `https://host` of the platform's images: images in the description load only from there, as on
+    /// the website.
+    pub fn image_origin(&self) -> Option<String> {
+        let url = self.icon.as_deref().or(self.shots.first().map(|(u, _)| u.as_str()))?;
+        let (scheme, rest) = url.split_once("://")?;
+        Some(format!("{scheme}://{}", rest.split('/').next()?))
+    }
+}
+
+pub fn addon_info(json: &str) -> Option<AddonInfo> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    Some(AddonInfo {
+        about: text(&v["description_md"]),
+        icon: v["icon_url"].as_str().map(str::to_string),
+        shots: v["images"].as_array().into_iter().flatten().filter(|i| i["url"].is_string()).map(|i| (text(&i["url"]), text(&i["caption"]))).collect(),
+    })
 }
 
 /// The website's pack builder with `ids` ticked.
@@ -548,6 +568,29 @@ impl ZipPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn icon_urls_come_from_a_page_of_the_addon_list() {
+        let page = r#"{"total": 51, "page": 1, "per_page": 50, "addons": [
+            {"slug": "lucky", "icon_url": "https://forge.test/img/a.webp"}, {"slug": "plain", "icon_url": null}]}"#;
+        let (icons, more) = icon_page(page).unwrap();
+        assert_eq!(icons, [("lucky".to_string(), "https://forge.test/img/a.webp".to_string())]);
+        assert!(more, "51 addons do not fit on one page of 50");
+        assert!(!icon_page(r#"{"total": 2, "page": 1, "per_page": 50, "addons": []}"#).unwrap().1);
+        assert!(icon_page("not json").is_none());
+    }
+
+    #[test]
+    fn addon_info_takes_description_icon_and_screenshots() {
+        let json = r##"{"description_md": "# Hi", "icon_url": "https://forge.test/img/i.webp",
+            "images": [{"url": "https://forge.test/img/1.webp", "caption": "Bars"}, {"url": "https://forge.test/img/2.webp", "caption": ""}]}"##;
+        let info = addon_info(json).unwrap();
+        assert_eq!(info.about, "# Hi");
+        assert_eq!(info.icon.as_deref(), Some("https://forge.test/img/i.webp"));
+        assert_eq!(info.shots, [("https://forge.test/img/1.webp".to_string(), "Bars".to_string()), ("https://forge.test/img/2.webp".to_string(), String::new())]);
+        assert_eq!(info.image_origin().as_deref(), Some("https://forge.test"), "description images only from the platform's image host");
+        assert_eq!(addon_info("{}").unwrap(), AddonInfo::default());
+    }
     use crate::state::Entry;
     use crate::toc::Toc;
     use crate::updates::RemoteVersion;
@@ -760,12 +803,6 @@ mod tests {
 
         let own = details(None, &registry, &["Mine".to_string()]);
         assert_eq!((own.folders.as_str(), own.safety.as_str(), own.game.as_str()), ("Mine", "", ""), "a GitHub or zip addon: what the folder tells");
-    }
-
-    #[test]
-    fn markdown_reads_as_text() {
-        let md = "# Lucky\n\nRolls **twice** as `/lucky`, see [the wiki](https://x.test).\n![shot](https://x.test/a.png)\n- one\n- two";
-        assert_eq!(plain_text(md), "Lucky\n\nRolls twice as /lucky, see the wiki.\n- one\n- two");
     }
 
     fn games() -> Vec<GameVersion> {

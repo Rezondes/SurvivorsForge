@@ -6511,6 +6511,7 @@ version = "0.4.3"
 dependencies = [
  "directories",
  "forge-core",
+ "image",
  "open",
  "rfd",
  "self-replace",
