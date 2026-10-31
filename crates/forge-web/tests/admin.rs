@@ -532,3 +532,10 @@ async fn tables_are_named_for_screen_readers() {
     let page = admin_stats_page(admin_stats_body()).await;
     assert!(page.contains(r#"<caption class="sr-only">Busiest routes</caption>"#), "{page}");
 }
+
+#[tokio::test]
+async fn visits_are_called_visits_everywhere() {
+    let page = admin_stats_page(admin_stats_body()).await;
+    assert!(page.contains(r#"<th class="num">Visits</th>"#), "{page}");
+    assert!(!page.contains("Visitors"), "the public page says visits too");
+}
