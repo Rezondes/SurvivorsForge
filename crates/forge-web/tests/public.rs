@@ -742,3 +742,13 @@ async fn severities_read_as_words() {
         assert!(page.contains(label), "missing {label}: {page}");
     }
 }
+
+#[tokio::test]
+async fn the_game_version_sits_in_the_meta_line() {
+    let mut web = with_addon("verified", "available").await;
+    let page = web.get("/addons/lucky").await.body;
+    let meta = page.split("<p class=\"muted\">Published ").nth(1).expect("meta line");
+    let meta = &meta[..meta.find("</p>").unwrap()];
+    assert!(meta.contains(" · Game version: "), "{meta}");
+    assert!(!page.contains("<p class=\"muted\">Game version:"), "no line of its own between notice and buttons");
+}
