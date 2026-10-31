@@ -83,11 +83,9 @@
 </dialog>
 {% endif %}
 
-{% if !description_html.trim().is_empty() %}
 <section class="panel description">
-  {{ description_html|safe }}
+  {% if !description_html.trim().is_empty() %}{{ description_html|safe }}{% else %}<p class="muted">No description here yet. The <a href="https://github.com/{{ repo }}#readme" rel="external noopener">README on GitHub</a> may tell more.</p>{% endif %}
 </section>
-{% endif %}
 
 {% if !deps.is_empty() %}
 <section class="panel">

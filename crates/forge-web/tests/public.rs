@@ -761,3 +761,15 @@ async fn the_unzip_hint_belongs_to_the_download_button() {
     assert!(page.contains(r#"<small id="unzip-hint" class="muted">Unzip it into the game's <code>AddOns</code> folder.</small>"#));
     assert!(!page.contains("Without the launcher:"), "no second help line");
 }
+
+#[tokio::test]
+async fn a_missing_description_points_to_the_readme() {
+    let web = TestWeb::new().await;
+    let mut bare = addon("scanned");
+    bare["description_html"] = json!("");
+    mock(&web, "/v1/addons/lucky", bare).await;
+    mock(&web, "/v1/addons/lucky/versions", versions("scanned", "available")).await;
+    let mut web = web;
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"No description here yet. The <a href="https://github.com/alice/lucky#readme" rel="external noopener">README on GitHub</a> may tell more."#), "{page}");
+}
