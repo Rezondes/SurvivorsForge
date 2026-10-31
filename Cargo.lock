@@ -1944,7 +1944,7 @@ dependencies = [
 
 [[package]]
 name = "forge-scan"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "forge-core",
  "full_moon",
@@ -1978,6 +1978,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "forge-core",
+ "forge-scan",
  "forge-trace",
  "http-body-util",
  "metrics",

@@ -4,11 +4,13 @@
 
 mod entropy;
 pub mod finding;
+mod hint;
 pub mod lua_rules;
 pub mod xml_rules;
 pub mod zip_rules;
 
 pub use finding::{Finding, Report, Severity};
+pub use hint::hint;
 
 /// The version of the rules. A new version lets the platform rescan everything.
 pub const SCANNER_VERSION: &str = env!("CARGO_PKG_VERSION");

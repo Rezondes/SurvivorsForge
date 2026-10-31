@@ -4,3 +4,6 @@
 # Shell scripts run on Linux and break with CRLF line endings.
 *.sh text eol=lf
 AppRun text eol=lf
+
+# sqlx checksums the migration files; CRLF would make applied migrations look modified.
+*.sql text eol=lf

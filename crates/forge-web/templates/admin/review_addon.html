@@ -21,7 +21,7 @@
   {% if !item.findings.is_empty() %}
   <ul class="findings">
     {% for f in item.findings %}
-    <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.severity }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}</li>
+    <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.severity }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}{% if f.hint != "" %}<p class="muted">Fix: {{ f.hint }}</p>{% endif %}</li>
     {% endfor %}
   </ul>
   {% endif %}

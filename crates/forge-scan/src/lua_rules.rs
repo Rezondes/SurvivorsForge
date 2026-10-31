@@ -37,6 +37,35 @@ pub const ENTROPY_LIMIT: f64 = 5.0;
 /// Encoded data has (almost) no spaces; any text has far more than this share.
 pub const MAX_ENCODED_SPACES: f64 = 0.02;
 
+/// Where the code that `loadstring` or `RunScript` runs comes from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Origin {
+    /// Only literals, provably: the addon's own text.
+    Fixed,
+    /// Event arguments or typed text: what other players or the user control.
+    Outside,
+    /// Anything the scanner cannot follow.
+    Unknown,
+}
+
+impl Origin {
+    /// Two parts together: outside wins, then unknown.
+    fn and(self, other: Origin) -> Origin {
+        match (self, other) {
+            (Origin::Outside, _) | (_, Origin::Outside) => Origin::Outside,
+            (Origin::Unknown, _) | (_, Origin::Unknown) => Origin::Unknown,
+            _ => Origin::Fixed,
+        }
+    }
+}
+
+/// How many locals deep the origin is followed (`a` from `b` from `c`).
+const MAX_ORIGIN_DEPTH: usize = 4;
+/// Event arguments of 1.12 handlers: chat and addon messages arrive in them.
+const OUTSIDE_VALUES: &[&str] = &["arg", "arg1", "arg2", "arg3", "arg4", "arg5", "arg6", "arg7", "arg8", "arg9"];
+/// Functions that only read a table they get.
+const TABLE_READERS: &[&str] = &["getn", "ipairs", "pairs", "unpack"];
+
 #[derive(Debug, Clone, PartialEq)]
 enum Tok {
     Ident(String),
@@ -96,6 +125,190 @@ impl Lua<'_> {
             && self.is_str(i + 2)
             && (self.is_sym(i + 3, Symbol::RightParen) || self.is_sym(i + 3, Symbol::Comma))
             || self.is_str(i + 1)
+    }
+
+    /// Where the single argument of the call at `i` comes from; `Unknown` unless proven.
+    fn call_arg_origin(&self, i: usize) -> Origin {
+        if !self.is_sym(i + 1, Symbol::LeftParen) {
+            return Origin::Unknown;
+        }
+        let Some(close) = self.closing(i + 1) else { return Origin::Unknown };
+        self.expr_origin(i + 2, close, 0)
+    }
+
+    /// The index of the bracket that closes the one at `open`.
+    fn closing(&self, open: usize) -> Option<usize> {
+        let mut depth = 0i32;
+        for j in open..self.toks.len() {
+            match self.tok(j) {
+                Some(Tok::Sym(Symbol::LeftParen | Symbol::LeftBracket | Symbol::LeftBrace)) => depth += 1,
+                Some(Tok::Sym(Symbol::RightParen | Symbol::RightBracket | Symbol::RightBrace)) => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(j);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// The origin of the tokens `from..to`: operands joined by `..`, each a literal, a local fixed
+    /// at its declaration, an element of a fixed local table, or something from outside.
+    fn expr_origin(&self, from: usize, to: usize, depth: usize) -> Origin {
+        if from >= to || depth > MAX_ORIGIN_DEPTH {
+            return Origin::Unknown;
+        }
+        let mut origin = Origin::Fixed;
+        let mut j = from;
+        while j < to {
+            let (part, next) = match self.tok(j) {
+                Some(Tok::Str(..) | Tok::Num) => (Origin::Fixed, j + 1),
+                // `x:GetText()`: what someone typed.
+                Some(Tok::Sym(Symbol::Colon)) if self.is_ident(j + 1, "GetText") => (Origin::Outside, to),
+                Some(Tok::Ident(name)) if OUTSIDE_VALUES.contains(&name.as_str()) => (Origin::Outside, j + 1),
+                Some(Tok::Ident(name)) if self.is_sym(j + 1, Symbol::LeftBracket) => match self.closing(j + 1) {
+                    Some(end) => (self.table_origin(name, j, depth), end + 1),
+                    None => (Origin::Unknown, to),
+                },
+                Some(Tok::Ident(name)) if !self.is_member(j) => (self.local_origin(name, j, depth), j + 1),
+                _ => (Origin::Unknown, j + 1),
+            };
+            origin = origin.and(part);
+            if origin == Origin::Outside {
+                return origin;
+            }
+            j = next;
+            // Whatever follows a part must be `..` and another part, or the end.
+            if j < to {
+                if !self.is_sym(j, Symbol::TwoDots) {
+                    return origin.and(self.rest_origin(j, to));
+                }
+                j += 1;
+            }
+        }
+        origin
+    }
+
+    /// Calls, fields or operators after a part: `Outside` if they read typed text, else `Unknown`.
+    fn rest_origin(&self, from: usize, to: usize) -> Origin {
+        let typed = (from..to).any(|k| self.is_sym(k, Symbol::Colon) && self.is_ident(k + 1, "GetText"));
+        if typed { Origin::Outside } else { Origin::Unknown }
+    }
+
+    /// A local `name` read at `at`: fixed only when the declaration it reads, the nearest one before
+    /// `at` still in scope there, is `local name = <fixed>` and nothing in the file assigns the name.
+    fn local_origin(&self, name: &str, at: usize, depth: usize) -> Origin {
+        // The declaration, and whether it is a plain `local name = ...`.
+        let mut binding = None;
+        for j in (0..self.toks.len()).filter(|&j| self.is_ident(j, name) && !self.is_member(j)) {
+            let local = j > 0 && self.is_sym(j - 1, Symbol::Local);
+            let assigned = self.is_sym(j + 1, Symbol::Equal);
+            let list = self.name_list(j);
+            let function = j > 0 && self.is_sym(j - 1, Symbol::Function);
+            if (assigned && !local) || list == Some(false) || function {
+                return Origin::Unknown;
+            }
+            // A parameter, a loop variable or a list of locals: never provably fixed.
+            let declares = local || list.is_some() || (j > 0 && self.is_sym(j - 1, Symbol::For));
+            if declares && j < at && self.in_scope(j, at) {
+                binding = Some((j, local && assigned && list.is_none()));
+            }
+        }
+        let Some((j, true)) = binding else { return Origin::Unknown };
+        // The value runs to the end of the statement: the next line or `;`.
+        let line = self.line(j);
+        let end = (j + 2..self.toks.len()).find(|&k| self.line(k) != line || self.is_sym(k, Symbol::Semicolon)).unwrap_or(self.toks.len());
+        if (end..self.toks.len()).next().is_some_and(|k| self.continues(k)) {
+            return Origin::Unknown;
+        }
+        self.expr_origin(j + 2, end, depth + 1)
+    }
+
+    /// The name at `j` in a list that declares it (`Some(true)`: `local a, b`, `for k, v`, a
+    /// parameter) or assigns it (`Some(false)`: `a, b = ...`).
+    fn name_list(&self, j: usize) -> Option<bool> {
+        let names = |k: usize| self.is_sym(k, Symbol::Comma) && matches!(self.tok(k + 1), Some(Tok::Ident(_)));
+        let mut first = j;
+        while first >= 2 && names(first - 1) {
+            first -= 2;
+        }
+        let mut last = j;
+        while names(last + 1) {
+            last += 2;
+        }
+        let opens = first > 0 && (self.is_sym(first - 1, Symbol::Local) || self.is_sym(first - 1, Symbol::For));
+        // `function f(a, b)` or `function(a, b)`: back over the name to `function`.
+        let parameter = first > 0 && self.is_sym(first - 1, Symbol::LeftParen) && {
+            let mut k = first - 1;
+            while k > 0 && matches!(self.tok(k - 1), Some(Tok::Ident(_) | Tok::Sym(Symbol::Dot | Symbol::Colon))) {
+                k -= 1;
+            }
+            k > 0 && self.is_sym(k - 1, Symbol::Function)
+        };
+        if parameter || (first < last && opens) {
+            Some(true)
+        } else if first < last && self.is_sym(last + 1, Symbol::Equal) && !self.in_expression(first) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// No block that holds the declaration at `decl` ends before `at`; `else` and `elseif` end the
+    /// branch before them.
+    fn in_scope(&self, decl: usize, at: usize) -> bool {
+        let mut depth = 0i32;
+        for k in decl..at {
+            match self.tok(k) {
+                Some(Tok::Sym(Symbol::Function | Symbol::Do | Symbol::Then | Symbol::Repeat)) => depth += 1,
+                Some(Tok::Sym(Symbol::End | Symbol::Until | Symbol::Else | Symbol::ElseIf)) => {
+                    depth -= 1;
+                    if depth < 0 {
+                        return false;
+                    }
+                    if self.is_sym(k, Symbol::Else) {
+                        depth += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
+    /// The token at `k` follows something no statement starts after, like `{ a, b = 1 }` or `x = a, b`.
+    fn in_expression(&self, k: usize) -> bool {
+        k > 0 && (self.continues(k - 1) || matches!(self.tok(k - 1), Some(Tok::Sym(Symbol::Equal | Symbol::LeftBrace | Symbol::LeftParen | Symbol::Return | Symbol::In))))
+    }
+
+    /// A binary operator at `k`: the expression before it goes on.
+    fn continues(&self, k: usize) -> bool {
+        use Symbol::*;
+        matches!(self.tok(k), Some(Tok::Sym(TwoDots | Or | And | Plus | Minus | Star | Slash | Caret | Percent)))
+    }
+
+    /// An element of the local table `name` read at `at`: fixed when it was built as
+    /// `local name = { <literals> }` and is only ever read, counted or walked afterwards.
+    fn table_origin(&self, name: &str, at: usize, depth: usize) -> Origin {
+        let mut built = None;
+        for j in (0..self.toks.len()).filter(|&j| self.is_ident(j, name) && !self.is_member(j)) {
+            let local = j > 0 && self.is_sym(j - 1, Symbol::Local);
+            if local && self.is_sym(j + 1, Symbol::Equal) && self.is_sym(j + 2, Symbol::LeftBrace) && j < at {
+                built = self.in_scope(j, at).then_some(j + 2);
+                continue;
+            }
+            let read = self.is_sym(j + 1, Symbol::LeftBracket) && self.closing(j + 1).is_some_and(|end| !self.is_sym(end + 1, Symbol::Equal));
+            let counted = j >= 2 && self.is_sym(j - 1, Symbol::LeftParen) && self.is_sym(j + 1, Symbol::RightParen) && matches!(self.tok(j - 2), Some(Tok::Ident(f)) if TABLE_READERS.contains(&f.as_str()));
+            if !(read || counted) {
+                return Origin::Unknown;
+            }
+        }
+        let Some(open) = built else { return Origin::Unknown };
+        let Some(close) = self.closing(open) else { return Origin::Unknown };
+        let literals = (open + 1..close).all(|k| matches!(self.tok(k), Some(Tok::Str(..) | Tok::Num | Tok::Sym(Symbol::Comma | Symbol::Semicolon))));
+        if literals && depth <= MAX_ORIGIN_DEPTH { Origin::Fixed } else { Origin::Unknown }
     }
 
     fn line(&self, i: usize) -> usize {
@@ -251,7 +464,13 @@ fn check_ident(lua: &Lua, i: usize, name: &str, report: &mut Report) {
             if lua.is_call(i) && lua.constant_string_arg(i) {
                 lua.add(report, "lua.dynamic_code", Severity::Warn, i, format!("{name} runs code from a string"));
             } else {
-                lua.add(report, "lua.dynamic_code", Severity::Critical, i, format!("{name} runs code that is built at run time"));
+                match lua.call_arg_origin(i) {
+                    Origin::Fixed => lua.add(report, "lua.dynamic_code", Severity::Warn, i, format!("{name} runs code put together from fixed text")),
+                    Origin::Outside => {
+                        lua.add(report, "lua.dynamic_code", Severity::Critical, i, format!("{name} runs code from chat, addon messages or an input field"));
+                    }
+                    Origin::Unknown => lua.add(report, "lua.dynamic_code", Severity::Critical, i, format!("{name} runs code that is built at run time")),
+                }
             }
         }
         // getglobal(this:GetName() .. "Text") is everyday 1.12 code; writing one is rarer.

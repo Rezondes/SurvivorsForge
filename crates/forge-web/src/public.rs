@@ -101,6 +101,7 @@ async fn findings(state: &AppState, slug: &str, tag: &str) -> WebResult<Vec<Find
             },
             message: s(&f["message"]),
             snippet: s(&f["snippet"]),
+            hint: forge_scan::hint(&s(&f["rule"]), &s(&f["snippet"])).unwrap_or_default().into(),
         })
         .collect())
 }

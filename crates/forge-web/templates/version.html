@@ -15,7 +15,7 @@
   <h2>Findings</h2>
   <ul class="findings">
     {% for f in findings %}
-    <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.label() }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}</li>
+    <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.label() }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}{% if f.hint != "" %}<p class="muted">Fix: {{ f.hint }}</p>{% endif %}</li>
     {% endfor %}
   </ul>
 </section>

@@ -1,6 +1,6 @@
 [package]
 name = "forge-scan"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "Static security scanner for Azeroth Survivors addon zips"
 license = "AGPL-3.0-or-later"

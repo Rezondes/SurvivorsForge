@@ -162,6 +162,8 @@ pub struct FindingRow {
     pub place: String,
     pub message: String,
     pub snippet: String,
+    /// How the author can fix it, empty when the rule only informs.
+    pub hint: String,
 }
 
 impl FindingRow {

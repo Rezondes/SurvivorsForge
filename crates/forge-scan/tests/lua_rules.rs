@@ -249,3 +249,76 @@ fn clean_addon_has_no_warnings() {
     let report = check(include_str!("fixtures/lua/clean_addon.lua"));
     assert!(!report.flagged(), "{:#?}", report.findings);
 }
+
+fn message(src: &str, rule: &str) -> String {
+    check(src).findings.into_iter().find(|f| f.rule == rule).map(|f| f.message).unwrap_or_default()
+}
+
+#[test]
+fn dynamic_code_from_fixed_text_is_a_warning() {
+    // AZTotemManager 1.1.0: names from a local table of fixed strings.
+    let probe = r#"
+        local probeList = { "AZS_GetTotems", "AZS_GetMeter", "AZS_TOTEMS" }
+        for i = 1, table.getn(probeList) do
+          local nm = probeList[i]
+          local chunk = loadstring("return " .. nm)
+        end"#;
+    has(probe, "lua.dynamic_code", Severity::Warn);
+    lacks_severity(probe, "lua.dynamic_code", Severity::Critical);
+    assert!(message(probe, "lua.dynamic_code").contains("fixed text"), "{}", message(probe, "lua.dynamic_code"));
+
+    has(r#"local name = "AZS_GetTotems"; local f = loadstring("return " .. name)"#, "lua.dynamic_code", Severity::Warn);
+    has(r#"local n = 3; RunScript("x = " .. n)"#, "lua.dynamic_code", Severity::Warn);
+
+    // The same name read or looped over in other functions of the file does not matter.
+    let elsewhere = format!("{probe}\nfunction Show(t) for k, nm in pairs(t) do print(tostring(nm)) end end\nlocal row = {{ label = nm, checks = {{}} }}");
+    has(&elsewhere, "lua.dynamic_code", Severity::Warn);
+    lacks_severity(&elsewhere, "lua.dynamic_code", Severity::Critical);
+}
+
+#[test]
+fn dynamic_code_from_outside_stays_critical() {
+    let chat = r#"
+        function OnEvent()
+          if event == "CHAT_MSG_ADDON" then loadstring(arg2)() end
+        end"#;
+    has(chat, "lua.dynamic_code", Severity::Critical);
+    assert!(message(chat, "lua.dynamic_code").contains("chat, addon messages or an input field"));
+    has("local t = box:GetText(); RunScript(t)", "lua.dynamic_code", Severity::Critical);
+}
+
+#[test]
+fn dynamic_code_that_cannot_be_proven_fixed_stays_critical() {
+    for src in [
+        // A parameter with the same name as an earlier fixed local.
+        r#"local nm = "safe"
+           local function run(nm) loadstring("return " .. nm)() end"#,
+        // The fixed local is changed later.
+        r#"local nm = "safe"; nm = GetSomething(); loadstring(nm)()"#,
+        // The table gets entries from elsewhere, or goes to code that may change it.
+        r#"local list = { "a" }; table.insert(list, arg1); loadstring(list[2])()"#,
+        r#"local list = { "a" }; list[2] = arg1; loadstring(list[2])()"#,
+        r#"local list = { "a" }; Fill(list); loadstring(list[1])()"#,
+        // A table with anything but fixed values.
+        r#"local list = { "a", Name() }; loadstring(list[1])()"#,
+        // A global or a function result.
+        "loadstring(SomeGlobal)()",
+        r#"loadstring("return " .. build())()"#,
+        // A loop variable or a list of names hides the fixed local.
+        "local nm = \"x\"\nfor k, nm in pairs(t) do loadstring(nm)() end",
+        r#"local nm = "x"; nm, b = arg1, 2; loadstring(nm)()"#,
+        // The fixed local or table is out of scope where it is read: that name is a global.
+        "function A() local nm = \"x\" end\nfunction B() loadstring(nm)() end",
+        "if c then local nm = \"x\" else loadstring(nm)() end",
+        "do local list = { \"a\" } end\nloadstring(list[1])()",
+        // The value goes on in the next line.
+        "local nm = \"x\"\n  .. arg1\nloadstring(nm)()",
+    ] {
+        has(src, "lua.dynamic_code", Severity::Critical);
+    }
+}
+
+fn lacks_severity(src: &str, rule: &str, severity: Severity) {
+    let found = rules(src);
+    assert!(found.iter().all(|(r, s, _)| !(r == rule && *s == severity)), "unexpected {rule}/{severity:?} in {found:?}");
+}

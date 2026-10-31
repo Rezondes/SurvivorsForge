@@ -193,6 +193,7 @@ pub async fn scan(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
                 },
                 message: s(&f["message"]),
                 snippet: s(&f["snippet"]),
+                hint: forge_scan::hint(&s(&f["rule"]), &s(&f["snippet"])).unwrap_or_default().into(),
             };
             (rank, row)
         })

@@ -48,7 +48,7 @@
       <p class="muted">{% if l.row.notice.badge == "Verified" %}The scan reported these spots. An admin looked at them before verifying this file.{% else %}Reported by the automatic scan. Nobody has checked them by hand.{% endif %}</p>
       <ul class="findings">
         {% for f in l.findings %}
-        <li><span class="badge{% if f.severity == "critical" %} bad{% else if f.severity == "warn" %} warn{% endif %}">{{ f.label() }}</span> <code>{{ f.place }}</code> {{ f.message }}{% if f.snippet != "" %}<pre aria-label="Code at {{ f.place }}">{{ f.snippet }}</pre>{% endif %}</li>
+        <li><span class="badge{% if f.severity == "critical" %} bad{% else if f.severity == "warn" %} warn{% endif %}">{{ f.label() }}</span> <code>{{ f.place }}</code> {{ f.message }}{% if f.snippet != "" %}<pre aria-label="Code at {{ f.place }}">{{ f.snippet }}</pre>{% endif %}{% if f.hint != "" %}<p class="muted">Fix: {{ f.hint }}</p>{% endif %}</li>
         {% endfor %}
       </ul>
     </details>

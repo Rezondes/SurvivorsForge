@@ -130,6 +130,7 @@ async fn review_queue(state: &AppState, token: &str) -> WebResult<Vec<crate::tem
                     },
                     message: s(&f["message"]),
                     snippet: s(&f["snippet"]),
+                    hint: forge_scan::hint(&s(&f["rule"]), &s(&f["snippet"])).unwrap_or_default().into(),
                 })
                 .collect(),
         })
