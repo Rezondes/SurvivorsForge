@@ -99,6 +99,52 @@ export component ActionButton inherits Rectangle {
     }
 }
 
+// Square outlined button with a bin, for removing an addon; turns red on hover.
+export component RemoveButton inherits Rectangle {
+    in property <string> label: "Remove";
+    callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.label;
+    width: root.height;
+    height: Theme.touch ? 44px : 34px;
+    border-radius: Theme.radius;
+    border-width: focus.has-focus ? 2px : 1px;
+    border-color: focus.has-focus ? Theme.outline-active : touch.has-hover ? Theme.danger : Theme.outline;
+    background: Theme.control;
+
+    Path {
+        width: 16px;
+        height: 16px;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        // Lid with its handle, the bin, two ribs.
+        commands: "M 2 4 L 14 4 M 6 4 L 6 2 L 10 2 L 10 4 M 3.5 4 L 4.5 14 L 11.5 14 L 12.5 4 M 6.5 7 L 6.5 11 M 9.5 7 L 9.5 11";
+        stroke: touch.has-hover ? Theme.danger : Theme.text-muted;
+        stroke-width: 1.5px;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    // Tab reaches the button, Space or Return presses it.
+    focus := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
 // Small text-only control for secondary row actions (open, remove).
 export component LinkButton inherits Rectangle {
     in property <string> text;
@@ -611,13 +657,12 @@ export component DetailView inherits VerticalLayout {
             text: "Open on the website";
             clicked => { root.website(); }
         }
-        if root.detail.row.can-open : LinkButton {
+        if root.detail.row.can-open : ActionButton {
             text: "GitHub";
             clicked => { root.open(); }
         }
-        if root.detail.row.can-remove && !root.detail.row.busy : LinkButton {
-            text: "Remove";
-            danger: true;
+        if root.detail.row.can-remove && !root.detail.row.busy : RemoveButton {
+            label: "Remove " + root.detail.row.name;
             clicked => { root.remove(); }
         }
     }
@@ -771,16 +816,16 @@ export component AddonRowView inherits Rectangle {
                 enabled: !root.addon.busy;
                 clicked => { root.action(); }
             }
+            // GitHub fills the column, so it lines up with the Update button above; the bin stays square.
             HorizontalLayout {
-                alignment: end;
                 spacing: 6px;
-                if root.addon.can-open : LinkButton {
+                if root.addon.can-open : ActionButton {
+                    horizontal-stretch: 1;
                     text: "GitHub";
                     clicked => { root.open(); }
                 }
-                if root.addon.can-remove && !root.addon.busy : LinkButton {
-                    text: "Remove";
-                    danger: true;
+                if root.addon.can-remove && !root.addon.busy : RemoveButton {
+                    label: "Remove " + root.addon.name;
                     clicked => { root.remove(); }
                 }
             }
