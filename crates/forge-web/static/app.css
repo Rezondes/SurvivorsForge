@@ -271,6 +271,8 @@ code { word-break: break-all; color: var(--gold-bright); }
 .addon-head h1::before, .addon-head h1::after { content: none; }
 .download h2 { margin-top: 0; }
 .findings { padding-left: 0; list-style: none; }
+.findings-box { margin: 12px 0; }
+.findings-box > summary { cursor: pointer; color: var(--gold); padding: 6px 0; }
 .findings li { padding: 8px 0; border-bottom: 1px solid var(--line); }
 pre { background: var(--field); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; overflow-x: auto; white-space: pre-wrap; }
 .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }

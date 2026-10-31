@@ -680,3 +680,28 @@ async fn a_failed_update_check_says_so() {
     assert!(page.body.contains(r#"<span class="failed">Update check failed"#), "{}", page.body);
     assert!(page.body.contains("last success <time datetime=\"2026-10-29T05:30:00+00:00\">"));
 }
+
+#[tokio::test]
+/// A verified version whose scan still reported a spot, as BordoUI.
+async fn verified_with_findings() -> TestWeb {
+    let web = TestWeb::new().await;
+    let mut list = versions("verified", "available");
+    list[0]["findings"]["warn"] = json!(1);
+    mock(&web, "/v1/addons/lucky", addon("verified")).await;
+    mock(&web, "/v1/addons/lucky/versions", list).await;
+    mock(&web, "/v1/addons/lucky/versions/v1/findings", findings()).await;
+    web
+}
+
+#[tokio::test]
+async fn the_install_button_comes_before_the_findings() {
+    let mut web = verified_with_findings().await;
+    let page = web.get("/addons/lucky").await.body;
+    let install = page.find("Install with the launcher").expect("install button");
+    let findings = page.find("<details class=\"findings-box\">").expect("findings folded away for a verified version");
+    assert!(install < findings, "the main action first");
+    assert!(page.contains("<summary>1 finding of the scan</summary>"), "{page}");
+
+    let mut flagged = with_addon("flagged", "available").await;
+    assert!(flagged.get("/addons/lucky").await.body.contains("<details class=\"findings-box\" open>"), "open when it matters");
+}

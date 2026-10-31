@@ -34,14 +34,6 @@
     <div class="notice {{ l.row.notice.class }}" role="status">
       <strong>{{ l.row.notice.badge }}.</strong> {{ l.row.notice.text }}
     </div>
-    {% if !l.findings.is_empty() %}
-      <h3>Findings</h3>
-      <ul class="findings">
-        {% for f in l.findings %}
-        <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.severity }}</span> <code>{{ f.place }}</code> {{ f.message }}{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
     <p class="muted">Game version: {{ l.row.game }}</p>
     {% if l.row.notice.downloadable %}
       <div class="actions">
@@ -50,6 +42,16 @@
       </div>
       <p class="muted" data-launcher-missing>The launcher installs it, its libraries and every update. No launcher yet? <a href="https://rezondes.github.io/SurvivorsForge/">Get SurvivorsForge</a>, free for Windows, Linux and Steam Deck.</p>
       <p class="muted">Without the launcher: unzip the download into the game's <code>AddOns</code> folder.</p>
+    {% endif %}
+    {% if !l.findings.is_empty() %}
+    <details class="findings-box"{% if l.row.notice.class == "bad" %} open{% endif %}>
+      <summary>{{ l.findings.len() }} finding{% if l.findings.len() != 1 %}s{% endif %} of the scan</summary>
+      <ul class="findings">
+        {% for f in l.findings %}
+        <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.severity }}</span> <code>{{ f.place }}</code> {{ f.message }}{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </details>
     {% endif %}
     <p><a href="/addons/{{ slug }}/versions">All versions</a>{% if l.row.notice.downloadable && !l.row.notice.confirm %} · <a href="/packs/new?addon={{ slug }}">Put into an addon pack</a>{% endif %}</p>
   {% when None %}
