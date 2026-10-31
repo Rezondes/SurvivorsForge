@@ -285,6 +285,29 @@ async fn the_addon_results_scroll_beside_the_filters() {
 }
 
 #[tokio::test]
+async fn phones_open_the_filters_in_a_sheet() {
+    // On a phone only the search shows; a button beside it slides the filters up from the bottom.
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/categories", categories()).await;
+    mock(&web, "/v1/addons", json!({ "total": 0, "addons": [] })).await;
+    let page = web.get("/addons").await.body;
+    for text in [
+        r#"<button type="button" class="secondary filter-open" aria-controls="filter-sheet" aria-expanded="false">Filters</button>"#,
+        r#"<div class="filter-sheet" id="filter-sheet" role="dialog" aria-labelledby="filter-title">"#,
+        r#"<div class="sheet-backdrop" data-sheet-close hidden></div>"#,
+        r#"<button type="button" class="sheet-close" data-sheet-close aria-label="Close filters">"#,
+    ] {
+        assert!(page.contains(text), "missing {text}: {page}");
+    }
+    let css = web.get("/static/app.css").await.body;
+    assert!(css.contains(".filter-sheet.open") && css.contains("height: 80dvh"), "the sheet takes 80 % and slides in");
+    let script = web.get("/static/view.js").await.body;
+    for text in ["data-sheet-close", "data-sheet-drag", "Escape"] {
+        assert!(script.contains(text), "view.js misses {text}");
+    }
+}
+
+#[tokio::test]
 async fn only_the_categories_scroll_in_the_filter_column() {
     // Search and safety check stay in view, the check times sit at the bottom, and only the category
     // list scrolls, with room kept for its scrollbar so nothing shifts when a group folds out.

@@ -395,6 +395,62 @@
     });
   });
 
+  // Phones: the filters slide up as a sheet. The dimmed rest above it, the X or Escape close it; the
+  // head can be pulled down, and past a third of the height it closes, back it springs.
+  function filterSheet() {
+    return document.getElementById("filter-sheet");
+  }
+  function openSheet() {
+    var sheet = filterSheet();
+    sheet.classList.add("open");
+    document.querySelector(".sheet-backdrop").hidden = false;
+    document.querySelector('[aria-controls="filter-sheet"]').setAttribute("aria-expanded", "true");
+    document.documentElement.classList.add("sheet-open");
+    sheet.querySelector(".sheet-close").focus();
+  }
+  function closeSheet() {
+    var sheet = filterSheet();
+    if (!sheet || !sheet.classList.contains("open")) return;
+    sheet.classList.remove("open");
+    sheet.style.transform = "";
+    document.querySelector(".sheet-backdrop").hidden = true;
+    var button = document.querySelector('[aria-controls="filter-sheet"]');
+    button.setAttribute("aria-expanded", "false");
+    document.documentElement.classList.remove("sheet-open");
+    button.focus();
+  }
+  document.addEventListener("click", function (event) {
+    if (event.target.closest('[aria-controls="filter-sheet"]')) openSheet();
+    else if (event.target.closest("[data-sheet-close]")) closeSheet();
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") closeSheet();
+  });
+  document.addEventListener("pointerdown", function (event) {
+    var head = event.target.closest("[data-sheet-drag]");
+    if (!head || event.target.closest("button")) return;
+    var sheet = filterSheet();
+    var start = event.clientY;
+    var pulled = 0;
+    head.setPointerCapture(event.pointerId);
+    sheet.style.transition = "none";
+    function move(e) {
+      pulled = Math.max(0, e.clientY - start);
+      sheet.style.transform = "translateY(" + pulled + "px)";
+    }
+    function stop() {
+      head.removeEventListener("pointermove", move);
+      head.removeEventListener("pointerup", stop);
+      head.removeEventListener("pointercancel", stop);
+      sheet.style.transition = "";
+      if (pulled > sheet.offsetHeight / 3) closeSheet();
+      else sheet.style.transform = "";
+    }
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", stop);
+    head.addEventListener("pointercancel", stop);
+  });
+
   // htmx keeps the old results when a reload fails; say so above them.
   function failed(event) {
     var target = event.detail && event.detail.target;

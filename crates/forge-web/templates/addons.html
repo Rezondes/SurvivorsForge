@@ -9,8 +9,17 @@
       hx-get="/addons" hx-trigger="input changed delay:300ms from:#q, change from:select, change from:.cats, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status,#result-count" hx-swap="innerHTML scroll:top">
   {% if !author.is_empty() %}<input type="hidden" name="author" value="{{ author }}">{% endif %}
   <label for="q" class="sr-only">Search</label>
-  <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search addons..." autocomplete="off">
-  <h2 class="side-title">Filters</h2>
+  <div class="search-row">
+    <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search addons..." autocomplete="off">
+    <button type="button" class="secondary filter-open" aria-controls="filter-sheet" aria-expanded="false">Filters</button>
+  </div>
+  {# On phones the filters slide up as a sheet (view.js); elsewhere they stand in the column. #}
+  <div class="sheet-backdrop" data-sheet-close hidden></div>
+  <div class="filter-sheet" id="filter-sheet" role="dialog" aria-labelledby="filter-title">
+  <div class="sheet-head" data-sheet-drag>
+    <h2 class="side-title" id="filter-title">Filters</h2>
+    <button type="button" class="sheet-close" data-sheet-close aria-label="Close filters"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3 3 13"/></svg></button>
+  </div>
   <div class="filters">
     <div>
       <label for="trust">Safety check</label>
@@ -39,6 +48,7 @@
   </div>
   <noscript><button type="submit">Search</button></noscript>
   {% if let Some(c) = checks %}{% include "checks.html" %}{% endif %}
+  </div>
 </form>
 
 <div class="browse-main">

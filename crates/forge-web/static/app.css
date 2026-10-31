@@ -262,6 +262,11 @@ main:has(> .browse) > .bottom { padding: 8px 16px; }
    check times sit at the bottom. */
 .browse-side { margin: 0; overflow: hidden; padding: 2px 2px 16px; display: flex; flex-direction: column; }
 .browse-side .side-title { margin: 28px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-family: var(--font-display); }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; min-width: 0; }
+/* The button and the sheet's head only matter on phones (below); here the filters stand in the column. */
+.filter-open, .sheet-close { display: none; }
+.filter-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .browse-side .filters { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 14px; margin-top: 14px; flex: 1 1 auto; min-height: 0; }
 .browse-side .filters > div { min-width: 0; }
 .browse-side .checks { margin-top: auto; padding-top: 16px; font-size: var(--meta); }
@@ -491,11 +496,36 @@ input.narrow { width: 6em; flex: none; }
   .browse-side { display: block; overflow: visible; padding: 0; }
   .cats > ul { overflow: visible; }
   .browse-side .side-title { display: none; }
+  /* With script the filters wait in a sheet that slides up over 80 % of the screen; the dimmed rest
+     above it, the X or dragging the head down closes it. Without script they stay in the page. */
+  html[data-view] .filter-open { display: inline-flex; }
+  html[data-view] .filter-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 80dvh; z-index: 60; padding: 0 16px 16px;
+    background: var(--bg); border-top: 1px solid var(--outline); border-radius: 12px 12px 0 0;
+    transform: translateY(100%); visibility: hidden; transition: transform .28s ease-out, visibility 0s linear .28s;
+  }
+  html[data-view] .filter-sheet.open { transform: none; visibility: visible; transition: transform .28s ease-out; }
+  html[data-view] .sheet-head {
+    position: relative; flex: none; display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0 10px; border-bottom: 1px solid var(--line); touch-action: none; cursor: grab;
+  }
+  /* The grip that says the sheet can be pulled down */
+  html[data-view] .sheet-head::before { content: ""; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--outline); }
+  html[data-view] .browse-side .side-title { display: block; margin: 0; padding: 0; border: 0; }
+  html[data-view] .sheet-close { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0; border-color: var(--line); background: transparent; color: var(--gold); }
+  .sheet-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  html[data-view] .filter-sheet .filters { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; margin: 12px 0 0; overflow-y: auto; overscroll-behavior: contain; }
+  html[data-view] .sheet-backdrop:not([hidden]) { position: fixed; inset: 0; z-index: 59; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+  html.sheet-open main:has(> .browse) { overflow: hidden; }
   .search.browse-side .filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
   .browse-side .checks { margin: 10px 0 0; }
   .search.browse-side .filters .cats { grid-column: 1 / -1; }
   .browse-main .result-bar { padding: 8px 0; }
   .browse-results { overflow: visible; padding: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-sheet, .filter-sheet.open { transition: none !important; }
 }
 
 @media (max-width: 640px) {
