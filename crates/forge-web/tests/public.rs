@@ -285,6 +285,19 @@ async fn the_addon_results_scroll_beside_the_filters() {
 }
 
 #[tokio::test]
+async fn only_the_categories_scroll_in_the_filter_column() {
+    // Search and safety check stay in view, the check times sit at the bottom, and only the category
+    // list scrolls, with room kept for its scrollbar so nothing shifts when a group folds out.
+    let mut web = TestWeb::new().await;
+    let css = web.get("/static/app.css").await.body;
+    let rule = |selector: &str| css.split(&format!("\n{selector} {{")).nth(1).and_then(|r| r.split('}').next()).unwrap_or_default().to_string();
+    assert!(rule(".browse-side").contains("overflow: hidden"), "the column itself does not scroll");
+    assert!(rule(".browse-side .checks").contains("margin-top: auto"), "check times at the bottom");
+    let list = rule(".cats > ul");
+    assert!(list.contains("overflow-y: auto") && list.contains("scrollbar-gutter: stable"), "{list}");
+}
+
+#[tokio::test]
 async fn addon_icons_stay_square_in_the_list() {
     // The icon fills the row from top to bottom, so the row has a fixed height and the icon that width.
     let mut web = TestWeb::new().await;

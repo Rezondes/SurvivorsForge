@@ -258,13 +258,17 @@ main:has(> .browse) > * { flex: none; }
 main:has(> .browse) > .browse { flex: 1 1 auto; }
 main:has(> .browse) > .bottom { padding: 8px 16px; }
 .browse { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 32px; }
-.browse-side { margin: 0; overflow-y: auto; padding: 2px 4px 24px 2px; }
+/* The column fills the height: search and safety check stay, only the category list scrolls and the
+   check times sit at the bottom. */
+.browse-side { margin: 0; overflow: hidden; padding: 2px 2px 16px; display: flex; flex-direction: column; }
 .browse-side .side-title { margin: 28px 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-family: var(--font-display); }
-.browse-side .filters { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.browse-side .filters { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 14px; margin-top: 14px; flex: 1 1 auto; min-height: 0; }
 .browse-side .filters > div { min-width: 0; }
-.browse-side .checks { margin-top: 28px; font-size: var(--meta); }
+.browse-side .checks { margin-top: auto; padding-top: 16px; font-size: var(--meta); }
 /* Categories: one tick box each; a group folds its subcategories out with + and back with -. */
-.cats { margin: 0; padding: 0; border: 0; min-width: 0; }
+.cats { margin: 0; padding: 0; border: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* Room for the scrollbar is kept, so folding a group out never shifts the list. */
+.cats > ul { overflow-y: auto; scrollbar-gutter: stable; min-height: 0; }
 .cats legend { padding: 0; margin-bottom: 6px; color: var(--gold); }
 .cats ul { list-style: none; margin: 0; padding: 0; }
 .cats li { position: relative; }
@@ -484,7 +488,8 @@ input.narrow { width: 6em; flex: none; }
 @media (max-width: 900px), (max-height: 560px) {
   main:has(> .browse) { display: block; overflow-y: auto; padding-bottom: 24px; }
   .browse { display: block; }
-  .browse-side { overflow: visible; padding: 0; }
+  .browse-side { display: block; overflow: visible; padding: 0; }
+  .cats > ul { overflow: visible; }
   .browse-side .side-title { display: none; }
   .search.browse-side .filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
   .browse-side .checks { margin: 10px 0 0; }
