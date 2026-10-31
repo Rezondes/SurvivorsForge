@@ -802,3 +802,10 @@ async fn the_trust_notice_is_no_live_region() {
     assert!(page.contains(r#"<div class="notice ok">"#), "{page}");
     assert!(!page.contains(r#"<div class="notice ok" role="status">"#), "read with the page, not announced");
 }
+
+#[tokio::test]
+async fn code_snippets_say_where_they_come_from() {
+    let mut web = with_addon("flagged", "available").await;
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"<pre aria-label="Code at Lucky/Lucky.lua:12">"#), "{page}");
+}
