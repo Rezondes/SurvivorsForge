@@ -7,6 +7,7 @@ pub mod config;
 pub mod creator;
 pub mod csrf;
 pub mod error;
+pub mod metrics;
 pub mod packs;
 pub mod public;
 pub mod rate_limit;

@@ -59,6 +59,7 @@ services:
     networks:
       - backend
       - edge
+      - monitoring
     healthcheck:
       test: ["CMD", "/usr/local/bin/forge-api", "healthcheck", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -83,6 +84,7 @@ services:
     networks:
       - backend
       - edge
+      - monitoring
     healthcheck:
       test: ["CMD", "/usr/local/bin/forge-api", "healthcheck", "db"]
       interval: 30s
@@ -101,6 +103,7 @@ services:
       edge:
         # Fixed, so the API can trust the client IP the website forwards.
         ipv4_address: ${FORGE_WEB_IP:-10.213.17.11}
+      monitoring: {}
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -144,6 +147,133 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # --- Monitoring (`docker compose --profile monitoring up -d`) ----------------------------------
+  # Metrics, logs and traces of the platform and its host, shown in Grafana. Nothing of it is
+  # published on the host; it all lives on the internal network `monitoring`.
+  prometheus:
+    image: prom/prometheus:v3.7.0
+    profiles: [monitoring]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus:/prometheus
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.5.0
+    profiles: [monitoring]
+    command: ["-config.file=/etc/loki/forge.yaml"]
+    configs:
+      - source: loki
+        target: /etc/loki/forge.yaml
+    volumes:
+      - loki:/loki
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.8.0
+    profiles: [monitoring]
+    command: ["-config.file=/etc/tempo/forge.yaml"]
+    # The image runs as 10001; a fresh volume belongs to root.
+    user: root
+    configs:
+      - source: tempo
+        target: /etc/tempo/forge.yaml
+    volumes:
+      - tempo:/var/tempo
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Lets Alloy list containers and read their logs, nothing else; Alloy never sees the socket.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    profiles: [monitoring]
+    environment:
+      CONTAINERS: 1
+      # Alloy's container discovery also lists the networks.
+      NETWORKS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-proxy
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.10.0
+    profiles: [monitoring]
+    command: ["run", "/etc/alloy/forge.alloy", "--storage.path=/var/lib/alloy/data"]
+    environment:
+      # Only this project's containers go to Loki.
+      FORGE_PROJECT: ${COMPOSE_PROJECT_NAME}
+    configs:
+      - source: alloy
+        target: /etc/alloy/forge.alloy
+    networks:
+      - monitoring
+      - docker-proxy
+    depends_on:
+      - loki
+      - docker-proxy
+    restart: unless-stopped
+
+  # Container metrics. cAdvisor reads the host's cgroups and Docker's state directly; no proxy
+  # covers that, so it all is mounted read-only.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    profiles: [monitoring]
+    command: ["--docker_only=true", "--housekeeping_interval=30s"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    profiles: [monitoring]
+    command: ["--path.rootfs=/host"]
+    pid: host
+    volumes:
+      - /:/host:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Data sources and dashboards are built into the image (docker/forge-grafana.Dockerfile).
+  grafana:
+    image: ghcr.io/rezondes/survivorsforge-grafana:${FORGE_VERSION:-latest}
+    profiles: [monitoring]
+    env_file:
+      - path: ${FORGE_ENV_FILE:-.env}
+        required: false
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-forge}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana:/var/lib/grafana
+    networks:
+      - monitoring
+      - backend
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    restart: unless-stopped
+
 networks:
   # Postgres lives here only; nothing on it can reach the internet.
   backend:
@@ -152,6 +282,12 @@ networks:
     ipam:
       config:
         - subnet: ${FORGE_EDGE_SUBNET:-10.213.17.0/24}
+  # Prometheus, Grafana and what they read; no way out to the internet.
+  monitoring:
+    internal: true
+  # The Docker socket proxy and Alloy only.
+  docker-proxy:
+    internal: true
 
 volumes:
   postgres:
@@ -159,6 +295,10 @@ volumes:
   packs:
   caddy-data:
   caddy-config:
+  prometheus:
+  loki:
+  tempo:
+  grafana:
 
 # Caddy reads DOMAIN_WEB, DOMAIN_API and ACME_EMAIL from its environment (`$$` keeps Compose off them).
 configs:
@@ -202,6 +342,139 @@ configs:
       {$$DOMAIN_API} {
         reverse_proxy api:8080 {
           header_up X-Forwarded-For {client_ip}
+        }
+      }
+
+  # What Prometheus scrapes; all inside the Compose networks.
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 15s
+
+      scrape_configs:
+        - job_name: forge
+          static_configs:
+            - targets: ["api:9100"]
+              labels: { service: api }
+            - targets: ["worker:9100"]
+              labels: { service: worker }
+            - targets: ["web:9100"]
+              labels: { service: web }
+        - job_name: cadvisor
+          static_configs:
+            - targets: ["cadvisor:8080"]
+        - job_name: node
+          static_configs:
+            - targets: ["node-exporter:9100"]
+        - job_name: prometheus
+          static_configs:
+            - targets: ["localhost:9090"]
+
+  # Loki: one process, files on its volume, 14 days.
+  loki:
+    content: |
+      auth_enabled: false
+
+      server:
+        http_listen_port: 3100
+
+      common:
+        path_prefix: /loki
+        storage:
+          filesystem:
+            chunks_directory: /loki/chunks
+            rules_directory: /loki/rules
+        replication_factor: 1
+        ring:
+          kvstore:
+            store: inmemory
+
+      schema_config:
+        configs:
+          - from: 2024-01-01
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: index_
+              period: 24h
+
+      limits_config:
+        retention_period: 336h
+
+      compactor:
+        working_directory: /loki/compactor
+        retention_enabled: true
+        delete_request_store: filesystem
+
+      analytics:
+        reporting_enabled: false
+
+  # Tempo: OTLP from API, worker and website; traces stay 14 days.
+  tempo:
+    content: |
+      server:
+        http_listen_port: 3200
+
+      distributor:
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+
+      storage:
+        trace:
+          backend: local
+          local:
+            path: /var/tempo/blocks
+          wal:
+            path: /var/tempo/wal
+
+      compactor:
+        compaction:
+          block_retention: 336h
+
+      usage_report:
+        reporting_enabled: false
+
+  # Alloy: the logs of this project's containers to Loki, labelled with their service.
+  alloy:
+    content: |
+      discovery.docker "forge" {
+        host = "tcp://docker-proxy:2375"
+        filter {
+          name   = "label"
+          values = ["com.docker.compose.project=" + sys.env("FORGE_PROJECT")]
+        }
+      }
+
+      discovery.relabel "forge" {
+        targets = []
+
+        rule {
+          source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+          target_label  = "service"
+        }
+        rule {
+          source_labels = ["__meta_docker_container_name"]
+          regex         = "/(.*)"
+          target_label  = "container"
+        }
+      }
+
+      loki.source.docker "forge" {
+        host          = "tcp://docker-proxy:2375"
+        targets       = discovery.docker.forge.targets
+        relabel_rules = discovery.relabel.forge.rules
+        forward_to    = [loki.write.local.receiver]
+      }
+
+      loki.write "local" {
+        endpoint {
+          url = "http://loki:3100/loki/api/v1/push"
         }
       }
 

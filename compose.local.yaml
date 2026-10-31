@@ -20,6 +20,11 @@ services:
     build:
       context: .
       dockerfile: docker/forge-web.Dockerfile
+  grafana:
+    image: survivorsforge/forge-grafana:local
+    build:
+      context: .
+      dockerfile: docker/forge-grafana.Dockerfile
   caddy:
     # The same ports as compose.yaml, but reachable from this machine only.
     ports: !override

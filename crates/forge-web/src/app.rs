@@ -171,6 +171,7 @@ pub fn router(state: AppState) -> Router {
         .merge(pages)
         .with_state(state)
         .layer(middleware::from_fn_with_state(limiter, crate::rate_limit::middleware))
+        .layer(middleware::from_fn(crate::metrics::middleware))
         // Pages may show a logged-in visitor's data: no browser or proxy keeps them.
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
         .layer(SetResponseHeaderLayer::if_not_present(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP)))

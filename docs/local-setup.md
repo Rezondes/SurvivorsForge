@@ -152,3 +152,12 @@ dcl stop                      # stop, data stays
 dcl up -d --build             # start again after code changes
 dcl down -v                   # remove everything, including the database and the volumes
 ```
+
+## 8. Monitoring
+
+```bash
+dcl --profile monitoring up -d --build
+```
+
+Starts Prometheus, Loki, Tempo, Alloy, cAdvisor, node-exporter and a Grafana built from this
+repository (docs/self-hosting.md, section 8). `.env.local.example` has local passwords for it.

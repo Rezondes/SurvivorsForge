@@ -72,7 +72,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [api, web]
+        image: [api, web, grafana]
     steps:
       - uses: actions/checkout@v4
       - name: Image name

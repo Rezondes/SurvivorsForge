@@ -1,0 +1,42 @@
+# Data sources of Grafana; the passwords come from the container's environment.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    uid: loki
+    type: loki
+    url: http://loki:3100
+    jsonData:
+      # API and website log the trace of each request; the link opens it in Tempo.
+      derivedFields:
+        - name: trace
+          matcherRegex: 'trace_id[=:]\s*"?(\w+)'
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        filterByTraceID: true
+
+  - name: Postgres
+    uid: postgres
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: grafana_reader
+    jsonData:
+      database: ${POSTGRES_DB}
+      sslmode: disable
+      postgresVersion: 1700
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}

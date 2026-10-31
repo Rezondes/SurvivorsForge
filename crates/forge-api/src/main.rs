@@ -118,6 +118,9 @@ async fn serve(config: Config, pool: sqlx::PgPool) -> Result<(), String> {
     if config.migrate_on_start {
         MIGRATOR.run(&pool).await.map_err(|e| e.to_string())?;
     }
+    if let Some(password) = &config.grafana_db_password {
+        forge_api::grafana::set_reader_password(&pool, password).await.map_err(|e| format!("cannot set the grafana_reader password: {e}"))?;
+    }
     let bind_addr = config.bind_addr;
     forge_api::request_stats::spawn_metrics_server(config.metrics_bind_addr);
     let state = build_state(config, pool.clone())?;

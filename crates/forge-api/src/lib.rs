@@ -9,6 +9,7 @@ pub mod config;
 pub mod downloads;
 pub mod error;
 pub mod github;
+pub mod grafana;
 pub mod images;
 pub mod jobs;
 pub mod launcher_stats;

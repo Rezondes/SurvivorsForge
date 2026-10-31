@@ -72,6 +72,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compose file is valid
         run: POSTGRES_PASSWORD=ci docker compose config --quiet
+      - name: Compose file is valid with monitoring
+        run: POSTGRES_PASSWORD=ci docker compose --profile monitoring config --quiet
+      - name: Build the Grafana image
+        run: POSTGRES_PASSWORD=ci docker compose -f compose.yaml -f compose.local.yaml --profile monitoring build grafana
       - name: Build the website image
         run: POSTGRES_PASSWORD=ci docker compose -f compose.yaml -f compose.local.yaml build web
       - name: Build and smoke-test the API stack

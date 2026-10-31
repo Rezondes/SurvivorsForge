@@ -30,6 +30,7 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    forge_web::metrics::spawn_server(config.metrics_bind_addr);
     tracing::info!(addr = %bind, "forge-web listening");
     let served = axum::serve(listener, router(AppState::new(config)).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown_signal()).await;
     match served {

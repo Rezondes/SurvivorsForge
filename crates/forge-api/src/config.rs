@@ -41,6 +41,8 @@ pub struct Config {
     pub github_webhook_secret: String,
     /// `owner/name` of the launcher's own repository, whose release downloads `/stats` shows.
     pub launcher_repo: String,
+    /// Password of the read-only database role `grafana_reader`; without it the role cannot log in.
+    pub grafana_db_password: Option<String>,
     /// Versions the source check looks at per run.
     pub source_check_batch: i64,
     /// Where uploaded images are stored; the reverse proxy serves it as `public_image_url`.
@@ -95,6 +97,7 @@ impl Config {
         "GITHUB_WEBHOOK_SECRET",
         "SOURCE_CHECK_BATCH",
         "LAUNCHER_REPO",
+        "GRAFANA_DB_PASSWORD",
         "IMAGE_DIR",
         "PACK_DIR",
         "PUBLIC_PACK_URL",
@@ -156,6 +159,7 @@ impl Config {
             public_image_url: required("PUBLIC_IMAGE_URL")?.trim_end_matches('/').to_string(),
             github_webhook_secret: required("GITHUB_WEBHOOK_SECRET")?,
             launcher_repo: parse("LAUNCHER_REPO", "Rezondes/SurvivorsForge")?,
+            grafana_db_password: get("GRAFANA_DB_PASSWORD").map(str::to_string),
             source_check_batch: {
                 let batch = parse("SOURCE_CHECK_BATCH", "200")?;
                 batch.parse().map_err(|_| invalid("SOURCE_CHECK_BATCH", &batch))?
@@ -199,6 +203,7 @@ impl Config {
             public_image_url: "https://web.test/img".into(),
             github_webhook_secret: "webhook-secret".into(),
             launcher_repo: "Rezondes/SurvivorsForge".into(),
+            grafana_db_password: None,
             source_check_batch: 200,
             image_dir: std::env::temp_dir().join("forge-test-images").to_string_lossy().into_owned(),
             pack_dir: std::env::temp_dir().join("forge-test-packs").to_string_lossy().into_owned(),

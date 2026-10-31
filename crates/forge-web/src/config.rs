@@ -14,6 +14,8 @@ pub struct Config {
     /// At least 32 bytes; signs and encrypts the session cookies.
     pub cookie_key: String,
     pub bind_addr: SocketAddr,
+    /// Where `/metrics` listens for Prometheus; Caddy never forwards to it.
+    pub metrics_bind_addr: SocketAddr,
     /// The GitHub App's URL name, for the "install the App" link.
     pub github_app_slug: String,
     /// Requests per minute and client IP, static files included.
@@ -24,7 +26,7 @@ pub struct Config {
 
 impl Config {
     /// Every variable `from_map` reads. `.env.example` must list each of them.
-    pub const VARIABLES: &[&str] = &["API_INTERNAL_URL", "PUBLIC_API_URL", "PUBLIC_WEB_URL", "COOKIE_KEY", "WEB_BIND_ADDR", "GITHUB_APP_SLUG", "RATE_LIMIT_PER_MINUTE", "TRUSTED_PROXIES"];
+    pub const VARIABLES: &[&str] = &["API_INTERNAL_URL", "PUBLIC_API_URL", "PUBLIC_WEB_URL", "COOKIE_KEY", "WEB_BIND_ADDR", "WEB_METRICS_BIND_ADDR", "GITHUB_APP_SLUG", "RATE_LIMIT_PER_MINUTE", "TRUSTED_PROXIES"];
 
     pub fn from_env() -> Result<Config, String> {
         Config::from_map(&std::env::vars().collect())
@@ -38,6 +40,7 @@ impl Config {
             return Err("COOKIE_KEY must be at least 32 characters".into());
         }
         let bind = get("WEB_BIND_ADDR").unwrap_or("0.0.0.0:8080");
+        let metrics_bind = get("WEB_METRICS_BIND_ADDR").unwrap_or("0.0.0.0:9100");
         let limit = get("RATE_LIMIT_PER_MINUTE").unwrap_or("120");
         let trusted_proxies = get("TRUSTED_PROXIES")
             .unwrap_or_default()
@@ -52,6 +55,7 @@ impl Config {
             public_web_url: required("PUBLIC_WEB_URL")?,
             cookie_key,
             bind_addr: bind.parse().map_err(|_| format!("WEB_BIND_ADDR has an invalid value: {bind}"))?,
+            metrics_bind_addr: metrics_bind.parse().map_err(|_| format!("WEB_METRICS_BIND_ADDR has an invalid value: {metrics_bind}"))?,
             github_app_slug: required("GITHUB_APP_SLUG")?,
             rate_limit_per_minute: limit.parse().map_err(|_| format!("RATE_LIMIT_PER_MINUTE has an invalid value: {limit}"))?,
             trusted_proxies,
@@ -70,6 +74,7 @@ impl Config {
             public_web_url: "https://web.test".into(),
             cookie_key: "test-cookie-key-that-is-long-enough-0123456789".into(),
             bind_addr: "127.0.0.1:0".parse().unwrap(),
+            metrics_bind_addr: "127.0.0.1:0".parse().unwrap(),
             github_app_slug: "survivorsforge-test".into(),
             rate_limit_per_minute: 10_000,
             trusted_proxies: Vec::new(),

@@ -114,6 +114,8 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `WEBSITE_IP` | no, set by Compose | The website's address; it limits each visitor itself, so the API does not count its requests again | `FORGE_WEB_IP` |
 | `SOURCE_CHECK_BATCH` | no | Versions compared with GitHub per 6-hourly run | `200` |
 | `LAUNCHER_REPO` | no | GitHub repository of the launcher; `/stats` shows its release downloads | `Rezondes/SurvivorsForge` |
+| `GRAFANA_DB_PASSWORD` | with monitoring | Password of the read-only database role Grafana reads with | random |
+| `GRAFANA_ADMIN_PASSWORD` | with monitoring | Grafana's own admin account, for emergencies | random |
 | `GITHUB_API_URL` | no | GitHub REST API | `https://api.github.com` |
 | `GITHUB_READ_TOKEN` | no | Token for public reads of repos without the App; GitHub then allows 5000 instead of 60 requests per hour. A fine-grained token with *Public repositories (read-only)* and no permissions | `github_pat_...` |
 | `GITHUB_APP_ID` | yes | App ID from step 1 | `123456` |
@@ -136,6 +138,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `COOKIE_KEY` | yes | At least 32 random characters, encrypts the session cookies | output of `openssl rand -hex 32` |
 | `GITHUB_APP_SLUG` | yes | URL name of the App, for the "install the App" links (organization repos, instant updates) | `survivorsforge` |
 | `WEB_BIND_ADDR` | no | Address the website listens on in its container | `0.0.0.0:8080` |
+| `WEB_METRICS_BIND_ADDR` | no | Address of the website's Prometheus metrics; never published | `0.0.0.0:9100` |
 
 ## 3. First start
 
@@ -242,6 +245,21 @@ Packs with the same versions share the file. Builds run one after the other; the
 bound their size and number. An hourly job deletes zips that nobody downloaded for
 `PACK_RETENTION_DAYS` and, above `PACK_STORAGE_MB`, the least recently downloaded ones. The
 launcher's *Save as zip* builds the same zip on the player's computer and needs no server space.
+
+## 8. Monitoring
+
+`docker compose --profile monitoring up -d` adds Prometheus, Loki, Tempo, Grafana Alloy, cAdvisor,
+node-exporter and Grafana. Grafana comes as its own image (`survivorsforge-grafana`) with the data
+sources and four dashboards built in: API, Worker, Launcher and downloads, Host and containers.
+Nothing of it is published on the host.
+
+Set `GRAFANA_DB_PASSWORD` (the read-only database role Grafana uses; the API sets it on start) and
+`GRAFANA_ADMIN_PASSWORD` first. Metrics stay 30 days, logs and traces 14 days.
+
+Alloy reads the container logs through a Docker socket proxy that allows nothing but listing
+containers and networks and reading logs. cAdvisor needs the host's `/sys`, `/var/lib/docker` and
+the Docker socket itself, all mounted read-only; leave out the `cadvisor` service if you do not
+want that (`docker compose --profile monitoring up -d --scale cadvisor=0`).
 
 ## Running only the API
 

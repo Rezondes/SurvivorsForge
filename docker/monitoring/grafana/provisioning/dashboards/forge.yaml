@@ -1,0 +1,11 @@
+# The dashboards next to this file's folder (`dashboards/`), loaded at start; edits in Grafana are
+# not saved back, change the JSON instead.
+apiVersion: 1
+
+providers:
+  - name: SurvivorsForge
+    folder: SurvivorsForge
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
