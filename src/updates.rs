@@ -131,17 +131,28 @@ pub fn direct_remote(gh: &dyn GitHub, addon: &VerifiedAddon) -> Result<RemoteVer
 /// Checks every entry. One failing repo does not stop the others. Adopted versions that turn
 /// out to be current are rewritten to the remote id in `state`.
 pub fn check_all(gh: &dyn GitHub, state: &mut State, registry: &Registry) -> Vec<(String, UpdateStatus)> {
-    check_entries(gh, state, registry, false)
+    check_each(gh, state, registry, false, &mut |_, _| {})
 }
 
 /// `check_all` when the platform cannot be reached: verified addons too are asked on GitHub
 /// (`direct_remote`), as the stored list's versions may be old.
 pub fn check_all_direct(gh: &dyn GitHub, state: &mut State, registry: &Registry) -> Vec<(String, UpdateStatus)> {
-    check_entries(gh, state, registry, true)
+    check_each(gh, state, registry, true, &mut |_, _| {})
 }
 
-fn check_entries(gh: &dyn GitHub, state: &mut State, registry: &Registry, direct: bool) -> Vec<(String, UpdateStatus)> {
-    let mut results = Vec::new();
+/// `check_all` (`direct`: `check_all_direct`) that tells `heard` each result as soon as it is known.
+pub fn check_each(
+    gh: &dyn GitHub,
+    state: &mut State,
+    registry: &Registry,
+    direct: bool,
+    heard: &mut dyn FnMut(&str, &UpdateStatus),
+) -> Vec<(String, UpdateStatus)> {
+    let mut results: Vec<(String, UpdateStatus)> = Vec::new();
+    let mut push = |id: &str, status: UpdateStatus| {
+        heard(id, &status);
+        results.push((id.to_string(), status));
+    };
     for entry in &mut state.entries {
         let platform = match &entry.source {
             Source::Verified { registry_id } if direct => registry.get(registry_id).map(|a| direct_remote(gh, a)),
@@ -159,7 +170,7 @@ fn check_entries(gh: &dyn GitHub, state: &mut State, registry: &Registry, direct
                     status
                 }
             };
-            results.push((entry.id.clone(), status));
+            push(&entry.id, status);
             continue;
         }
         let status = match remote_of(&entry.source, registry) {
@@ -176,7 +187,7 @@ fn check_entries(gh: &dyn GitHub, state: &mut State, registry: &Registry, direct
                 }
             },
         };
-        results.push((entry.id.clone(), status));
+        push(&entry.id, status);
     }
     results
 }
@@ -327,6 +338,11 @@ mod tests {
         assert!(matches!(&results[0].1, UpdateStatus::CheckFailed(m) if m.contains("limiting requests")));
         assert_eq!(results[1].1, UpdateStatus::UpToDate);
         assert_eq!(state.get("azsspellmeter").unwrap().version, "v1.31");
+
+        // Each result as soon as it is known, in the same order, so the launcher shows them one by one.
+        let mut heard = Vec::new();
+        let again = check_each(&gh, &mut state, &crate::registry::embedded(), false, &mut |id, status| heard.push((id.to_string(), status.clone())));
+        assert_eq!(heard, again);
     }
 
     #[test]

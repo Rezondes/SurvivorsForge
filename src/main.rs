@@ -998,6 +998,8 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             return;
         }
         core.checking = true;
+        // Each addon shows "Checking..." until its own answer arrives.
+        core.statuses.clear();
         core.outcomes.clear();
         core.game_note.clear();
         core.rescan();
@@ -1009,35 +1011,47 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             let core = lock(shared);
             (core.client(), core.github(), core.state.clone(), core.data_dir.join("cache"), core.api_url())
         };
+        // Everything is shown as soon as it is known, the addons one by one, not all at the end.
         let (registry, origin) = registry::load(Some(client.get_text(&registry::registry_url(&api))), &cache);
         let offline = origin != Origin::Api;
-        // Without the server every addon (and the launcher itself) is checked on github.com directly,
-        // against the stored list; what the server did not scan is marked as unchecked.
-        let github: Box<dyn GitHub + Send> = if offline { Box::new(WebGitHub::new(client.clone())) } else { github };
-        let self_update = match github.latest_release(APP_REPO) {
-            Ok(Some(release)) => self_update::available(APP_VERSION, &release),
-            _ => None,
-        };
+        show_progress(shared, true, |core| {
+            core.registry = registry.clone();
+            core.offline = offline;
+        });
         let (game_dir, seen) = {
             let core = lock(shared);
             (game_dir(core.addons_dir()), core.game_exe.clone())
         };
-        let game = game_dir.map(|dir| {
+        if let Some(dir) = game_dir {
             let (exe, build) = look_at_game(&dir, seen.as_ref());
             let plan = game_update::check(&WebServer(client.clone()), &dir, build, exe.as_ref()).ok().filter(game_update::Plan::behind);
-            (plan, exe)
+            show_progress(shared, true, |core| {
+                core.game_plan = plan;
+                core.game_exe = exe;
+            });
+        }
+        // Without the server every addon (and the launcher itself) is checked on github.com directly,
+        // against the stored list; what the server did not scan is marked as unchecked.
+        let github: Box<dyn GitHub + Send> = if offline { Box::new(WebGitHub::new(client.clone())) } else { github };
+        let results = updates::check_each(&*github, &mut state, &registry, offline, &mut |id, status| {
+            show_progress(shared, false, |core| {
+                core.statuses.insert(id.to_string(), status.clone());
+            });
         });
-        let (game_versions, results) = if offline {
-            (Vec::new(), updates::check_all_direct(&*github, &mut state, &registry))
-        } else {
-            (fetch_game_versions(&client, &api), updates::check_all(&*github, &mut state, &registry))
-        };
         let results = Some(results);
+        let self_update = match github.latest_release(APP_REPO) {
+            Ok(Some(release)) => self_update::available(APP_VERSION, &release),
+            _ => None,
+        };
+        let game_versions = if offline { Vec::new() } else { fetch_game_versions(&client, &api) };
         let categories = if offline { Vec::new() } else { client.get_text(&format!("{api}/v1/categories")).map(|t| controller::parse_categories(&t)).unwrap_or_default() };
+        show_progress(shared, true, |core| {
+            core.self_update = self_update;
+            core.game_versions = game_versions;
+            core.categories = categories;
+        });
 
         let mut core = lock(shared);
-        core.registry = registry;
-        core.game_versions = game_versions;
         // Keep versions learned from adopted addons, but never undo an install that ran meanwhile.
         let mut changed = false;
         for checked in &state.entries {
@@ -1055,13 +1069,6 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         if let Some(results) = results {
             core.statuses = results.into_iter().collect();
         }
-        core.self_update = self_update;
-        if let Some((plan, exe)) = game {
-            core.game_plan = plan;
-            core.game_exe = exe;
-        }
-        core.offline = offline;
-        core.categories = categories;
         core.checking = false;
         core.rescan();
         if offline {

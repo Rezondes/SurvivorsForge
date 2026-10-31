@@ -612,7 +612,7 @@ export component AppWindow inherits Window {
                         clicked => { root.add-repo(); }
                     }
                     if root.page == 0 : ActionButton {
-                        text: root.update-count > 0 ? "Update all (" + root.update-count + ")" : "All up to date";
+                        text: root.update-count > 0 ? "Update all (" + root.update-count + ")" : root.checking ? "Update all" : "All up to date";
                         primary: root.update-count > 0;
                         enabled: root.update-count > 0;
                         clicked => { root.update-all(); }
