@@ -1,5 +1,6 @@
 //! What the launcher needs from GitHub: release and tag metadata comes from forge-api
-//! (`crate::api::ApiGitHub`), only the zip files are downloaded from GitHub directly.
+//! (`ApiGitHub`), or from github.com itself while the API cannot be reached (`WebGitHub`). The zip
+//! files are always downloaded from GitHub directly.
 
 pub use forge_core::github_web::*;
 

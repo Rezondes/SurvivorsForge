@@ -45,7 +45,7 @@ pub enum Error {
     HashMismatch { expected: String, actual: String },
     /// A download URL outside `github::DOWNLOAD_HOSTS`.
     ForbiddenHost(String),
-    /// The platform cannot be reached, so nothing is installed or updated.
+    /// The platform cannot be reached, so addon packs cannot be made; addons still install from GitHub.
     Offline,
 }
 

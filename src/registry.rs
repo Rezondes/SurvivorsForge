@@ -1,6 +1,6 @@
 //! The list of addons: the platform API (`/v1/registry`), else the last good cached copy, else
 //! the copy compiled into the binary. Without the API the launcher is offline: it shows the cached
-//! list but installs and updates nothing.
+//! list and checks the addons on github.com directly (`crate::updates::check_all_direct`).
 
 pub use forge_core::registry::*;
 
