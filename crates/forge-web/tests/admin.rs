@@ -526,3 +526,9 @@ async fn error_statuses_stand_out() {
     assert!(page.contains(r#"<tr class="warn"><td>429</td>"#));
     assert!(page.contains(r#"<tr class="failed"><td>502</td>"#));
 }
+
+#[tokio::test]
+async fn tables_are_named_for_screen_readers() {
+    let page = admin_stats_page(admin_stats_body()).await;
+    assert!(page.contains(r#"<caption class="sr-only">Busiest routes</caption>"#), "{page}");
+}
