@@ -121,7 +121,7 @@ async fn addon_page_sections() {
     let mut web = with_addon("scanned", "available").await;
     let page = web.get("/addons/lucky").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
-    for text in ["<h2>Features</h2>", "Card screen", "bob", "Lib", "(required)", "0.69.0 and later", "Version v1", "Miscellaneous"] {
+    for text in ["<h2>Features</h2>", "Card screen", "bob", "Lib", "(required)", "0.69.0 and later", "Version <span title=\"v1\">1</span>", "Miscellaneous"] {
         assert!(page.body.contains(text), "missing {text}");
     }
 }
@@ -772,4 +772,11 @@ async fn a_missing_description_points_to_the_readme() {
     let mut web = web;
     let page = web.get("/addons/lucky").await.body;
     assert!(page.contains(r#"No description here yet. The <a href="https://github.com/alice/lucky#readme" rel="external noopener">README on GitHub</a> may tell more."#), "{page}");
+}
+
+#[tokio::test]
+async fn the_version_heading_drops_the_v() {
+    let mut web = with_addon("scanned", "available").await;
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"<h2>Version <span title="v1">1</span></h2>"#), "{page}");
 }

@@ -28,7 +28,7 @@
 <section class="panel download">
   {% match latest %}
   {% when Some with (l) %}
-    <h2>Version {% if l.row.tag_short != l.row.tag %}<span title="{{ l.row.tag }}">{{ l.row.tag_short }}</span>{% else %}{{ l.row.tag }}{% endif %}</h2>
+    <h2>Version {% if l.row.heading() != l.row.tag %}<span title="{{ l.row.tag }}">{{ l.row.heading() }}</span>{% else %}{{ l.row.tag }}{% endif %}</h2>
     <p class="muted">{% if l.row.published != "" %}Published {{ l.row.published }}{% if let Some(n) = l.row.downloads %} · {{ n }} downloads{% endif %} · {% endif %}Game version: {{ l.row.game }}</p>
     {% if let Some(c) = checks %}{% include "checks.html" %}{% endif %}
     <div class="notice {{ l.row.notice.class }}" role="status">

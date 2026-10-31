@@ -191,6 +191,16 @@ pub struct VersionRow {
     pub downloads: Option<String>,
 }
 
+impl VersionRow {
+    /// The tag for "Version …" headings: short, and `v2.8.15` as `2.8.15`.
+    pub fn heading(&self) -> &str {
+        match self.tag_short.strip_prefix('v') {
+            Some(rest) if rest.starts_with(|c: char| c.is_ascii_digit()) => rest,
+            _ => &self.tag_short,
+        }
+    }
+}
+
 pub struct Shot {
     pub url: String,
     pub caption: String,
