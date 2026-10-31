@@ -29,7 +29,7 @@ fn date(v: &Value) -> String {
 }
 
 /// Escapes a path segment for the API.
-fn seg(text: &str) -> String {
+pub(crate) fn seg(text: &str) -> String {
     text.bytes()
         .map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
         .collect()

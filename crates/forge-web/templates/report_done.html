@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Report sent - SurvivorsForge{% endblock %}
+{% block content %}
+<h1>Thank you</h1>
+<section class="panel">
+  <p>Your report on {{ name }} reached the admins. They look at it and act if something is wrong.</p>
+  <p><a class="button" href="/addons/{{ slug }}">Back to {{ name }}</a></p>
+</section>
+{% endblock %}

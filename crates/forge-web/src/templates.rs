@@ -994,3 +994,30 @@ pub struct ApiPlaygroundPage {
     /// The API's answer, pretty-printed.
     pub result: String,
 }
+
+#[derive(Template)]
+#[template(path = "report.html")]
+pub struct ReportPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub slug: String,
+    pub name: String,
+    /// Tags of the addon's versions, newest first.
+    pub versions: Vec<String>,
+    /// (value for the API, what the form says)
+    pub reasons: &'static [(&'static str, &'static str)],
+    /// The picked version's tag; empty for the whole addon.
+    pub version: String,
+    pub reason: String,
+    pub text: String,
+    pub error: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "report_done.html")]
+pub struct ReportDonePage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub slug: String,
+    pub name: String,
+}

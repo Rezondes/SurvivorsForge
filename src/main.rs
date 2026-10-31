@@ -1464,6 +1464,12 @@ fn main() -> Result<(), slint::PlatformError> {
             let _ = open::that(format!("{}/addons/{}", core.web_url(), entry.id));
         }
     });
+    on!(on_detail_report, |_ui, shared| {
+        let core = lock(shared);
+        if let Some(entry) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)) {
+            let _ = open::that(format!("{}/addons/{}/report", core.web_url(), entry.id));
+        }
+    });
     on!(on_confirm_accept, |ui, _shared| {
         ui.set_confirm_open(false);
         if let Some(action) = PENDING.with(|p| p.borrow_mut().take()) {

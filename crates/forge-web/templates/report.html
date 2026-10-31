@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Report {{ name }} - SurvivorsForge{% endblock %}
+{% block content %}
+<p class="back"><a href="/addons/{{ slug }}">{{ name }}</a></p>
+<h1>Report {{ name }}</h1>
+<p class="muted">An admin reads every report. Harmful versions get blocked, and the launcher stops installing them.</p>
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+<form class="panel" method="post" action="/addons/{{ slug }}/report">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="version">What is wrong</label>
+  <select id="version" name="version">
+    <option value="">The whole addon</option>
+    {% for tag in versions %}<option value="{{ tag }}"{% if *tag == version %} selected{% endif %}>Version {{ tag }}</option>
+    {% endfor %}
+  </select>
+  <fieldset>
+    <legend>Reason</legend>
+    {% for (value, label) in reasons %}
+    <label class="check"><input type="radio" name="reason" value="{{ value }}" required{% if *value == reason %} checked{% endif %}> {{ label }}</label>
+    {% endfor %}
+  </fieldset>
+  <label for="text">What you noticed (optional)</label>
+  <textarea id="text" name="text" rows="6" maxlength="2000" placeholder="For example the file and line, or what happened in the game.">{{ text }}</textarea>
+  <p><button type="submit">Send report</button></p>
+</form>
+{% endblock %}

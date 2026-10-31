@@ -367,6 +367,7 @@ export component AppWindow inherits Window {
     property <int> zoom-index;
     callback row-details(string);
     callback detail-website();
+    callback detail-report();
     property <bool> showing-detail: root.detail-page == root.page;
 
     in property <string> status-text;
@@ -589,6 +590,7 @@ export component AppWindow inherits Window {
                     remove => { root.row-remove(root.detail.row.id); }
                     open => { root.row-open(root.detail.row.id); }
                     website => { root.detail-website(); }
+                    report => { root.detail-report(); }
                     enlarge-shot(i) => {
                         root.zoom-shots = root.detail.shots;
                         root.zoom-index = i;

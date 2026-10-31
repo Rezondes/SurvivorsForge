@@ -8,6 +8,7 @@
   <p>Published {{ row.published }}{% if row.prerelease %}, pre-release{% endif %}{% if row.deleted %}, removed on GitHub{% endif %}</p>
   <p>Game version: {{ row.game }}{% if user.is_some() %} · <a href="/addons/{{ slug }}/versions/{{ row.tag }}/edit">Set game versions</a> (owners){% endif %}</p>
   <p>SHA-256: <code>{{ row.sha256 }}</code></p>
+  <p><a href="/addons/{{ slug }}/report?version={{ row.tag|urlencode }}">Report this version</a></p>
   {% if row.notice.downloadable && !row.deleted %}<p><a class="button{% if row.notice.confirm %} danger{% endif %}" href="{{ href }}">Download from GitHub</a></p>{% endif %}
 </section>
 {% if !findings.is_empty() %}
