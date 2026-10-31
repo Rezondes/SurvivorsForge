@@ -413,6 +413,7 @@ async fn dashboard_lists_own_and_shared() {
     for text in ["Lucky", "owner", "Flagged", "3 findings", "Plates", "contributor", "No release yet", "Repo not reachable"] {
         assert!(page.body.contains(text), "missing {text}");
     }
+    assert!(page.body.contains(r#"<td class="row-actions"><a class="button secondary" href="/addons/lucky/edit">Edit</a>"#), "Edit is a button on the right: {}", page.body);
 }
 
 #[tokio::test]

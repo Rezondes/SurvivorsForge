@@ -131,6 +131,10 @@ button:disabled, button:disabled:hover {
   border-color: var(--line); background: var(--control); color: var(--disabled); cursor: default;
 }
 form.inline { display: inline; margin: 0; }
+/* Buttons at the end of a table row, side by side on the right */
+td.row-actions { text-align: right; white-space: nowrap; }
+td.row-actions > * { display: inline-flex; vertical-align: middle; }
+td.row-actions > * + * { margin-left: 8px; }
 
 /* Panels and cards */
 .panel {

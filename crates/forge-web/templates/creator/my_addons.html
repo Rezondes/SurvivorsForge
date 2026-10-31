@@ -14,7 +14,7 @@
 {% else %}
 <div class="table-wrap list">
 <table>
-  <thead><tr><th>Addon</th><th>Your role</th><th>Newest version</th><th></th></tr></thead>
+  <thead><tr><th>Addon</th><th>Your role</th><th>Newest version</th><th><span class="sr-only">Actions</span></th></tr></thead>
   <tbody>
   {% for r in rows %}
     <tr>
@@ -23,12 +23,12 @@
         {% if r.locked %} <span class="badge warn">Repo not reachable</span>{% endif %}</td>
       <td>{% if r.role == "claimable" %}not claimed yet{% else %}{{ r.role }}{% endif %}</td>
       <td>{% if r.has_version %}<span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span>{% if r.findings > 0 %} {{ r.findings }} finding{% if r.findings != 1 %}s{% endif %}{% endif %}{% else %}<span class="muted">No release yet</span>{% endif %}</td>
-      <td>{% if r.role == "claimable" %}
+      <td class="row-actions">{% if r.role == "claimable" %}
         <form method="post" action="/addons/{{ r.slug }}/claim" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/me/addons">
           <button type="submit">Claim it</button>
         </form>
-      {% else %}<a href="/addons/{{ r.slug }}/edit">Edit</a>
+      {% else %}<a class="button secondary" href="/addons/{{ r.slug }}/edit">Edit</a>
         {% if !r.blocked %}<form method="post" action="/addons/{{ r.slug }}/sync" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <button type="submit" title="Check GitHub for new releases now. Once every 5 minutes.">Force Refresh</button>
