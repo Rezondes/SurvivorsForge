@@ -37,10 +37,10 @@
     {% if l.row.notice.downloadable %}
       <div class="actions">
         <a class="button large" href="survivorsforge://addon/{{ slug }}" data-launcher>Install with the launcher</a>
-        <a class="button secondary{% if l.row.notice.confirm %} danger{% endif %}" href="{{ l.href }}"{% if !l.row.notice.confirm %} rel="external noopener"{% endif %}>Download from GitHub</a>
+        <a class="button secondary{% if l.row.notice.confirm %} danger{% endif %}" href="{{ l.href }}"{% if !l.row.notice.confirm %} rel="external noopener"{% endif %} aria-describedby="unzip-hint">Download from GitHub</a>
+        <small id="unzip-hint" class="muted">Unzip it into the game's <code>AddOns</code> folder.</small>
       </div>
       <p class="muted" data-launcher-missing>The launcher installs it, its libraries and every update. No launcher yet? <a href="https://rezondes.github.io/SurvivorsForge/">Get SurvivorsForge</a>, free for Windows, Linux and Steam Deck.</p>
-      <p class="muted">Without the launcher: unzip the download into the game's <code>AddOns</code> folder.</p>
     {% endif %}
     {% if !l.findings.is_empty() %}
     <details class="findings-box"{% if l.row.notice.class == "bad" %} open{% endif %}>

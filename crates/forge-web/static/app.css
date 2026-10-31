@@ -341,6 +341,7 @@ pre code { color: var(--text); word-break: normal; }
 }
 .pager { display: flex; justify-content: space-between; margin-top: 16px; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.actions > small { align-self: center; }
 
 .title-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .title-row h1 { flex: 1; }

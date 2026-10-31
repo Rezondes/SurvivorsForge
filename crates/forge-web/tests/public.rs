@@ -409,7 +409,7 @@ async fn an_empty_search_offers_the_way_back() {
 async fn the_download_says_how_to_install() {
     let mut web = with_addon("scanned", "available").await;
     let page = web.get("/addons/lucky").await.body;
-    assert!(page.contains("unzip the download into the game's <code>AddOns</code> folder"), "{page}");
+    assert!(page.contains("Unzip it into the game's <code>AddOns</code> folder."), "{page}");
     assert!(page.contains(r#"<a href="https://rezondes.github.io/SurvivorsForge/">"#), "where to get the launcher");
 }
 
@@ -516,7 +516,7 @@ async fn links_that_leave_the_site_are_marked() {
     let mut web = with_addon("scanned", "available").await;
     let page = web.get("/addons/lucky").await.body;
     assert!(page.contains(r#"<a href="https://github.com/alice/lucky" rel="external noopener">GitHub</a>"#), "{page}");
-    assert!(page.contains(r#"rel="external noopener">Download from GitHub</a>"#), "{page}");
+    assert!(page.contains(r#"rel="external noopener" aria-describedby="unzip-hint">Download from GitHub</a>"#), "{page}");
     assert!(web.get("/static/app.css").await.body.contains(r#"a[rel~="external"]::after"#));
 }
 
@@ -751,4 +751,13 @@ async fn the_game_version_sits_in_the_meta_line() {
     let meta = &meta[..meta.find("</p>").unwrap()];
     assert!(meta.contains(" · Game version: "), "{meta}");
     assert!(!page.contains("<p class=\"muted\">Game version:"), "no line of its own between notice and buttons");
+}
+
+#[tokio::test]
+async fn the_unzip_hint_belongs_to_the_download_button() {
+    let mut web = with_addon("verified", "available").await;
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"aria-describedby="unzip-hint""#), "{page}");
+    assert!(page.contains(r#"<small id="unzip-hint" class="muted">Unzip it into the game's <code>AddOns</code> folder.</small>"#));
+    assert!(!page.contains("Without the launcher:"), "no second help line");
 }
