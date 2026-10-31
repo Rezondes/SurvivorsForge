@@ -36,6 +36,15 @@ async fn aggregates_requests_by_route(pool: PgPool) {
     let statuses: Vec<i64> = stats["requests"]["statuses"].as_array().unwrap().iter().map(|s| s["status"].as_i64().unwrap()).collect();
     assert!(statuses.contains(&200) && statuses.contains(&404), "{statuses:?}");
     assert!(stats["github"]["quotas"].is_array() && stats["github"]["origins"].is_array(), "{}", stats["github"]);
+    let installation: i64 = sqlx::query_scalar("SELECT installation_id FROM addons WHERE slug = 'lucky'").fetch_one(&app.pool).await.unwrap();
+    // Addons from an account without the App have no installation.
+    sqlx::query("INSERT INTO addons (slug, name, owner_id, repo_id, repo_full_name, installation_id, source_type, asset_pattern, category, created_at, updated_at)
+                 SELECT 'solo', 'Solo', owner_id, 4242, 'bob/solo', NULL, source_type, asset_pattern, category, now(), now() FROM addons WHERE slug = 'lucky'")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    let stats = app.get("/v1/admin/stats?range=24h", Some(&admin)).await.json();
+    assert_eq!(stats["github"]["installations"][installation.to_string()], "alice", "the account behind each App installation");
     assert_eq!(app.get("/v1/admin/stats?range=1y", Some(&admin)).await.error(), "invalid_range");
 }
 

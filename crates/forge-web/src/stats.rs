@@ -167,7 +167,7 @@ fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec
     let rows: Vec<Vec<String>> = list.as_array().into_iter().flatten().map(cells).collect();
     // The first column names the row; any other is a number column when all its cells are numbers.
     let numeric = (0..head.len()).map(|i| i > 0 && !rows.is_empty() && rows.iter().all(|r| r.get(i).is_some_and(|c| is_number(c)))).collect();
-    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into(), note: String::new() }
+    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into(), note: String::new(), cells: "" }
 }
 
 /// Most hours a table lists; 30 days would be 720 rows.
@@ -193,7 +193,7 @@ pub fn attention(s: &Value, now: chrono::DateTime<Utc>) -> Vec<String> {
         let (left, limit) = (q["remaining"].as_i64().unwrap_or(0), q["limit"].as_i64().unwrap_or(0));
         if limit > 0 && left * 10 < limit {
             let reset = when(&q["reset_at"]).map_or_else(String::new, |t| format!(", resets {}", until(t, now)));
-            found.push(format!("GitHub quota {} ({}): {} of {} left{reset}", text(&q["quota"]), text(&q["resource"]), n(&q["remaining"]), n(&q["limit"])));
+            found.push(format!("GitHub quota {} ({}): {} of {} left{reset}", quota_name(&text(&q["quota"]), &s["github"]["installations"]), text(&q["resource"]), n(&q["remaining"]), n(&q["limit"])));
         }
     }
     if s["scans"]["errors"].as_i64().unwrap_or(0) > 0 {
@@ -203,6 +203,29 @@ pub fn attention(s: &Value, now: chrono::DateTime<Utc>) -> Vec<String> {
         found.push(format!("{}: {} of {} installs or updates failed", text(&a["slug"]), n(&a["failed"]), n(&a["total"])));
     }
     found
+}
+
+/// A GitHub quota in words: `installation:7` is the App installation of an account.
+fn quota_name(quota: &str, installations: &Value) -> String {
+    match quota.split_once(':') {
+        Some(("installation", id)) => installations[id].as_str().map_or_else(|| format!("App installation {id}"), |owner| format!("App installation of {owner}")),
+        _ => match quota {
+            "read_token" => "Read token".into(),
+            "anonymous" => "Anonymous".into(),
+            "app" => "App".into(),
+            "oauth" => "User logins".into(),
+            "web" => "github.com pages".into(),
+            "download" => "Release downloads".into(),
+            other => other.into(),
+        },
+    }
+}
+
+/// `install_failed` as `Install failed`.
+fn event_name(kind: &str) -> String {
+    let words = kind.replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map_or_else(String::new, |c| c.to_uppercase().collect::<String>() + chars.as_str())
 }
 
 /// The newest first.
@@ -260,7 +283,7 @@ pub async fn admin_stats(
                 vec![text(&x["page"]).replace("{slug}", &text(&x["target"])).replace("{id}", &text(&x["target"])), n(&x["views"]), n(&x["visitors"])]
             }, "No visits yet."),
             visits("Where visitors come from", "Site", &w["referrers"]),
-            visits("Countries", "Country", &w["countries"]),
+            StatTable { cells: "country", ..visits("Countries", "Country", &w["countries"]) },
             visits("Devices", "Device", &w["devices"]),
         ]) },
         group("api", "API", vec![
@@ -279,7 +302,7 @@ pub async fn admin_stats(
             table("GitHub quotas now", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
                 let at = |v: &Value| when(v);
                 vec![
-                    format!("{} ({})", text(&x["quota"]), text(&x["resource"])),
+                    format!("{} ({})", quota_name(&text(&x["quota"]), &g["installations"]), text(&x["resource"])),
                     n(&x["limit"]),
                     n(&x["used"]),
                     n(&x["remaining"]),
@@ -289,14 +312,14 @@ pub async fn admin_stats(
             }, "GitHub has not answered yet."),
             table("GitHub requests by origin", &["Caused by", "Requests"], &g["origins"], |x| vec![text(&x["origin"]), n(&x["count"])], "No GitHub requests."),
             table("GitHub endpoints", &["Endpoint", "Quota", "Requests", "Errors"], &g["endpoints"], |x| {
-                vec![text(&x["endpoint"]), text(&x["quota"]), n(&x["count"]), n(&x["errors"])]
+                vec![text(&x["endpoint"]), quota_name(&text(&x["quota"]), &g["installations"]), n(&x["count"]), n(&x["errors"])]
             }, "No GitHub requests."),
             capped(table("GitHub requests per hour", &["Hour (UTC)", "Requests"], &reversed(&g["per_hour"]), |x| {
                 vec![when(&x["hour"]).map_or_else(|| text(&x["hour"]), |t| t.format("%Y-%m-%d %H:00").to_string()), n(&x["count"])]
             }, "No GitHub requests.")),
         ]),
         group("launcher", "Launcher", vec![
-            table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![text(&x["kind"]), n(&x["count"])], "No events from launchers yet."),
+            table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![event_name(&text(&x["kind"])), n(&x["count"])], "No events from launchers yet."),
             table("Addons that fail to install", &["Addon", "Failed", "All events"], &t["failing_addons"], |x| {
                 vec![text(&x["slug"]), n(&x["failed"]), n(&x["total"])]
             }, "No failed installs."),

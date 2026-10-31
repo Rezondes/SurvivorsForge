@@ -406,7 +406,7 @@ async fn stats_range_switch() {
     Mock::given(method("GET")).and(path("/v1/admin/stats")).and(query_param("range", "7d")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
     let page = web.get("/admin/stats?range=7d").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
-    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "/addons/lucky", "reddit.com", "steam", "read_token (core)", "job sync_addon", "/repositories/{id}/releases", "2026-10-31 10:00", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
+    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "/addons/lucky", "reddit.com", "steam", "Read token (core)", "job sync_addon", "/repositories/{id}/releases", "2026-10-31 10:00", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     get_json(&web, "/v1/admin/review-queue", json!([])).await;
@@ -429,7 +429,7 @@ async fn problems_come_first_and_sections_are_grouped() {
     body["scans"]["errors"] = json!(2);
     let page = admin_stats_page(body).await;
     let attention = page.find("Needs attention").expect("a problem block");
-    for text in ["sync_addon: 2 failed runs", "GitHub quota read_token (core): 120 of 5,000 left", "2 scans failed", "lucky: 3 of 4 installs or updates failed"] {
+    for text in ["sync_addon: 2 failed runs", "GitHub quota Read token (core): 120 of 5,000 left", "2 scans failed", "lucky: 3 of 4 installs or updates failed"] {
         let at = page.find(text).unwrap_or_else(|| panic!("missing {text}: {page}"));
         assert!(at > attention && at < page.find(r#"id="website""#).unwrap(), "{text} sits in the block at the top");
     }
@@ -462,7 +462,7 @@ async fn only_number_columns_align_right() {
     let page = admin_stats_page(admin_stats_body()).await;
     assert!(page.contains(r#"<td class="num">2</td><td>GitHub down</td>"#), "error text stays left: {page}");
     assert!(page.contains(r#"<th>Endpoint</th><th>Quota</th><th class="num">Requests</th>"#), "quota is text");
-    assert!(page.contains(r#"<td>/repositories/{id}/releases</td><td>installation:7</td><td class="num">50</td>"#));
+    assert!(page.contains(r#"<td>/repositories/{id}/releases</td><td>App installation 7</td><td class="num">50</td>"#));
 }
 
 #[tokio::test]
@@ -502,4 +502,17 @@ async fn website_numbers_say_they_count_whole_days() {
     let website = &page[page.find(r#"<h2 id="website">"#).unwrap()..page.find(r#"<h2 id="api">"#).unwrap()];
     assert!(website.contains("Counted by whole days (UTC)"), "{website}");
     assert!(website.contains("<h3>Website visits per day (UTC)</h3>"));
+}
+
+#[tokio::test]
+async fn names_instead_of_raw_values() {
+    let mut body = admin_stats_body();
+    body["github"]["installations"] = json!({ "7": "alice" });
+    body["telemetry"]["kinds"] = json!([{ "kind": "install_failed", "count": 2 }]);
+    body["website"]["countries"] = json!([{ "value": "DE", "views": 7, "visitors": 2 }]);
+    let page = admin_stats_page(body).await;
+    assert!(page.contains("<td>App installation of alice</td>"), "{page}");
+    assert!(page.contains("<td>Read token (core)</td>"));
+    assert!(page.contains("<td>Install failed</td>"));
+    assert!(page.contains(r#"<table class="stats-table" data-cells="country">"#), "named in the browser");
 }

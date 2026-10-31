@@ -105,6 +105,9 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
              'total', (SELECT coalesce(sum(count), 0) FROM g),
              'per_hour', (SELECT coalesce(json_agg(json_build_object('hour', hour, 'count', n) ORDER BY hour), '[]')
                           FROM (SELECT hour, sum(count) AS n FROM g GROUP BY hour) h),
+             'installations', (SELECT coalesce(json_object_agg(installation_id::text, owner), '{}')
+                               FROM (SELECT DISTINCT ON (installation_id) installation_id, split_part(repo_full_name, '/', 1) AS owner
+                                     FROM addons WHERE installation_id IS NOT NULL ORDER BY installation_id, deleted_at IS NOT NULL, id) i),
              'origins', (SELECT coalesce(json_agg(json_build_object('origin', origin, 'count', n) ORDER BY n DESC, origin), '[]')
                          FROM (SELECT origin, sum(count) AS n FROM g GROUP BY origin ORDER BY n DESC, origin LIMIT 20) o),
              'endpoints', (SELECT coalesce(json_agg(json_build_object('endpoint', endpoint, 'quota', quota, 'count', n, 'errors', errors) ORDER BY n DESC, endpoint), '[]')

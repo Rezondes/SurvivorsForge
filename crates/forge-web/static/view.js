@@ -409,4 +409,18 @@
   }
   document.addEventListener("htmx:responseError", failed);
   document.addEventListener("htmx:sendError", failed);
+
+  // Country codes of the statistics as names in the browser's language: "Germany (DE)".
+  document.addEventListener("DOMContentLoaded", function () {
+    if (!window.Intl || !Intl.DisplayNames) return;
+    var names = new Intl.DisplayNames([navigator.language || "en"], { type: "region" });
+    document.querySelectorAll('[data-cells="country"] tbody td:first-child').forEach(function (cell) {
+      var code = cell.textContent.trim();
+      if (!/^[A-Z]{2}$/.test(code)) return;
+      try {
+        var name = names.of(code);
+        if (name && name !== code) cell.textContent = name + " (" + code + ")";
+      } catch (e) {}
+    });
+  });
 })();

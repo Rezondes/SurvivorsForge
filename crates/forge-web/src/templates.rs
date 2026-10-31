@@ -503,6 +503,8 @@ pub struct StatTable {
     pub empty: String,
     /// Shown under the table, e.g. that rows were left out.
     pub note: String,
+    /// What the first column holds when the browser can name it better (`country`); empty for none.
+    pub cells: &'static str,
 }
 
 #[derive(Template)]

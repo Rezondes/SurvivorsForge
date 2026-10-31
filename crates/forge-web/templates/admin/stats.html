@@ -31,7 +31,7 @@
   <p class="muted">{{ t.empty }}</p>
   {% else %}
   <div class="table-wrap">
-    <table class="stats-table">
+    <table class="stats-table"{% if !t.cells.is_empty() %} data-cells="{{ t.cells }}"{% endif %}>
       <thead><tr>{% for h in t.head %}<th{% if t.numeric[loop.index0] %} class="num"{% endif %}>{{ h }}</th>{% endfor %}</tr></thead>
       <tbody>
         {% for row in t.rows %}<tr>{% for cell in row %}<td{% if t.numeric[loop.index0] %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
