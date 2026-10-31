@@ -626,6 +626,7 @@ async fn downloads_are_counted_before_the_redirect() {
 fn stats_body() -> Value {
     let soon = |minutes: i64| json!(format!("2099-01-01T00:{minutes:02}:00Z"));
     json!({
+        "website": { "views": 9000, "daily_visitors": 2500, "views_30d": 1200, "daily_visitors_30d": 345 },
         "launcher": { "downloads": 12345, "releases": 4, "current_tag": "v0.4.3", "current_downloads": 678 },
         "addons": { "installs": 90, "updates": 40, "installs_30d": 9, "updates_30d": 4, "active_installations_30d": 8, "on_current_launcher_30d": 6 },
         "top_addons_30d": [{ "slug": "lucky", "name": "Lucky Odds", "installs": 5 }],
@@ -641,7 +642,7 @@ async fn stats_page_renders_groups_and_privacy() {
     mock(&web, "/v1/stats", stats_body()).await;
     let page = web.get("/stats").await;
     assert_eq!(page.status, StatusCode::OK);
-    for text in ["12,345", "downloads of v0.4.3, the newest version", "75%", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", "not yet"] {
+    for text in ["12,345", "345", "visits in the last 30 days (each visitor once a day)", "without cookies", "downloads of v0.4.3, the newest version", "75%", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", "not yet"] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     assert!(web.get("/").await.body.contains(r#"<a href="/stats">Statistics</a>"#), "linked in the footer");

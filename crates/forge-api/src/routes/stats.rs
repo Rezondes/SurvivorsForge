@@ -82,7 +82,18 @@ pub async fn stats(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     )
     .fetch_one(&state.pool)
     .await?;
+    let website: Value = sqlx::query_scalar(
+        "SELECT json_build_object(
+             'views', coalesce(sum(views), 0), 'daily_visitors', coalesce(sum(visitors), 0),
+             'views_30d', coalesce(sum(views) FILTER (WHERE day >= $1), 0),
+             'daily_visitors_30d', coalesce(sum(visitors) FILTER (WHERE day >= $1), 0))
+         FROM web_counts WHERE kind = 'site'",
+    )
+    .bind(since)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(json!({
+        "website": website,
         "launcher": launcher,
         "addons": telemetry,
         "top_addons_30d": top,

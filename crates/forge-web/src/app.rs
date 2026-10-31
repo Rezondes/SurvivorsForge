@@ -169,6 +169,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .merge(pages)
+        .layer(middleware::from_fn_with_state(state.clone(), crate::visits::middleware))
         .with_state(state)
         .layer(middleware::from_fn_with_state(limiter, crate::rate_limit::middleware))
         .layer(middleware::from_fn(crate::metrics::middleware))

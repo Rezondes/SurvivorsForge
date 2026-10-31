@@ -15,3 +15,4 @@ pub mod session;
 pub mod stats;
 pub mod templates;
 pub mod trust;
+pub mod visits;

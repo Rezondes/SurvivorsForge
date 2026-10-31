@@ -21,4 +21,5 @@ pub mod search;
 pub mod stats;
 pub mod telemetry;
 pub mod versions;
+pub mod visits;
 pub mod webhooks;

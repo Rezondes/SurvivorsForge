@@ -30,7 +30,20 @@ async fn main() -> ExitCode {
     };
     forge_web::metrics::spawn_server(config.metrics_bind_addr);
     tracing::info!(addr = %bind, "forge-web listening");
-    let served = axum::serve(listener, router(AppState::new(config)).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown_signal()).await;
+    let state = AppState::new(config);
+    let flusher = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                every.tick().await;
+                forge_web::visits::flush(&state).await;
+            }
+        })
+    };
+    let served = axum::serve(listener, router(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown_signal()).await;
+    flusher.abort();
+    forge_web::visits::flush(&state).await;
     match served {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

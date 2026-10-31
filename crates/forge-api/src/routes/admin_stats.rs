@@ -114,5 +114,24 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    Ok(Json(json!({ "since": since, "requests": requests, "jobs": jobs, "scans": scans, "telemetry": telemetry, "github": github })))
+    let website: Value = sqlx::query_scalar(
+        "WITH w AS (SELECT * FROM web_counts WHERE day >= ($1::timestamptz)::date)
+         SELECT json_build_object(
+             'per_day', (SELECT coalesce(json_agg(json_build_object('day', day, 'views', views, 'visitors', visitors) ORDER BY day), '[]') FROM w WHERE kind = 'site'),
+             'pages', (SELECT coalesce(json_agg(json_build_object('page', value, 'views', v, 'visitors', u) ORDER BY v DESC, value), '[]')
+                       FROM (SELECT value, sum(views) AS v, sum(visitors) AS u FROM w WHERE kind = 'page' GROUP BY value ORDER BY v DESC, value LIMIT 20) p),
+             'targets', (SELECT coalesce(json_agg(json_build_object('page', value, 'target', target, 'views', v, 'visitors', u) ORDER BY v DESC, target), '[]')
+                         FROM (SELECT value, target, sum(views) AS v, sum(visitors) AS u FROM w WHERE kind = 'page' AND target <> ''
+                               GROUP BY value, target ORDER BY v DESC, target LIMIT 20) t),
+             'referrers', (SELECT coalesce(json_agg(json_build_object('value', value, 'views', v, 'visitors', u) ORDER BY v DESC, value), '[]')
+                           FROM (SELECT value, sum(views) AS v, sum(visitors) AS u FROM w WHERE kind = 'referrer' GROUP BY value ORDER BY v DESC, value LIMIT 20) r),
+             'countries', (SELECT coalesce(json_agg(json_build_object('value', value, 'views', v, 'visitors', u) ORDER BY v DESC, value), '[]')
+                           FROM (SELECT value, sum(views) AS v, sum(visitors) AS u FROM w WHERE kind = 'country' GROUP BY value ORDER BY v DESC, value LIMIT 20) c),
+             'devices', (SELECT coalesce(json_agg(json_build_object('value', value, 'views', v, 'visitors', u) ORDER BY v DESC, value), '[]')
+                         FROM (SELECT value, sum(views) AS v, sum(visitors) AS u FROM w WHERE kind = 'device' GROUP BY value) d))",
+    )
+    .bind(since)
+    .fetch_one(pool)
+    .await?;
+    Ok(Json(json!({ "since": since, "website": website, "requests": requests, "jobs": jobs, "scans": scans, "telemetry": telemetry, "github": github })))
 }

@@ -125,6 +125,7 @@ pub struct Card {
 pub struct StatsPage {
     pub user: Option<Visitor>,
     pub csrf: String,
+    pub website: Vec<crate::stats::Stat>,
     pub launcher: Vec<crate::stats::Stat>,
     pub addons: Vec<crate::stats::Stat>,
     pub platform: Vec<crate::stats::Stat>,

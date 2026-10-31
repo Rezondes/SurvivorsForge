@@ -367,6 +367,9 @@ async fn admin_checks_every_addon_for_updates() {
 fn admin_stats_body() -> Value {
     json!({
         "since": "2026-10-30T10:00:00Z",
+        "website": { "per_day": [{ "day": "2026-10-31", "views": 40, "visitors": 12 }], "pages": [{ "page": "/addons/{slug}", "views": 30, "visitors": 9 }],
+                     "targets": [{ "page": "/addons/{slug}", "target": "lucky", "views": 20, "visitors": 6 }],
+                     "referrers": [{ "value": "reddit.com", "views": 5, "visitors": 4 }], "countries": [], "devices": [{ "value": "steam", "views": 3, "visitors": 1 }] },
         "requests": { "total": 1234, "rate_limited": 3, "per_hour": [],
                       "routes": [{ "route": "/v1/registry", "method": "GET", "count": 900, "avg_ms": 12, "max_ms": 80 }],
                       "statuses": [{ "status": 200, "count": 1200 }], "clients": [{ "client": "launcher", "count": 1000 }] },
@@ -403,7 +406,7 @@ async fn stats_range_switch() {
     Mock::given(method("GET")).and(path("/v1/admin/stats")).and(query_param("range", "7d")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
     let page = web.get("/admin/stats?range=7d").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
-    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "read_token (core)", "job sync_addon", "/repositories/{id}/releases", "2026-10-31 10:00", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
+    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "/addons/lucky", "reddit.com", "steam", "read_token (core)", "job sync_addon", "/repositories/{id}/releases", "2026-10-31 10:00", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     get_json(&web, "/v1/admin/review-queue", json!([])).await;

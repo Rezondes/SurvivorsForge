@@ -102,6 +102,13 @@ pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
     let current = l["current_tag"].as_str().unwrap_or_default();
     let active = a["active_installations_30d"].as_i64().unwrap_or(0);
     let on_current = a["on_current_launcher_30d"].as_i64().unwrap_or(0);
+    let w = &s["website"];
+    let website = vec![
+        stat(n(&w["daily_visitors_30d"]), "visits in the last 30 days (each visitor once a day)"),
+        stat(n(&w["views_30d"]), "pages viewed in the last 30 days"),
+        stat(n(&w["daily_visitors"]), "visits in all"),
+        stat(n(&w["views"]), "pages viewed in all"),
+    ];
     let launcher = vec![
         stat(n(&l["downloads"]), "downloads of every version"),
         stat(n(&l["current_downloads"]), &if current.is_empty() { "downloads of the newest version".into() } else { format!("downloads of {current}, the newest version") }),
@@ -134,7 +141,7 @@ pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         .flatten()
         .map(|t| TopAddon { slug: t["slug"].as_str().unwrap_or_default().into(), name: t["name"].as_str().unwrap_or_default().into(), installs: n(&t["installs"]) })
         .collect();
-    Ok(render(&StatsPage { user, csrf: csrf.0, launcher, addons, platform, top, checks: checks_of(&s, Utc::now()) }))
+    Ok(render(&StatsPage { user, csrf: csrf.0, website, launcher, addons, platform, top, checks: checks_of(&s, Utc::now()) }))
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -196,7 +203,17 @@ pub async fn admin_stats(
         stat(n(&g["total"]), "GitHub requests"),
     ];
     let t = &s["telemetry"];
+    let w = &s["website"];
+    let visits = |title: &str, head: &str, list: &Value| table(title, &[head, "Views", "Visitors"], list, |x| vec![text(&x["value"]), n(&x["views"]), n(&x["visitors"])], "No visits yet.");
     let tables = vec![
+        table("Website visits per day", &["Day", "Views", "Visitors"], &reversed(&w["per_day"]), |x| vec![text(&x["day"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
+        table("Most viewed pages", &["Page", "Views", "Visitors"], &w["pages"], |x| vec![text(&x["page"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
+        table("Most viewed addons and packs", &["Page", "Views", "Visitors"], &w["targets"], |x| {
+            vec![text(&x["page"]).replace("{slug}", &text(&x["target"])).replace("{id}", &text(&x["target"])), n(&x["views"]), n(&x["visitors"])]
+        }, "No visits yet."),
+        visits("Where visitors come from", "Site", &w["referrers"]),
+        visits("Countries", "Country", &w["countries"]),
+        visits("Devices", "Device", &w["devices"]),
         table("Busiest routes", &["Route", "Requests", "Average ms", "Slowest ms"], &r["routes"], |x| {
             vec![format!("{} {}", text(&x["method"]), text(&x["route"])), n(&x["count"]), n(&x["avg_ms"]), n(&x["max_ms"])]
         }, "No requests yet."),

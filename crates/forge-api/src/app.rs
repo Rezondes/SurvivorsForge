@@ -113,6 +113,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/registry", get(routes::registry::registry))
         .route("/v1/telemetry/events", post(routes::telemetry::events))
         .route("/v1/stats", get(routes::stats::stats))
+        .route("/v1/internal/visits", post(routes::visits::record))
         .route("/v1/packs", get(routes::packs::list).post(routes::packs::create))
         .route("/v1/packs/{id}", get(routes::packs::show).patch(routes::packs::update))
         .route("/v1/packs/{id}/download", get(routes::packs::download))
