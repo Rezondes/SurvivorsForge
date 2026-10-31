@@ -167,7 +167,7 @@ fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec
     let rows: Vec<Vec<String>> = list.as_array().into_iter().flatten().map(cells).collect();
     // The first column names the row; any other is a number column when all its cells are numbers.
     let numeric = (0..head.len()).map(|i| i > 0 && !rows.is_empty() && rows.iter().all(|r| r.get(i).is_some_and(|c| is_number(c)))).collect();
-    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into(), note: String::new(), cells: "" }
+    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into(), note: String::new(), cells: "", row_classes: Vec::new() }
 }
 
 /// Most hours a table lists; 30 days would be 720 rows.
@@ -291,7 +291,15 @@ pub async fn admin_stats(
                 vec![format!("{} {}", text(&x["method"]), text(&x["route"])), n(&x["count"]), n(&x["avg_ms"]), n(&x["max_ms"])]
             }, "No requests yet."),
             table("Clients", &["Client", "Requests"], &r["clients"], |x| vec![text(&x["client"]), n(&x["count"])], "No requests yet."),
-            table("Status codes", &["Status", "Requests"], &r["statuses"], |x| vec![text(&x["status"]), n(&x["count"])], "No requests yet."),
+            {
+                let t = table("Status codes", &["Status", "Requests"], &r["statuses"], |x| vec![text(&x["status"]), n(&x["count"])], "No requests yet.");
+                let rows = t.rows.iter().map(|r| match r[0].chars().next() {
+                    Some('5') => "failed",
+                    Some('4') => "warn",
+                    _ => "",
+                });
+                StatTable { row_classes: rows.collect(), ..t }
+            },
         ]),
         group("jobs", "Jobs and scans", vec![
             table("Jobs", &["Kind", "Waiting now", "Running now", "Done", "Failed", "Last error"], &s["jobs"], |x| {

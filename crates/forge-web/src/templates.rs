@@ -505,6 +505,8 @@ pub struct StatTable {
     pub note: String,
     /// What the first column holds when the browser can name it better (`country`); empty for none.
     pub cells: &'static str,
+    /// Per row: `warn`, `failed` or empty; may be shorter than `rows`.
+    pub row_classes: Vec<&'static str>,
 }
 
 #[derive(Template)]
@@ -522,6 +524,13 @@ pub struct AdminStatsPage {
     /// Problems shown first; empty when all is well.
     pub attention: Vec<String>,
     pub groups: Vec<StatGroup>,
+}
+
+impl StatTable {
+    /// The class of row `i`: `warn`, `failed` or empty.
+    pub fn row_class(&self, i: usize) -> &'static str {
+        self.row_classes.get(i).copied().unwrap_or_default()
+    }
 }
 
 /// A section of `/admin/stats` with its jump anchor.

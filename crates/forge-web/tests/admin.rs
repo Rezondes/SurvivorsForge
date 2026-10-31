@@ -516,3 +516,13 @@ async fn names_instead_of_raw_values() {
     assert!(page.contains("<td>Install failed</td>"));
     assert!(page.contains(r#"<table class="stats-table" data-cells="country">"#), "named in the browser");
 }
+
+#[tokio::test]
+async fn error_statuses_stand_out() {
+    let mut body = admin_stats_body();
+    body["requests"]["statuses"] = json!([{ "status": 200, "count": 9 }, { "status": 429, "count": 2 }, { "status": 502, "count": 1 }]);
+    let page = admin_stats_page(body).await;
+    assert!(page.contains(r#"<tr><td>200</td>"#), "{page}");
+    assert!(page.contains(r#"<tr class="warn"><td>429</td>"#));
+    assert!(page.contains(r#"<tr class="failed"><td>502</td>"#));
+}
