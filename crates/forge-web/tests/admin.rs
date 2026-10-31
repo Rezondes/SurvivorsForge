@@ -373,7 +373,10 @@ fn admin_stats_body() -> Value {
         "jobs": [{ "kind": "sync_addon", "open": 1, "running": 0, "done": 40, "failed": 2, "last_error": "GitHub down" }],
         "scans": { "scans": 5, "flagged": 1, "errors": 0, "findings": 3, "blocked_versions": 0 },
         "telemetry": { "kinds": [], "failing_addons": [], "error_codes": [], "launcher_versions": [] },
-        "github": { "limit": 5000, "remaining": 4321, "reset_at": null }
+        "github": { "total": 77, "per_hour": [{ "hour": "2026-10-31T09:00:00Z", "count": 30 }, { "hour": "2026-10-31T10:00:00Z", "count": 47 }],
+                    "quotas": [{ "quota": "read_token", "resource": "core", "limit": 5000, "used": 679, "remaining": 4321, "reset_at": "2099-01-01T00:00:00Z", "seen_at": "2026-10-31T10:05:00Z" }],
+                    "origins": [{ "origin": "job sync_addon", "count": 60 }],
+                    "endpoints": [{ "endpoint": "/repositories/{id}/releases", "quota": "installation:7", "count": 50, "errors": 2 }] }
     })
 }
 
@@ -400,7 +403,7 @@ async fn stats_range_switch() {
     Mock::given(method("GET")).and(path("/v1/admin/stats")).and(query_param("range", "7d")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
     let page = web.get("/admin/stats?range=7d").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
-    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
+    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "read_token (core)", "job sync_addon", "/repositories/{id}/releases", "2026-10-31 10:00", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     get_json(&web, "/v1/admin/review-queue", json!([])).await;

@@ -91,9 +91,28 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    let github = match state.github.rate_limit().await {
-        Ok(limit) => json!(limit),
-        Err(e) => json!({ "error": e.to_string() }),
-    };
+    // Asks GitHub for the public quota (free of charge) and writes what this process counted, so
+    // the numbers below are current.
+    if let Err(e) = state.github.rate_limit().await {
+        tracing::warn!(error = %e, "cannot read the GitHub rate limit");
+    }
+    crate::github::usage::USAGE.flush(pool).await?;
+    let github: Value = sqlx::query_scalar(
+        "WITH g AS (SELECT * FROM github_request_stats WHERE hour >= date_trunc('hour', $1::timestamptz))
+         SELECT json_build_object(
+             'quotas', (SELECT coalesce(json_agg(json_build_object('quota', quota, 'resource', resource, 'limit', \"limit\", 'used', used,
+                                 'remaining', remaining, 'reset_at', reset_at, 'seen_at', seen_at) ORDER BY quota, resource), '[]') FROM github_quota),
+             'total', (SELECT coalesce(sum(count), 0) FROM g),
+             'per_hour', (SELECT coalesce(json_agg(json_build_object('hour', hour, 'count', n) ORDER BY hour), '[]')
+                          FROM (SELECT hour, sum(count) AS n FROM g GROUP BY hour) h),
+             'origins', (SELECT coalesce(json_agg(json_build_object('origin', origin, 'count', n) ORDER BY n DESC, origin), '[]')
+                         FROM (SELECT origin, sum(count) AS n FROM g GROUP BY origin ORDER BY n DESC, origin LIMIT 20) o),
+             'endpoints', (SELECT coalesce(json_agg(json_build_object('endpoint', endpoint, 'quota', quota, 'count', n, 'errors', errors) ORDER BY n DESC, endpoint), '[]')
+                           FROM (SELECT endpoint, quota, sum(count) AS n, sum(count) FILTER (WHERE status >= 400) AS errors
+                                 FROM g GROUP BY endpoint, quota ORDER BY n DESC, endpoint LIMIT 20) e))",
+    )
+    .bind(since)
+    .fetch_one(pool)
+    .await?;
     Ok(Json(json!({ "since": since, "requests": requests, "jobs": jobs, "scans": scans, "telemetry": telemetry, "github": github })))
 }

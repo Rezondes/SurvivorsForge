@@ -110,7 +110,23 @@ async fn work(config: Config, pool: sqlx::PgPool) -> Result<(), String> {
     });
     forge_api::request_stats::spawn_metrics_server(state.config.metrics_bind_addr);
     tracing::info!("forge-api worker started");
+    let flusher = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                every.tick().await;
+                if let Err(e) = forge_api::github::usage::USAGE.flush(&pool).await {
+                    tracing::warn!(error = %e, "cannot write GitHub usage");
+                }
+            }
+        })
+    };
     worker::platform(state).run(&pool, shutdown).await;
+    flusher.abort();
+    if let Err(e) = forge_api::github::usage::USAGE.flush(&pool).await {
+        tracing::warn!(error = %e, "cannot write the last GitHub usage");
+    }
     Ok(())
 }
 
@@ -135,6 +151,9 @@ async fn serve(config: Config, pool: sqlx::PgPool) -> Result<(), String> {
                 if let Err(e) = stats.flush(&pool).await {
                     tracing::warn!(error = %e, "cannot write request stats");
                 }
+                if let Err(e) = forge_api::github::usage::USAGE.flush(&pool).await {
+                    tracing::warn!(error = %e, "cannot write GitHub usage");
+                }
             }
         })
     };
@@ -147,6 +166,9 @@ async fn serve(config: Config, pool: sqlx::PgPool) -> Result<(), String> {
     flusher.abort();
     if let Err(e) = stats.flush(&pool).await {
         tracing::warn!(error = %e, "cannot write the last request stats");
+    }
+    if let Err(e) = forge_api::github::usage::USAGE.flush(&pool).await {
+        tracing::warn!(error = %e, "cannot write the last GitHub usage");
     }
     served
 }

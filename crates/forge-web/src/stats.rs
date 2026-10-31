@@ -152,6 +152,11 @@ fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec
     }
 }
 
+/// The newest first.
+fn reversed(list: &Value) -> Value {
+    Value::Array(list.as_array().into_iter().flatten().rev().cloned().collect())
+}
+
 fn text(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
@@ -177,7 +182,9 @@ pub async fn admin_stats(
     };
     let s = state.api.get(&format!("/v1/admin/stats?range={range}"), Some(&token)).await?;
     let (r, sc) = (&s["requests"], &s["scans"]);
-    let github = if s["github"]["error"].is_string() { "unknown".into() } else { format!("{} of {}", n(&s["github"]["remaining"]), n(&s["github"]["limit"])) };
+    let (g, now) = (&s["github"], Utc::now());
+    let left = g["quotas"].as_array().into_iter().flatten().find(|q| q["quota"] == "read_token" || q["quota"] == "anonymous");
+    let github = left.map_or_else(|| "unknown".into(), |q| format!("{} of {}", n(&q["remaining"]), n(&q["limit"])));
     let totals = vec![
         stat(n(&r["total"]), "API requests"),
         stat(n(&r["rate_limited"]), "turned away by the rate limit"),
@@ -185,7 +192,8 @@ pub async fn admin_stats(
         stat(n(&sc["flagged"]), "scans with findings"),
         stat(n(&sc["errors"]), "scans that failed"),
         stat(n(&sc["blocked_versions"]), "versions blocked"),
-        stat(github, "GitHub requests left this hour"),
+        stat(github, "public GitHub requests left this hour"),
+        stat(n(&g["total"]), "GitHub requests"),
     ];
     let t = &s["telemetry"];
     let tables = vec![
@@ -197,6 +205,24 @@ pub async fn admin_stats(
         table("Jobs", &["Kind", "Waiting", "Running", "Done", "Failed", "Last error"], &s["jobs"], |x| {
             vec![text(&x["kind"]), n(&x["open"]), n(&x["running"]), n(&x["done"]), n(&x["failed"]), text(&x["last_error"])]
         }, "No jobs."),
+        table("GitHub quotas", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
+            let at = |v: &Value| when(v);
+            vec![
+                format!("{} ({})", text(&x["quota"]), text(&x["resource"])),
+                n(&x["limit"]),
+                n(&x["used"]),
+                n(&x["remaining"]),
+                at(&x["reset_at"]).map_or_else(|| "-".into(), |t| until(t, now)),
+                at(&x["seen_at"]).map_or_else(|| "-".into(), |t| ago(t, now)),
+            ]
+        }, "GitHub has not answered yet."),
+        table("GitHub requests by origin", &["Caused by", "Requests"], &g["origins"], |x| vec![text(&x["origin"]), n(&x["count"])], "No GitHub requests."),
+        table("GitHub endpoints", &["Endpoint", "Quota", "Requests", "Errors"], &g["endpoints"], |x| {
+            vec![text(&x["endpoint"]), text(&x["quota"]), n(&x["count"]), n(&x["errors"])]
+        }, "No GitHub requests."),
+        table("GitHub requests per hour", &["Hour (UTC)", "Requests"], &reversed(&g["per_hour"]), |x| {
+            vec![when(&x["hour"]).map_or_else(|| text(&x["hour"]), |t| t.format("%Y-%m-%d %H:00").to_string()), n(&x["count"])]
+        }, "No GitHub requests."),
         table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![text(&x["kind"]), n(&x["count"])], "No events from launchers yet."),
         table("Addons that fail to install", &["Addon", "Failed", "All events"], &t["failing_addons"], |x| {
             vec![text(&x["slug"]), n(&x["failed"]), n(&x["total"])]

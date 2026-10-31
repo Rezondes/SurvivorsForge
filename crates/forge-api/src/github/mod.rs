@@ -6,6 +6,7 @@
 
 pub mod app_auth;
 pub mod types;
+pub mod usage;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -171,9 +172,20 @@ impl GitHubClient {
         }
         let url = format!("{}/app/installations/{installation}/access_tokens", self.api_url);
         let response = self.request(self.http.post(&url), &self.app_jwt()?).send().await.map_err(network)?;
+        self.count("app", &response);
         let token: InstallationToken = parse(check(response).await?).await?;
         self.tokens.lock().unwrap().insert(installation, token.clone());
         Ok(token.token)
+    }
+
+    /// Counts an answer for `usage`, with the clock of this client.
+    fn count(&self, quota: &str, response: &reqwest::Response) {
+        usage::USAGE.record(quota, response, (self.clock)());
+    }
+
+    /// The quota a request without installation uses.
+    fn public_quota(&self) -> &'static str {
+        if self.read_token.is_some() { "read_token" } else { "anonymous" }
     }
 
     fn request(&self, builder: reqwest::RequestBuilder, bearer: &str) -> reqwest::RequestBuilder {
@@ -208,6 +220,10 @@ impl GitHubClient {
             builder = builder.header(IF_NONE_MATCH, etag);
         }
         let response = builder.send().await.map_err(network)?;
+        match installation {
+            Some(installation) => self.count(&format!("installation:{installation}"), &response),
+            None => self.count(self.public_quota(), &response),
+        }
         let body = if let Some((_, body)) = cached.filter(|_| response.status() == StatusCode::NOT_MODIFIED) {
             body
         } else {
@@ -254,10 +270,6 @@ async fn parse<T: serde::de::DeserializeOwned>(response: reqwest::Response) -> G
 
 /// Maps error statuses; a `403`/`429` with no requests left is a rate limit.
 async fn check(response: reqwest::Response) -> GitHubResult<reqwest::Response> {
-    let remaining = response.headers().get("x-ratelimit-remaining").and_then(|v| v.to_str().ok()?.parse::<f64>().ok());
-    if let Some(remaining) = remaining {
-        metrics::gauge!("forge_github_rate_remaining").set(remaining);
-    }
     let status = response.status();
     if status.is_success() {
         return Ok(response);
@@ -293,6 +305,7 @@ impl GitHubApi for GitHubClient {
     async fn installation_for_repo(&self, full_name: &str) -> GitHubResult<Option<i64>> {
         let url = format!("{}/repos/{full_name}/installation", self.api_url);
         let response = self.request(self.http.get(&url), &self.app_jwt()?).send().await.map_err(network)?;
+        self.count("app", &response);
         let installation: GitHubResult<Installation> = match check(response).await {
             Ok(response) => parse(response).await,
             Err(e) => Err(e),
@@ -365,11 +378,14 @@ impl GitHubApi for GitHubClient {
             "code_verifier": verifier,
         });
         let request = self.http.post(&url).header(ACCEPT, "application/json").header(USER_AGENT, "SurvivorsForge").json(&body);
-        let answer: serde_json::Value = parse(check(request.send().await.map_err(network)?).await?).await?;
+        let response = request.send().await.map_err(network)?;
+        self.count("oauth", &response);
+        let answer: serde_json::Value = parse(check(response).await?).await?;
         let token = answer["access_token"]
             .as_str()
             .ok_or_else(|| GitHubError::Auth(answer["error"].as_str().unwrap_or("no access token").to_string()))?;
         let response = self.request(self.http.get(format!("{}/user", self.api_url)), token).send().await.map_err(network)?;
+        self.count("oauth", &response);
         parse(check(response).await?).await
     }
 
@@ -379,7 +395,9 @@ impl GitHubApi for GitHubClient {
         if let Some(token) = &self.read_token {
             request = request.bearer_auth(token);
         }
-        let answer: serde_json::Value = parse(check(request.send().await.map_err(network)?).await?).await?;
+        let response = request.send().await.map_err(network)?;
+        self.count(self.public_quota(), &response);
+        let answer: serde_json::Value = parse(check(response).await?).await?;
         let core = &answer["resources"]["core"];
         Ok(types::RateLimit {
             limit: core["limit"].as_i64().unwrap_or(0),
@@ -393,6 +411,7 @@ impl GitHubApi for GitHubClient {
             return Err(GitHubError::ForbiddenHost(url.to_string()));
         }
         let response = self.downloads.get(url).header(USER_AGENT, "SurvivorsForge").send().await.map_err(network)?;
+        self.count("download", &response);
         let mut response = check(response).await?;
         if response.content_length().is_some_and(|len| len > max_bytes) {
             return Err(GitHubError::TooLarge);

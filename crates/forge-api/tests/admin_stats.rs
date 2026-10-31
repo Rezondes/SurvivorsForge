@@ -35,7 +35,7 @@ async fn aggregates_requests_by_route(pool: PgPool) {
     assert!(stats["requests"]["clients"].as_array().unwrap().iter().any(|c| c["client"] == "launcher" && c["count"] == 3));
     let statuses: Vec<i64> = stats["requests"]["statuses"].as_array().unwrap().iter().map(|s| s["status"].as_i64().unwrap()).collect();
     assert!(statuses.contains(&200) && statuses.contains(&404), "{statuses:?}");
-    assert_eq!(stats["github"]["remaining"], 4321);
+    assert!(stats["github"]["quotas"].is_array() && stats["github"]["origins"].is_array(), "{}", stats["github"]);
     assert_eq!(app.get("/v1/admin/stats?range=1y", Some(&admin)).await.error(), "invalid_range");
 }
 

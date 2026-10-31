@@ -256,6 +256,11 @@ Nothing of it is published on the host.
 Set `GRAFANA_DB_PASSWORD` (the read-only database role Grafana uses; the API sets it on start) and
 `GRAFANA_ADMIN_PASSWORD` first. Metrics stay 30 days, logs and traces 14 days.
 
+Every request the platform sends to GitHub is counted by what caused it (an API route or a worker
+job), endpoint and quota (`read_token`, `anonymous`, `installation:<id>`, `app`, `oauth`, `web`,
+`download`), and each quota's limit, use and reset time is kept from GitHub's answers. *Admin,
+Statistics* and the Grafana dashboard *GitHub* show both, to find what uses up a limit.
+
 Alloy reads the container logs through a Docker socket proxy that allows nothing but listing
 containers and networks and reading logs. cAdvisor needs the host's `/sys`, `/var/lib/docker` and
 the Docker socket itself, all mounted read-only; leave out the `cadvisor` service if you do not

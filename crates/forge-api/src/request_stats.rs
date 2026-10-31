@@ -125,14 +125,16 @@ async fn write(pool: &PgPool, buckets: &HashMap<Key, Bucket>) -> sqlx::Result<()
     tx.commit().await
 }
 
-/// Deletes buckets older than `KEEP_DAYS`. The job `prune_request_stats`.
+/// Deletes buckets of API and GitHub requests older than `KEEP_DAYS`. The job `prune_request_stats`.
 pub async fn prune(pool: &PgPool, now: DateTime<Utc>) -> Result<(), String> {
-    sqlx::query("DELETE FROM api_request_stats WHERE hour < $1")
-        .bind(now - TimeDelta::days(KEEP_DAYS))
-        .execute(pool)
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    for table in ["api_request_stats", "github_request_stats"] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE hour < $1"))
+            .bind(now - TimeDelta::days(KEEP_DAYS))
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// The state of the middleware: the counts, the clock and the website's address.
@@ -154,7 +156,9 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let method = request.method().as_str().to_string();
     let user_agent = request.headers().get(header::USER_AGENT).and_then(|v| v.to_str().ok());
     let client = classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website);
-    let response = next.run(request).await;
+    // GitHub requests this request causes count for its route (`github::usage`).
+    let origin = format!("{method} {route}");
+    let response = crate::github::usage::ORIGIN.scope(origin, next.run(request)).await;
     let elapsed = started.elapsed();
     let status = response.status().as_u16();
     recorder.stats.record((recorder.clock)(), &route, &method, status, client, i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX));

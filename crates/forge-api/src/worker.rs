@@ -120,8 +120,9 @@ impl Worker {
     pub async fn run_once(&self, pool: &PgPool) -> sqlx::Result<bool> {
         let Some(job) = jobs::claim_next(pool, Utc::now()).await? else { return Ok(false) };
         let started = std::time::Instant::now();
+        let origin = format!("job {}", job.kind);
         let result = match self.handlers.get(job.kind.as_str()) {
-            Some(handler) => handler(job.clone()).await,
+            Some(handler) => crate::github::usage::ORIGIN.scope(origin, handler(job.clone())).await,
             None => Err(format!("no handler for job kind {}", job.kind)),
         };
         let outcome = if result.is_ok() { "done" } else { "failed" };

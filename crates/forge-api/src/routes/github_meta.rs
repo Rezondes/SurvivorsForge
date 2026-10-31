@@ -44,6 +44,7 @@ fn unavailable(detail: impl std::fmt::Display) -> ApiError {
 /// GETs `path` on github.com; `None` for a redirect, with its `Location`.
 async fn fetch(state: &AppState, path: &str) -> ApiResult<Result<String, Option<String>>> {
     let response = client().get(format!("{}{path}", state.config.github_web_url)).send().await.map_err(unavailable)?;
+    crate::github::usage::USAGE.record("web", &response, (state.clock)());
     let status = response.status();
     if status.is_redirection() {
         let location = response.headers().get("location").and_then(|v| v.to_str().ok()).map(str::to_string);

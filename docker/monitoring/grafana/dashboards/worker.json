@@ -78,7 +78,7 @@
     },
     {
       "id": 3,
-      "title": "GitHub requests left",
+      "title": "GitHub requests left by quota",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -96,8 +96,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "min by (service) (forge_github_rate_remaining)",
-          "legendFormat": "{{service}}",
+          "expr": "min by (quota, resource) (forge_github_rate_remaining)",
+          "legendFormat": "{{quota}} {{resource}}",
           "refId": "A"
         }
       ],
