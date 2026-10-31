@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+forge-trace = { path = "../forge-trace" }
 forge-scan = { path = "../forge-scan" }
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }

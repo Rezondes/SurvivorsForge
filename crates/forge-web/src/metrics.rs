@@ -7,14 +7,17 @@ use axum::response::Response;
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
 use std::time::Instant;
 
-/// Counts every page request except the container healthcheck.
+/// Counts every page request except the container healthcheck, each in its own trace span.
 pub async fn middleware(request: Request, next: Next) -> Response {
     let route = request.extensions().get::<MatchedPath>().map_or("unmatched", MatchedPath::as_str).to_string();
     if route == "/healthz" {
         return next.run(request).await;
     }
+    let span = tracing::info_span!("request", method = %request.method(), route = %route, status = tracing::field::Empty, trace_id = tracing::field::Empty);
+    forge_trace::continue_trace(&span, request.headers());
     let started = Instant::now();
-    let response = next.run(request).await;
+    let response = tracing::Instrument::instrument(next.run(request), span.clone()).await;
+    span.record("status", response.status().as_u16());
     let labels = [("route", route), ("status", response.status().as_u16().to_string())];
     metrics::counter!("forge_web_requests_total", &labels).increment(1);
     metrics::histogram!("forge_web_request_duration_seconds", &labels[..1]).record(started.elapsed().as_secs_f64());

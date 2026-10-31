@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+forge-trace = { path = "../forge-trace" }
 axum = { version = "0.8", features = ["multipart"] }
 tower-http = { version = "0.6", features = ["set-header"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }

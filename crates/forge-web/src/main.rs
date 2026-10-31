@@ -12,9 +12,7 @@ async fn main() -> ExitCode {
             _ => ExitCode::FAILURE,
         };
     }
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    let _trace = forge_trace::init("web");
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(e) => {

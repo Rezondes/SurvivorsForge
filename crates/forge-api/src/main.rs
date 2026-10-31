@@ -14,10 +14,8 @@ const USAGE: &str = "usage: forge-api <serve | worker | migrate | rescan --all |
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
     let command = std::env::args().nth(1).unwrap_or_default();
+    let _trace = forge_trace::init(if command == "worker" { "worker" } else { "api" });
     if command == "healthcheck" {
         return healthcheck(std::env::args().nth(2).unwrap_or_default()).await;
     }

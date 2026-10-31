@@ -43,6 +43,10 @@ pub type ApiResult<T> = Result<T, ApiError>;
 
 /// Names the visitor for the API's rate limit; outside a request (healthcheck) nothing is added.
 fn forwarded(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    // The page's trace goes on in the API.
+    let mut trace = reqwest::header::HeaderMap::new();
+    forge_trace::inject(&mut trace);
+    let request = request.headers(trace);
     match crate::rate_limit::CLIENT_IP.try_with(|ip| *ip) {
         Ok(ip) => request.header("x-forwarded-for", ip.to_string()),
         Err(_) => request,

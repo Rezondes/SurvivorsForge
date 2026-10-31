@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tracing::Instrument;
 
 /// How long the hourly buckets stay in the database.
 pub const KEEP_DAYS: i64 = 90;
@@ -156,9 +157,16 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let method = request.method().as_str().to_string();
     let user_agent = request.headers().get(header::USER_AGENT).and_then(|v| v.to_str().ok());
     let client = classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website);
+    // One span per request (OpenTelemetry, `forge_trace`), continuing the website's trace.
+    let span = tracing::info_span!("request", method = %method, route = %route, client = client.as_str(), install_id = tracing::field::Empty, status = tracing::field::Empty, trace_id = tracing::field::Empty);
+    if let Some(id) = crate::routes::telemetry::install_id(request.headers()) {
+        span.record("install_id", id.as_str());
+    }
+    forge_trace::continue_trace(&span, request.headers());
     // GitHub requests this request causes count for its route (`github::usage`).
     let origin = format!("{method} {route}");
-    let response = crate::github::usage::ORIGIN.scope(origin, next.run(request)).await;
+    let response = crate::github::usage::ORIGIN.scope(origin, next.run(request)).instrument(span.clone()).await;
+    span.record("status", response.status().as_u16());
     let elapsed = started.elapsed();
     let status = response.status().as_u16();
     recorder.stats.record((recorder.clock)(), &route, &method, status, client, i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX));

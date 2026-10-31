@@ -121,8 +121,10 @@ impl Worker {
         let Some(job) = jobs::claim_next(pool, Utc::now()).await? else { return Ok(false) };
         let started = std::time::Instant::now();
         let origin = format!("job {}", job.kind);
+        let span = tracing::info_span!("job", kind = %job.kind, id = job.id, trace_id = tracing::field::Empty);
+        forge_trace::record_trace_id(&span);
         let result = match self.handlers.get(job.kind.as_str()) {
-            Some(handler) => crate::github::usage::ORIGIN.scope(origin, handler(job.clone())).await,
+            Some(handler) => tracing::Instrument::instrument(crate::github::usage::ORIGIN.scope(origin, handler(job.clone())), span).await,
             None => Err(format!("no handler for job kind {}", job.kind)),
         };
         let outcome = if result.is_ok() { "done" } else { "failed" };
