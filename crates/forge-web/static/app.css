@@ -98,7 +98,7 @@ main:has(> .list) > .bottom { padding: 8px 16px; }
   background: var(--gold-heading); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .brand:hover { color: transparent; }
-.bottom { color: var(--muted); font-size: var(--meta); text-align: center; padding: 24px 16px 0; margin-top: 24px; border-top: 1px solid var(--line); }
+.bottom { color: var(--muted); font-size: var(--meta); text-align: center; padding: 24px 16px 0; border-top: 1px solid var(--line); }
 .bottom p { margin: 0; }
 
 /* Headings: Morpheus gold between two fading rules, like "Class" and "Zone" in the game */
@@ -293,10 +293,16 @@ main:has(> .browse) > .bottom { padding: 8px 16px; }
 .addon-meta .addon-stat { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .addon-meta svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 html[data-view="list"] .addon-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-html[data-view="list"] .addon-card { flex-direction: row; }
-html[data-view="list"] .addon-art { width: 116px; border-bottom: 0; border-right: 1px solid var(--line); }
+html[data-view="list"] .addon-card { --list-row: 164px; flex-direction: row; height: var(--list-row); }
+/* The icon fills the row from top to bottom; the fixed row height keeps it square. The row's two
+   border pixels and the icon's own right border cancel out, so the picture is height by height. */
+html[data-view="list"] .addon-art { width: calc(var(--list-row) - 1px); border-bottom: 0; border-right: 1px solid var(--line); }
 html[data-view="list"] .addon-art span { font-size: 56px; }
-html[data-view="list"] .addon-body { padding: 12px 18px; }
+html[data-view="list"] .addon-body { padding: 10px 18px; overflow: hidden; }
+/* Nothing in the fixed row may shrink, or the title and summary get cut through. */
+html[data-view="list"] .addon-body > * { flex-shrink: 0; }
+html[data-view="list"] .addon-card .addon-by { margin-top: 2px; }
+html[data-view="list"] .addon-meta { padding-top: 8px; }
 html[data-view="list"] .addon-card h2 { font-size: var(--heading); }
 html[data-view="list"] .addon-summary { font-size: var(--body); }
 html[data-view="list"] .addon-meta { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; }
@@ -479,7 +485,10 @@ input.narrow { width: 6em; flex: none; }
   /* Leave the list as much room as possible: filters side by side, no footer under it */
   .search .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .search .filters > div { min-width: 0; }
-  html[data-view="list"] .addon-art { width: 76px; }
+  /* Too narrow for a fixed row: the row grows with its text, the icon keeps the full height. */
+  html[data-view="list"] .addon-card { height: auto; }
+  html[data-view="list"] .addon-art { width: 96px; }
+  html[data-view="list"] .addon-summary { display: none; }
   html[data-view="list"] .addon-art span { font-size: 40px; }
   html[data-view="list"] .addon-body { padding: 10px 12px; }
   html[data-view="list"] .grid .card:not(.addon-card) { flex-wrap: wrap; gap: 4px 16px; }

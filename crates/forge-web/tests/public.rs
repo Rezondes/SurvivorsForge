@@ -279,6 +279,16 @@ async fn the_addon_results_scroll_beside_the_filters() {
 }
 
 #[tokio::test]
+async fn addon_icons_stay_square_in_the_list() {
+    // The icon fills the row from top to bottom, so the row has a fixed height and the icon that width.
+    let mut web = TestWeb::new().await;
+    let css = web.get("/static/app.css").await.body;
+    let rule = |selector: &str| css.split(&format!("{selector} {{")).nth(1).and_then(|r| r.split('}').next()).unwrap_or_default().to_string();
+    assert!(rule(r#"html[data-view="list"] .addon-card"#).contains("height: var(--list-row)"), "row height");
+    assert!(rule(r#"html[data-view="list"] .addon-art"#).contains("width: calc(var(--list-row) - 1px)"), "icon width");
+}
+
+#[tokio::test]
 async fn card_lists_switch_between_tiles_and_a_list() {
     // The choice lives in the browser (view.js, localStorage); the pages only offer the switch.
     let mut web = TestWeb::new().await;
