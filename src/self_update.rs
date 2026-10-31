@@ -73,26 +73,83 @@ pub fn available(current: &str, release: &Release) -> Option<Available> {
     Some(Available { version, url: asset.url.clone() })
 }
 
-/// Downloads the release zip and swaps the running executable.
+/// Downloads the release zip and swaps the running executable (`swap_files`).
 #[cfg(windows)]
 pub fn apply(client: &Client, update: &Available, work_dir: &Path) -> Result<()> {
-    use std::io::Read;
+    use std::io::{Read, Write};
     let zip_path = work_dir.join(asset_name(&update.version));
     client.download(&update.url, &zip_path)?;
     let exe_name = format!("{}.exe", crate::APP_NAME);
-    let new_exe = work_dir.join(format!("new-{exe_name}"));
+    let current = std::env::current_exe()?.canonicalize()?;
+    let (new, old) = (sibling(&current, "new"), sibling(&current, "old"));
     let result = (|| -> Result<()> {
         let mut zip = zip::ZipArchive::new(std::fs::File::open(&zip_path)?).map_err(|e| Error::Zip(e.to_string()))?;
         let mut file = zip.by_name(&exe_name).map_err(|e| Error::Zip(e.to_string()))?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
-        std::fs::write(&new_exe, bytes)?;
-        self_replace::self_replace(&new_exe)?;
-        Ok(())
+        // Next to the running exe: the same folder, so the renames never copy.
+        let mut out = std::fs::File::create(&new)?;
+        out.write_all(&bytes)?;
+        out.sync_all()?;
+        drop(out);
+        swap_files(&current, &new, &old).map_err(|e| Error::Io(format!("SurvivorsForge could not be replaced, it stays as it was: {e}")))
     })();
     let _ = std::fs::remove_file(&zip_path);
-    let _ = std::fs::remove_file(&new_exe);
+    let _ = std::fs::remove_file(&new);
     result
+}
+
+fn sibling(file: &Path, suffix: &str) -> PathBuf {
+    let mut name = file.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".{suffix}"));
+    file.with_file_name(name)
+}
+
+/// Puts `new` in place of `current`: `current` moves aside to `old` first (Windows lets a running
+/// exe be renamed, not overwritten), then `new` takes its name. A virus scanner often holds a freshly
+/// written exe for a moment ("used by another process"), so each rename is tried again for some
+/// seconds; when `new` cannot take the name, `current` moves back and nothing is lost.
+pub fn swap_files(current: &Path, new: &Path, old: &Path) -> std::io::Result<()> {
+    let _ = std::fs::remove_file(old);
+    retry(|| std::fs::rename(current, old))?;
+    if let Err(e) = retry(|| std::fs::rename(new, current)) {
+        let _ = retry(|| std::fs::rename(old, current));
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// `step` again while it fails because something else holds the file, for about ten seconds.
+fn retry(mut step: impl FnMut() -> std::io::Result<()>) -> std::io::Result<()> {
+    let mut tries = 0;
+    loop {
+        match step() {
+            // 5: access denied, 32: used by another process, 33: locked (Windows).
+            Err(e) if tries < 40 && matches!(e.raw_os_error(), Some(5 | 32 | 33)) => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            other => return other,
+        }
+    }
+}
+
+/// Removes what updates left next to `exe`: the old exe set aside, an unfinished new one, and
+/// the files of the self-update before 0.5.3 (`.SurvivorsForge.<random>.__relocated__.exe`, ...).
+/// The old exe may still run for a moment after a restart, so it is tried a few times.
+pub fn clean_up_after_update(exe: &Path) {
+    let Some(dir) = exe.parent() else { return };
+    let stem = exe.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+    let leftover = |name: &str| {
+        name.starts_with(&format!(".{stem}.")) && ["__relocated__.exe", "__temp__.exe", "__selfdelete__.exe"].iter().any(|s| name.ends_with(s))
+    };
+    let mut files = vec![sibling(exe, "old"), sibling(exe, "new")];
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        files.extend(entries.flatten().map(|e| e.path()).filter(|p| p.file_name().is_some_and(|n| leftover(&n.to_string_lossy()))));
+    }
+    for file in files.into_iter().filter(|f| f != exe && f.exists()) {
+        let _ = retry(|| std::fs::remove_file(&file));
+    }
 }
 
 /// Downloads the new AppImage next to the running one and renames it over it (same folder, so
@@ -133,6 +190,63 @@ mod tests {
             tag: tag.into(),
             assets: assets.iter().map(|n| Asset { name: n.to_string(), url: format!("https://dl/{n}") }).collect(),
         }
+    }
+
+    #[test]
+    fn swap_puts_the_new_file_in_place_and_keeps_the_old_one_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let (current, new, old) = (dir.path().join("SurvivorsForge.exe"), dir.path().join("SurvivorsForge.exe.new"), dir.path().join("SurvivorsForge.exe.old"));
+        std::fs::write(&current, b"v1").unwrap();
+        std::fs::write(&new, b"v2").unwrap();
+        std::fs::write(&old, b"v0 from the update before").unwrap();
+        swap_files(&current, &new, &old).unwrap();
+        assert_eq!((std::fs::read(&current).unwrap(), std::fs::read(&old).unwrap()), (b"v2".to_vec(), b"v1".to_vec()));
+        assert!(!new.exists());
+    }
+
+    #[test]
+    fn a_failed_swap_brings_the_old_file_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let (current, old) = (dir.path().join("SurvivorsForge.exe"), dir.path().join("SurvivorsForge.exe.old"));
+        std::fs::write(&current, b"v1").unwrap();
+        assert!(swap_files(&current, &dir.path().join("missing.new"), &old).is_err());
+        assert_eq!(std::fs::read(&current).unwrap(), b"v1", "the launcher is never lost");
+        assert!(!old.exists());
+    }
+
+    /// A virus scanner holds a freshly written exe for a moment; the swap waits for it.
+    #[cfg(windows)]
+    #[test]
+    fn a_swap_waits_while_the_new_file_is_held() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let (current, new, old) = (dir.path().join("SurvivorsForge.exe"), dir.path().join("SurvivorsForge.exe.new"), dir.path().join("SurvivorsForge.exe.old"));
+        std::fs::write(&current, b"v1").unwrap();
+        std::fs::write(&new, b"v2").unwrap();
+        // No sharing at all: renaming it fails with "used by another process" (os error 32).
+        let held = std::fs::OpenOptions::new().read(true).share_mode(0).open(&new).unwrap();
+        assert_eq!(std::fs::rename(&new, dir.path().join("x")).unwrap_err().raw_os_error(), Some(32));
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            drop(held);
+        });
+        swap_files(&current, &new, &old).unwrap();
+        release.join().unwrap();
+        assert_eq!(std::fs::read(&current).unwrap(), b"v2");
+    }
+
+    #[test]
+    fn cleanup_removes_what_updates_left_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("SurvivorsForge.exe");
+        for name in ["SurvivorsForge.exe", "SurvivorsForge.exe.old", "SurvivorsForge.exe.new",
+                     ".SurvivorsForge.abcdefgh.__relocated__.exe", ".SurvivorsForge.abcdefgh.__temp__.exe", ".Other.abc.__temp__.exe", "notes.txt"] {
+            std::fs::write(dir.path().join(name), b"x").unwrap();
+        }
+        clean_up_after_update(&exe);
+        let mut left: Vec<String> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, [".Other.abc.__temp__.exe", "SurvivorsForge.exe", "notes.txt"]);
     }
 
     #[test]

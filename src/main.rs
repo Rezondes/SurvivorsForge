@@ -1541,6 +1541,11 @@ fn main() -> Result<(), slint::PlatformError> {
     if !cfg!(debug_assertions) {
         deep_link::register();
     }
+    // The exe an update set aside, which may still run for a moment after the restart.
+    #[cfg(windows)]
+    if let Ok(exe) = std::env::current_exe() {
+        std::thread::spawn(move || self_update::clean_up_after_update(&exe));
+    }
     #[cfg(target_os = "linux")]
     select_backend()?;
     let data_dir = config::data_dir();
