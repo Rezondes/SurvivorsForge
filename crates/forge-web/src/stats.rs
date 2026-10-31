@@ -2,9 +2,9 @@
 
 use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
-use crate::error::WebResult;
+use crate::error::{WebError, WebResult};
 use crate::public::grouped;
-use crate::templates::{StatsPage, render};
+use crate::templates::{AdminStatsPage, Permission, StatTable, StatsPage, render};
 use axum::Extension;
 use axum::extract::State;
 use axum::response::Html;
@@ -135,6 +135,76 @@ pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         .map(|t| TopAddon { slug: t["slug"].as_str().unwrap_or_default().into(), name: t["name"].as_str().unwrap_or_default().into(), installs: n(&t["installs"]) })
         .collect();
     Ok(render(&StatsPage { user, csrf: csrf.0, launcher, addons, platform, top, checks: checks_of(&s, Utc::now()) }))
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct RangeQuery {
+    #[serde(default)]
+    range: Option<String>,
+}
+
+fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec<String>, empty: &str) -> StatTable {
+    StatTable {
+        title: title.into(),
+        head: head.iter().map(|h| h.to_string()).collect(),
+        rows: list.as_array().into_iter().flatten().map(cells).collect(),
+        empty: empty.into(),
+    }
+}
+
+fn text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => "-".into(),
+        other => other.to_string(),
+    }
+}
+
+/// `/admin/stats`: requests, jobs, scans and launcher events of the last 24 hours, 7 or 30 days.
+pub async fn admin_stats(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    axum::extract::Query(q): axum::extract::Query<RangeQuery>,
+) -> WebResult<Html<String>> {
+    let (user, token) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
+    if !user.can(Permission::ViewAdminStats) {
+        return Err(WebError::Forbidden);
+    }
+    let range = match q.range.as_deref() {
+        Some(r @ ("24h" | "7d" | "30d")) => r.to_string(),
+        _ => "24h".into(),
+    };
+    let s = state.api.get(&format!("/v1/admin/stats?range={range}"), Some(&token)).await?;
+    let (r, sc) = (&s["requests"], &s["scans"]);
+    let github = if s["github"]["error"].is_string() { "unknown".into() } else { format!("{} of {}", n(&s["github"]["remaining"]), n(&s["github"]["limit"])) };
+    let totals = vec![
+        stat(n(&r["total"]), "API requests"),
+        stat(n(&r["rate_limited"]), "turned away by the rate limit"),
+        stat(n(&sc["scans"]), "scans"),
+        stat(n(&sc["flagged"]), "scans with findings"),
+        stat(n(&sc["errors"]), "scans that failed"),
+        stat(n(&sc["blocked_versions"]), "versions blocked"),
+        stat(github, "GitHub requests left this hour"),
+    ];
+    let t = &s["telemetry"];
+    let tables = vec![
+        table("Busiest routes", &["Route", "Requests", "Average ms", "Slowest ms"], &r["routes"], |x| {
+            vec![format!("{} {}", text(&x["method"]), text(&x["route"])), n(&x["count"]), n(&x["avg_ms"]), n(&x["max_ms"])]
+        }, "No requests yet."),
+        table("Clients", &["Client", "Requests"], &r["clients"], |x| vec![text(&x["client"]), n(&x["count"])], "No requests yet."),
+        table("Status codes", &["Status", "Requests"], &r["statuses"], |x| vec![text(&x["status"]), n(&x["count"])], "No requests yet."),
+        table("Jobs", &["Kind", "Waiting", "Running", "Done", "Failed", "Last error"], &s["jobs"], |x| {
+            vec![text(&x["kind"]), n(&x["open"]), n(&x["running"]), n(&x["done"]), n(&x["failed"]), text(&x["last_error"])]
+        }, "No jobs."),
+        table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![text(&x["kind"]), n(&x["count"])], "No events from launchers yet."),
+        table("Addons that fail to install", &["Addon", "Failed", "All events"], &t["failing_addons"], |x| {
+            vec![text(&x["slug"]), n(&x["failed"]), n(&x["total"])]
+        }, "No failed installs."),
+        table("Error codes", &["Code", "Events"], &t["error_codes"], |x| vec![text(&x["code"]), n(&x["count"])], "No errors."),
+        table("Launcher versions", &["Version", "Events"], &t["launcher_versions"], |x| vec![text(&x["version"]), n(&x["count"])], "No events from launchers yet."),
+    ];
+    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, range, totals, tables }))
 }
 
 #[cfg(test)]

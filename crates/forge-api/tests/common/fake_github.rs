@@ -115,6 +115,10 @@ impl GitHubApi for FakeGitHub {
         self.call().oauth_users.get(code).cloned().ok_or_else(|| GitHubError::Auth("bad_verification_code".into()))
     }
 
+    async fn rate_limit(&self) -> GitHubResult<forge_api::github::types::RateLimit> {
+        Ok(forge_api::github::types::RateLimit { limit: 5000, remaining: 4321, reset_at: None })
+    }
+
     async fn download(&self, url: &str, max_bytes: u64) -> GitHubResult<Vec<u8>> {
         let bytes = self.call().downloads.get(url).cloned().ok_or(GitHubError::NotFound)?;
         if bytes.len() as u64 > max_bytes {

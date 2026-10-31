@@ -113,3 +113,14 @@ impl FromRequestParts<AppState> for AdminUser {
         permitted(parts, state, Permission::ManageRoles, "Admins only").await.map(AdminUser)
     }
 }
+
+/// A logged-in user whose role is in `ADMIN_STATS_ROLES`: the detailed statistics.
+pub struct StatsViewer(pub CurrentUser);
+
+impl FromRequestParts<AppState> for StatsViewer {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        permitted(parts, state, Permission::ViewAdminStats, "Not allowed to see the statistics").await.map(StatsViewer)
+    }
+}

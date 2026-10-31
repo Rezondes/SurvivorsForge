@@ -79,6 +79,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/versions/{id}/skip", post(routes::admin_verify::skip))
         .route("/v1/admin/review-queue", get(routes::admin_queue::review_queue))
         .route("/v1/admin/audit", get(routes::admin_queue::audit_log))
+        .route("/v1/admin/stats", get(routes::admin_stats::stats))
         .route("/v1/admin/users/{user}", get(routes::admin_queue::user))
         .route("/v1/admin/categories", post(routes::admin_queue::create_category))
         .route(

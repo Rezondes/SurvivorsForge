@@ -82,6 +82,7 @@ pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
     let queue = state.api.get("/v1/admin/review-queue", Some(&token)).await?;
     let reports = state.api.get("/v1/admin/reports", Some(&token)).await?;
     Ok(render(&AdminIndexPage {
+        stats: user.can(Permission::ViewAdminStats),
         user: Some(user),
         csrf: csrf.0,
         queue: queue.as_array().map(Vec::len).unwrap_or(0),

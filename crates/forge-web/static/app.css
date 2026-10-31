@@ -224,6 +224,12 @@ html:not([data-view]) .view-toggle { display: none; }
   background: var(--control); color: var(--gold-bright); box-shadow: inset 0 -2px 0 var(--gold);
 }
 .view-icon { width: 14px; height: 14px; fill: currentColor; flex: none; }
+.range-toggle { display: inline-flex; border: 1px solid var(--outline); border-radius: var(--radius); overflow: hidden; }
+.range-toggle a { padding: 4px 12px; color: var(--muted); font-size: var(--meta); text-decoration: none; }
+.range-toggle a + a { border-left: 1px solid var(--line); }
+.range-toggle a:hover { background: var(--control); color: var(--gold); }
+.range-toggle a[aria-current="page"] { background: var(--control); color: var(--gold-bright); box-shadow: inset 0 -2px 0 var(--gold); }
+.stats-table td.num, .stats-table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 html[data-view="list"] .grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 html[data-view="list"] .grid .card { display: flex; align-items: center; gap: 16px; padding: 10px 16px; margin: 0; }
 html[data-view="list"] .grid .card > * { margin: 0; }

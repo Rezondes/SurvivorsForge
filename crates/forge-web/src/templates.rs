@@ -485,6 +485,28 @@ pub struct AdminIndexPage {
     pub csrf: String,
     pub queue: usize,
     pub reports: usize,
+    /// The viewer may open `/admin/stats` (`ADMIN_STATS_ROLES`).
+    pub stats: bool,
+}
+
+/// A titled table of `/admin/stats`; the first column is text, the others are numbers.
+pub struct StatTable {
+    pub title: String,
+    pub head: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    /// Shown instead of an empty table.
+    pub empty: String,
+}
+
+#[derive(Template)]
+#[template(path = "admin/stats.html")]
+pub struct AdminStatsPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    /// `24h`, `7d` or `30d`.
+    pub range: String,
+    pub totals: Vec<crate::stats::Stat>,
+    pub tables: Vec<StatTable>,
 }
 
 pub struct ReviewItem {

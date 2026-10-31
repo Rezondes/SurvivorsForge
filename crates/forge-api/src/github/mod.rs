@@ -86,6 +86,8 @@ pub trait GitHubApi: Send + Sync {
     async fn oauth_user(&self, code: &str, verifier: &str, redirect_uri: &str) -> GitHubResult<User>;
     /// Reads at most `max_bytes`; more is `TooLarge`, whatever `Content-Length` says.
     async fn download(&self, url: &str, max_bytes: u64) -> GitHubResult<Vec<u8>>;
+    /// The core limit of public reads (`GITHUB_READ_TOKEN`, else this IP); costs no request.
+    async fn rate_limit(&self) -> GitHubResult<types::RateLimit>;
 }
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
@@ -369,6 +371,21 @@ impl GitHubApi for GitHubClient {
             .ok_or_else(|| GitHubError::Auth(answer["error"].as_str().unwrap_or("no access token").to_string()))?;
         let response = self.request(self.http.get(format!("{}/user", self.api_url)), token).send().await.map_err(network)?;
         parse(check(response).await?).await
+    }
+
+    async fn rate_limit(&self) -> GitHubResult<types::RateLimit> {
+        // Not through `get_json`: its ETag cache would answer with an old count.
+        let mut request = self.http.get(format!("{}/rate_limit", self.api_url)).header(ACCEPT, "application/vnd.github+json").header(USER_AGENT, "SurvivorsForge");
+        if let Some(token) = &self.read_token {
+            request = request.bearer_auth(token);
+        }
+        let answer: serde_json::Value = parse(check(request.send().await.map_err(network)?).await?).await?;
+        let core = &answer["resources"]["core"];
+        Ok(types::RateLimit {
+            limit: core["limit"].as_i64().unwrap_or(0),
+            remaining: core["remaining"].as_i64().unwrap_or(0),
+            reset_at: core["reset"].as_i64().and_then(|s| Utc.timestamp_opt(s, 0).single()),
+        })
     }
 
     async fn download(&self, url: &str, max_bytes: u64) -> GitHubResult<Vec<u8>> {

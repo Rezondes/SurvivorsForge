@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Statistics - Admin - SurvivorsForge{% endblock %}
+{% block content %}
+<p><a href="/admin">Admin</a></p>
+<div class="title-row">
+  <h1>Statistics</h1>
+  <nav class="range-toggle" aria-label="Time range">
+    {% for (key, label) in [("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days")] %}
+    <a href="/admin/stats?range={{ key }}"{% if range.as_str() == *key %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+{% let items = totals %}{% include "stats_list.html" %}
+{% for t in tables %}
+<section class="home-section">
+  <h2>{{ t.title }}</h2>
+  {% if t.rows.is_empty() %}
+  <p class="muted">{{ t.empty }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="stats-table">
+      <thead><tr>{% for h in t.head %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in t.rows %}<tr>{% for cell in row %}<td{% if !loop.first %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+<p class="muted">Response times, job durations and the whole history are in Grafana.</p>
+{% endblock %}

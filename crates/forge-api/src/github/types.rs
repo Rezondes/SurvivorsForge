@@ -3,6 +3,14 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
 
+/// The core request limit of the token the platform reads public data with.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct RateLimit {
+    pub limit: i64,
+    pub remaining: i64,
+    pub reset_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Owner {
     /// The account's GitHub id; unlike the login it never changes.

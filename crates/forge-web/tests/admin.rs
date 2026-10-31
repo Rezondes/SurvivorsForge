@@ -3,7 +3,7 @@ mod common;
 use axum::http::StatusCode;
 use common::{TestWeb, me};
 use serde_json::{Value, json};
-use wiremock::matchers::{body_partial_json, method, path};
+use wiremock::matchers::{body_partial_json, method, path, query_param};
 use wiremock::{Mock, ResponseTemplate};
 
 async fn get_json(web: &TestWeb, route: &str, body: Value) {
@@ -362,4 +362,48 @@ async fn admin_checks_every_addon_for_updates() {
     expect(&web, "POST", "/v1/admin/addons/sync", json!({})).await;
     let done = web.post_form("/admin/addons/sync", &[]).await;
     assert!(done.location().starts_with("/admin/addons?msg="), "{}", done.location());
+}
+
+fn admin_stats_body() -> Value {
+    json!({
+        "since": "2026-10-30T10:00:00Z",
+        "requests": { "total": 1234, "rate_limited": 3, "per_hour": [],
+                      "routes": [{ "route": "/v1/registry", "method": "GET", "count": 900, "avg_ms": 12, "max_ms": 80 }],
+                      "statuses": [{ "status": 200, "count": 1200 }], "clients": [{ "client": "launcher", "count": 1000 }] },
+        "jobs": [{ "kind": "sync_addon", "open": 1, "running": 0, "done": 40, "failed": 2, "last_error": "GitHub down" }],
+        "scans": { "scans": 5, "flagged": 1, "errors": 0, "findings": 3, "blocked_versions": 0 },
+        "telemetry": { "kinds": [], "failing_addons": [], "error_codes": [], "launcher_versions": [] },
+        "github": { "limit": 5000, "remaining": 4321, "reset_at": null }
+    })
+}
+
+#[tokio::test]
+async fn stats_page_needs_permission() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("eve", "user")).await;
+    assert_eq!(web.get("/admin/stats").await.status, StatusCode::FORBIDDEN);
+
+    let mut web = TestWeb::new().await;
+    let mut no_stats = me("mia", "moderator");
+    no_stats["permissions"] = json!(["moderate"]);
+    web.login_as("tok", no_stats).await;
+    assert_eq!(web.get("/admin/stats").await.status, StatusCode::FORBIDDEN, "a moderator outside ADMIN_STATS_ROLES");
+    get_json(&web, "/v1/admin/review-queue", json!([])).await;
+    get_json(&web, "/v1/admin/reports", json!([])).await;
+    assert!(!web.get("/admin").await.body.contains("/admin/stats"), "no tile without the right");
+}
+
+#[tokio::test]
+async fn stats_range_switch() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("mia", "moderator")).await;
+    Mock::given(method("GET")).and(path("/v1/admin/stats")).and(query_param("range", "7d")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
+    let page = web.get("/admin/stats?range=7d").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+    get_json(&web, "/v1/admin/review-queue", json!([])).await;
+    get_json(&web, "/v1/admin/reports", json!([])).await;
+    assert!(web.get("/admin").await.body.contains(r#"href="/admin/stats""#), "linked for moderators by default");
 }
