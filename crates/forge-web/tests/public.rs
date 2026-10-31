@@ -794,3 +794,11 @@ async fn the_author_leads_to_their_addons() {
     let page = web.get("/addons?author=alice").await.body;
     assert!(page.contains(r#"Addons by <strong>alice</strong> · <a href="/addons">Show all addons</a>"#), "{page}");
 }
+
+#[tokio::test]
+async fn the_trust_notice_is_no_live_region() {
+    let mut web = with_addon("verified", "available").await;
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"<div class="notice ok">"#), "{page}");
+    assert!(!page.contains(r#"<div class="notice ok" role="status">"#), "read with the page, not announced");
+}
