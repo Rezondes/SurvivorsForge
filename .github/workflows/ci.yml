@@ -61,6 +61,10 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Migration 0029 creates this role, and roles belong to the whole server: the tests migrate
+      # their databases in parallel and would race to create it.
+      - name: Create the role the test databases share
+        run: psql "$DATABASE_URL" -c "CREATE ROLE grafana_reader NOLOGIN"
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Scanner speed (release build)
