@@ -464,3 +464,16 @@ async fn only_number_columns_align_right() {
     assert!(page.contains(r#"<th>Endpoint</th><th>Quota</th><th class="num">Requests</th>"#), "quota is text");
     assert!(page.contains(r#"<td>/repositories/{id}/releases</td><td>installation:7</td><td class="num">50</td>"#));
 }
+
+#[tokio::test]
+async fn hourly_github_table_is_capped() {
+    let mut body = admin_stats_body();
+    let hours: Vec<Value> = (0..60).map(|h| json!({ "hour": format!("2026-10-{:02}T{:02}:00:00Z", 28 + h / 24, h % 24), "count": h })).collect();
+    body["github"]["per_hour"] = json!(hours);
+    let page = admin_stats_page(body).await;
+    let table = &page[page.find("<h3>GitHub requests per hour</h3>").unwrap()..];
+    let table = &table[..table.find("</section>").unwrap()];
+    assert_eq!(table.matches("<tr>").count(), 1 + 48, "head and the newest 48 hours");
+    assert!(table.contains("2026-10-30 11:00") && !table.contains("2026-10-28 00:00"), "newest first");
+    assert!(table.contains("The last 48 hours; Grafana has the rest."));
+}

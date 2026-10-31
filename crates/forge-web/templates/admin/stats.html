@@ -37,6 +37,7 @@
       </tbody>
     </table>
   </div>
+  {% if !t.note.is_empty() %}<p class="muted">{{ t.note }}</p>{% endif %}
   {% endif %}
   {% endfor %}
 </section>

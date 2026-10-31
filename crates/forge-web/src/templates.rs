@@ -501,6 +501,8 @@ pub struct StatTable {
     pub numeric: Vec<bool>,
     /// Shown instead of an empty table.
     pub empty: String,
+    /// Shown under the table, e.g. that rows were left out.
+    pub note: String,
 }
 
 #[derive(Template)]

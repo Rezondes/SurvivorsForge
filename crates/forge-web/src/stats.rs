@@ -167,7 +167,19 @@ fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec
     let rows: Vec<Vec<String>> = list.as_array().into_iter().flatten().map(cells).collect();
     // The first column names the row; any other is a number column when all its cells are numbers.
     let numeric = (0..head.len()).map(|i| i > 0 && !rows.is_empty() && rows.iter().all(|r| r.get(i).is_some_and(|c| is_number(c)))).collect();
-    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into() }
+    StatTable { title: title.into(), head: head.iter().map(|h| h.to_string()).collect(), rows, numeric, empty: empty.into(), note: String::new() }
+}
+
+/// Most hours a table lists; 30 days would be 720 rows.
+const MAX_HOURS: usize = 48;
+
+/// `t` with at most its first `MAX_HOURS` rows, and a note when some were left out.
+fn capped(mut t: StatTable) -> StatTable {
+    if t.rows.len() > MAX_HOURS {
+        t.rows.truncate(MAX_HOURS);
+        t.note = format!("The last {MAX_HOURS} hours; Grafana has the rest.");
+    }
+    t
 }
 
 /// What needs a look first: failing jobs, scans and installs, and a GitHub quota near its end.
@@ -279,9 +291,9 @@ pub async fn admin_stats(
             table("GitHub endpoints", &["Endpoint", "Quota", "Requests", "Errors"], &g["endpoints"], |x| {
                 vec![text(&x["endpoint"]), text(&x["quota"]), n(&x["count"]), n(&x["errors"])]
             }, "No GitHub requests."),
-            table("GitHub requests per hour", &["Hour (UTC)", "Requests"], &reversed(&g["per_hour"]), |x| {
+            capped(table("GitHub requests per hour", &["Hour (UTC)", "Requests"], &reversed(&g["per_hour"]), |x| {
                 vec![when(&x["hour"]).map_or_else(|| text(&x["hour"]), |t| t.format("%Y-%m-%d %H:00").to_string()), n(&x["count"])]
-            }, "No GitHub requests."),
+            }, "No GitHub requests.")),
         ]),
         group("launcher", "Launcher", vec![
             table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![text(&x["kind"]), n(&x["count"])], "No events from launchers yet."),
