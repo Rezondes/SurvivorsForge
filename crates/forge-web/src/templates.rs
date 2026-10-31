@@ -488,6 +488,8 @@ pub struct AdminIndexPage {
     pub reports: usize,
     /// The viewer may open `/admin/stats` (`ADMIN_STATS_ROLES`).
     pub stats: bool,
+    /// The viewer may open Grafana (admins).
+    pub grafana: bool,
 }
 
 /// A titled table of `/admin/stats`; the first column is text, the others are numbers.

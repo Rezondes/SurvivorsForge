@@ -93,3 +93,30 @@ async fn the_api_learns_the_client_ip() {
     let response = web.oneshot(Request::get("/addons").header("x-forwarded-for", "1.2.3.4").header("referer", WEB).body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn grafana_auth_admin_ok() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", common::me("root", "admin")).await;
+    let page = web.get("/auth/grafana").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.headers["x-grafana-user"], "root");
+}
+
+#[tokio::test]
+async fn grafana_auth_redirects_anonymous() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/auth/grafana").await;
+    assert!(page.status.is_redirection(), "{}", page.status);
+    assert_eq!(page.location(), "/login");
+    assert!(page.headers.get("x-grafana-user").is_none());
+}
+
+#[tokio::test]
+async fn grafana_auth_forbids_moderator() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", common::me("mia", "moderator")).await;
+    let page = web.get("/auth/grafana").await;
+    assert_eq!(page.status, StatusCode::FORBIDDEN, "may see the admin statistics, not Grafana");
+    assert!(page.headers.get("x-grafana-user").is_none());
+}

@@ -151,6 +151,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/list/{kind}", get(crate::admin::list_page).post(crate::admin::list_create))
         .route("/admin/list/{kind}/{key}/{action}", post(crate::admin::list_update))
         .route("/login", get(login))
+        .route("/auth/grafana", get(crate::admin::grafana_auth))
         .route("/auth/callback", get(callback))
         .route("/logout", post(logout))
         .route("/static/htmx.min.js", get(|| async { asset("text/javascript", HTMX_JS) }))

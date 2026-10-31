@@ -252,7 +252,9 @@ launcher's *Save as zip* builds the same zip on the player's computer and needs 
 `docker compose --profile monitoring up -d` adds Prometheus, Loki, Tempo, Grafana Alloy, cAdvisor,
 node-exporter and Grafana. Grafana comes as its own image (`survivorsforge-grafana`) with the data
 sources and four dashboards built in: API, Worker, Launcher and downloads, Host and containers.
-Nothing of it is published on the host.
+Nothing of it is published on the host. Grafana opens at `/grafana/` on the website: Caddy asks
+the website before every request, so only admins logged in with GitHub get in (moderators do not),
+and taking someone's admin rights ends their access at once. Grafana's own login form is off.
 
 Set `GRAFANA_DB_PASSWORD` (the read-only database role Grafana uses; the API sets it on start) and
 `GRAFANA_ADMIN_PASSWORD` first, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318` for traces.

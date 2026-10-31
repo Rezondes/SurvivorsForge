@@ -26,6 +26,18 @@ async fn admin(state: &AppState, jar: &PrivateCookieJar) -> WebResult<(Visitor, 
     Ok((user, token))
 }
 
+/// `GET /auth/grafana`, asked by Caddy's `forward_auth` before every request to `/grafana/`:
+/// `200` with `X-Grafana-User` for whoever may see Grafana, the login for nobody, `403` for the rest.
+/// Grafana trusts that header from Caddy only, so it is checked again on each request and a taken
+/// right ends access at once.
+pub async fn grafana_auth(State(state): State<AppState>, jar: PrivateCookieJar) -> WebResult<Response> {
+    let (user, _) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
+    if !user.can(Permission::ViewGrafana) {
+        return Err(WebError::Forbidden);
+    }
+    Ok(([("x-grafana-user", user.login)], axum::http::StatusCode::OK).into_response())
+}
+
 /// `?msg=` and `?error=` of a page, set by the action that redirected here.
 #[derive(Deserialize, Default)]
 pub struct Flash {
@@ -83,6 +95,7 @@ pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
     let reports = state.api.get("/v1/admin/reports", Some(&token)).await?;
     Ok(render(&AdminIndexPage {
         stats: user.can(Permission::ViewAdminStats),
+        grafana: user.can(Permission::ViewGrafana),
         user: Some(user),
         csrf: csrf.0,
         queue: queue.as_array().map(Vec::len).unwrap_or(0),

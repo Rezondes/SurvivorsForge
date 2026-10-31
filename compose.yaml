@@ -263,11 +263,27 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Behind the website at /grafana/; Caddy checks the Forge login (`/auth/grafana`) and sends
+      # the user in X-Grafana-User, which Grafana accepts from Caddy's address only.
+      GF_SERVER_ROOT_URL: ${PUBLIC_WEB_URL:-http://localhost:3080}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-Grafana-User
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_WHITELIST: ${FORGE_CADDY_IP:-10.213.17.10}
+      GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_DISABLE_SIGNOUT_MENU: "true"
+      # Everyone who passes the check is a Forge admin.
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
     volumes:
       - grafana:/var/lib/grafana
     networks:
       - monitoring
       - backend
+      # Where Caddy reaches it, from its fixed address.
+      - edge
     depends_on:
       - prometheus
       - loki
@@ -331,6 +347,20 @@ configs:
           header X-Content-Type-Options nosniff
           header Content-Disposition "attachment; filename=\"SurvivorsForge-pack.zip\""
           file_server
+        }
+        # Grafana (`--profile monitoring`). Its static files are public anyway; everything else
+        # needs a Forge login with the right to see Grafana, checked by the website on each
+        # request. Grafana takes the user name only from this header and only from Caddy.
+        handle /grafana/public/* {
+          reverse_proxy grafana:3000
+        }
+        handle /grafana* {
+          request_header -X-Grafana-User
+          forward_auth web:8080 {
+            uri /auth/grafana
+            copy_headers X-Grafana-User
+          }
+          reverse_proxy grafana:3000
         }
         handle {
           reverse_proxy web:8080 {

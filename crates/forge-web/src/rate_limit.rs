@@ -24,7 +24,9 @@ pub async fn middleware(State(limiter): State<Arc<RateLimiter>>, request: Reques
         .unwrap_or(IpAddr::from([0, 0, 0, 0]));
     let forwarded = request.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok());
     let ip = limiter.client_ip(peer, forwarded);
-    if !limiter.allow(ip, Instant::now()) {
+    // Caddy asks before each request to Grafana; a dashboard sends dozens at once.
+    let grafana_check = request.uri().path() == "/auth/grafana";
+    if !grafana_check && !limiter.allow(ip, Instant::now()) {
         return error_page(StatusCode::TOO_MANY_REQUESTS, "Slow down", "Too many requests, try again in a minute.");
     }
     CLIENT_IP.scope(ip, next.run(request)).await
