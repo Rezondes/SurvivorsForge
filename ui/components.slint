@@ -49,6 +49,8 @@ export struct AddonDetail {
     about: [AboutBlock],
     // Screenshots in the website's order; an image stays empty while it loads.
     shots: [Shot],
+    // Nothing stored yet and the platform is being asked: placeholders pulse below the summary.
+    about-loading: bool,
     // The addon has a page on the platform website.
     on-website: bool,
 }
@@ -787,6 +789,14 @@ component AddonIcon inherits Rectangle {
     }
 }
 
+// A grey surface that slowly pulses where content is still on its way, instead of a "Loading" text.
+component Placeholder inherits Rectangle {
+    accessible-role: none;
+    background: Theme.line;
+    border-radius: Theme.radius;
+    opacity: 0.45 + 0.3 * sin(animation-tick() / 1.2s * 360deg);
+}
+
 // A screenshot or description image, at most `tallest` tall; a click asks to enlarge it.
 component Picture inherits Rectangle {
     in property <image> source;
@@ -802,14 +812,9 @@ component Picture inherits Rectangle {
     clip: true;
     accessible-role: button;
     accessible-label: root.caption != "" ? "Enlarge " + root.caption : "Enlarge picture";
-    if root.source.width == 0 : Text {
+    if root.source.width == 0 : Placeholder {
         width: parent.width;
         height: parent.height;
-        text: "Loading...";
-        font-size: Theme.meta;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        color: Theme.text-muted;
     }
     Image {
         x: 1px;
@@ -1068,6 +1073,21 @@ export component DetailView inherits VerticalLayout {
             for block in root.detail.about : AboutBlockView {
                 block: block;
                 enlarge(image, caption) => { root.enlarge(image, caption); }
+            }
+            // The rest of the description is on its way: three lines of placeholder.
+            if root.detail.about-loading : VerticalLayout {
+                spacing: 8px;
+                accessible-role: text;
+                accessible-label: "Loading the description";
+                Placeholder { height: 12px; }
+                HorizontalLayout {
+                    Placeholder { height: 12px; horizontal-stretch: 9; }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    Placeholder { height: 12px; horizontal-stretch: 6; }
+                    Rectangle { horizontal-stretch: 4; }
+                }
             }
         }
         if root.detail.safety != "" : Fact {

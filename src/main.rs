@@ -52,10 +52,11 @@ struct Core {
     game_running: bool,
     /// The addon in the detail view, and whether it was opened from Browse (else Installed).
     detail: Option<(String, bool)>,
-    /// Description, icon and screenshots from the platform by addon id; `None` while fetched.
-    info: HashMap<String, Option<controller::AddonInfo>>,
-    /// Icon URLs of the platform's addons by id.
-    icons: HashMap<String, String>,
+    /// Icon URLs and detail pages the platform last showed, kept across starts in cache/platform.json.
+    platform: controller::PlatformCache,
+    /// Addon ids whose detail page is being asked for, and those asked for since this start.
+    fetching: HashSet<String>,
+    refreshed: HashSet<String>,
     /// Downloaded icons and screenshots by URL; `None` while loading or when it failed.
     pictures: HashMap<String, Option<Pixels>>,
 }
@@ -75,6 +76,7 @@ fn lock(shared: &Shared) -> MutexGuard<'_, Core> {
 impl Core {
     fn new(data_dir: PathBuf, config: Option<Config>) -> Core {
         let registry = registry::load(None, &data_dir.join("cache")).0;
+        let platform = controller::PlatformCache::load(&data_dir.join("cache"));
         let mut core = Core {
             data_dir,
             config: Config::default(),
@@ -97,8 +99,9 @@ impl Core {
             pack_busy: false,
             game_running: false,
             detail: None,
-            info: HashMap::new(),
-            icons: HashMap::new(),
+            platform,
+            fetching: HashSet::new(),
+            refreshed: HashSet::new(),
             pictures: HashMap::new(),
         };
         if let Some(config) = config {
@@ -132,6 +135,10 @@ impl Core {
     /// A platform client; it carries the installation ID when the user allows it.
     fn client(&self) -> Client {
         Client::new().with_install_id(telemetry::install_header(&self.config))
+    }
+
+    fn save_platform(&self) {
+        let _ = self.platform.save(&self.data_dir.join("cache"));
     }
 
     fn api_url(&self) -> String {
@@ -203,7 +210,7 @@ fn picture(core: &Core, url: Option<&str>) -> slint::Image {
 /// The icon of the platform addon `id` (an installed entry or a Browse row).
 fn icon(core: &Core, id: &str) -> slint::Image {
     let slug = registry_entry(core, id).map_or(id, |a| a.id.as_str());
-    picture(core, core.icons.get(slug).map(String::as_str))
+    picture(core, core.platform.icons.get(slug).map(String::as_str))
 }
 
 fn installed_row(row: &Row, core: &Core) -> AddonRow {
@@ -298,13 +305,14 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         row.version = controller::display_version(&latest.tag).into();
     }
     let facts = controller::details(entry, &core.registry, &folders);
-    let info = entry.and_then(|a| core.info.get(&a.id));
-    let loaded = info.cloned().flatten().unwrap_or_default();
+    // What was stored shows at once; only without it does the page wait for the platform.
+    let loaded = entry.and_then(|a| core.platform.info.get(&a.id)).cloned();
+    let about_loading = loaded.is_none() && entry.is_some_and(|a| core.fetching.contains(&a.id));
+    let loaded = loaded.unwrap_or_default();
     let base = loaded.image_origin().unwrap_or_default();
     let mut about: Vec<AboutBlock> = forge_core::markdown::blocks(&loaded.about, &base).into_iter().map(|b| about_block(core, b)).collect();
     if about.is_empty() {
-        let loading = if matches!(info, Some(None)) { "\n\nLoading the full description..." } else { "" };
-        about.push(about_block(core, forge_core::markdown::Block::Paragraph(format!("{}{loading}", row.description))));
+        about.push(about_block(core, forge_core::markdown::Block::Paragraph(row.description.to_string())));
     }
     let shots: Vec<Shot> = loaded.shots.iter().map(|(url, caption)| Shot { image: picture(core, Some(url)), caption: caption.into() }).collect();
     Some(AddonDetail {
@@ -316,6 +324,7 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         needs: facts.needs.into(),
         about: ModelRc::new(VecModel::from(about)),
         shots: ModelRc::new(VecModel::from(shots)),
+        about_loading,
         on_website: entry.is_some(),
     })
 }
@@ -374,6 +383,9 @@ fn fetch_icons(ui: &AppWindow, shared: &Shared) {
     };
     let (weak, shared) = (ui.as_weak(), shared.clone());
     std::thread::spawn(move || {
+        // The icons of the last start come from the disk first, also offline.
+        let stored: Vec<String> = lock(&shared).platform.icons.values().cloned().collect();
+        load_pictures(&weak, &shared, &client, stored, ICON_EDGE);
         let mut icons = Vec::new();
         // ponytail: at most 20 pages of 50 addons; more pages when the platform grows past 1000.
         for page in 1..=20 {
@@ -383,52 +395,77 @@ fn fetch_icons(ui: &AppWindow, shared: &Shared) {
                 break;
             }
         }
+        if icons.is_empty() {
+            return;
+        }
         let urls = icons.iter().map(|(_, url)| url.clone()).collect();
-        lock(&shared).icons.extend(icons);
+        {
+            let mut core = lock(&shared);
+            core.platform.icons.extend(icons);
+            core.save_platform();
+        }
         load_pictures(&weak, &shared, &client, urls, ICON_EDGE);
     });
 }
 
-/// Opens the detail view of a row and fetches its description, icon and screenshots once.
+/// The pictures of a detail page: icon, screenshots and the images of the description.
+fn detail_pictures(info: &controller::AddonInfo) -> (Vec<String>, Vec<String>) {
+    let base = info.image_origin().unwrap_or_default();
+    let mut shots: Vec<String> = info.shots.iter().map(|(url, _)| url.clone()).collect();
+    shots.extend(forge_core::markdown::blocks(&info.about, &base).into_iter().filter_map(|b| match b {
+        forge_core::markdown::Block::Image { url, .. } => Some(url),
+        _ => None,
+    }));
+    (info.icon.clone().into_iter().collect(), shots)
+}
+
+/// Opens the detail view of a row. What was stored shows at once, its pictures from the disk; the
+/// platform is asked once per start in the background and replaces it when it answers.
 fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
-    let fetch = {
+    let job = {
         let mut core = lock(shared);
         core.detail = Some((id.clone(), ui.get_page() == 1));
-        match registry_entry(&core, &id).map(|a| a.id.clone()) {
-            Some(rid) if !core.info.contains_key(&rid) => {
-                core.info.insert(rid.clone(), None);
-                Some((rid, core.client(), core.api_url()))
-            }
-            _ => None,
-        }
+        registry_entry(&core, &id).map(|a| a.id.clone()).map(|rid| {
+            let ask = !core.refreshed.contains(&rid) && core.fetching.insert(rid.clone());
+            (core.platform.info.get(&rid).cloned(), ask.then(|| (core.client(), core.api_url())), rid)
+        })
     };
     refresh(ui, shared);
     ui.set_detail_page(ui.get_page());
-    if let Some((rid, client, api)) = fetch {
-        let (weak, shared) = (ui.as_weak(), shared.clone());
-        std::thread::spawn(move || {
-            // Offline or without a description the summary stays; the next start asks again.
-            let info = client.get_text(&format!("{api}/v1/addons/{rid}")).ok().and_then(|t| controller::addon_info(&t)).unwrap_or_default();
-            let base = info.image_origin().unwrap_or_default();
-            let mut shots: Vec<String> = info.shots.iter().map(|(url, _)| url.clone()).collect();
-            shots.extend(forge_core::markdown::blocks(&info.about, &base).into_iter().filter_map(|b| match b {
-                forge_core::markdown::Block::Image { url, .. } => Some(url),
-                _ => None,
-            }));
-            let icon = info.icon.clone();
-            {
-                let mut core = lock(&shared);
-                if let Some(icon) = &icon {
-                    core.icons.insert(rid.clone(), icon.clone());
-                }
-                core.info.insert(rid, Some(info));
-            }
-            let redraw = shared.clone();
-            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
-            load_pictures(&weak, &shared, &client, icon.into_iter().collect(), ICON_EDGE);
+    let Some((stored, ask, rid)) = job else { return };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    let client = ask.as_ref().map_or_else(|| lock(&shared).client(), |(c, _)| c.clone());
+    std::thread::spawn(move || {
+        if let Some(stored) = &stored {
+            let (icon, shots) = detail_pictures(stored);
+            load_pictures(&weak, &shared, &client, icon, ICON_EDGE);
             load_pictures(&weak, &shared, &client, shots, SHOT_EDGE);
-        });
-    }
+        }
+        let Some((_, api)) = ask else { return };
+        // Offline the stored page stays (or the summary without one); the next start asks again.
+        let fresh = client.get_text(&format!("{api}/v1/addons/{rid}")).ok().and_then(|t| controller::addon_info(&t));
+        {
+            let mut core = lock(&shared);
+            core.fetching.remove(&rid);
+            if let Some(info) = &fresh {
+                core.refreshed.insert(rid.clone());
+                if core.platform.info.get(&rid) != Some(info) {
+                    if let Some(icon) = &info.icon {
+                        core.platform.icons.insert(rid.clone(), icon.clone());
+                    }
+                    core.platform.info.insert(rid.clone(), info.clone());
+                    core.save_platform();
+                }
+            }
+        }
+        let redraw = shared.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+        if let Some(info) = fresh {
+            let (icon, shots) = detail_pictures(&info);
+            load_pictures(&weak, &shared, &client, icon, ICON_EDGE);
+            load_pictures(&weak, &shared, &client, shots, SHOT_EDGE);
+        }
+    });
 }
 
 fn refresh(ui: &AppWindow, shared: &Shared) {

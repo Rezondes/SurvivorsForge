@@ -442,7 +442,7 @@ pub fn icon_page(json: &str) -> Option<(Vec<(String, String)>, bool)> {
 }
 
 /// What the launcher shows of an addon's page on the platform (`/v1/addons/{slug}`).
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AddonInfo {
     /// The long description as Markdown.
     pub about: String,
@@ -469,6 +469,28 @@ pub fn addon_info(json: &str) -> Option<AddonInfo> {
         icon: v["icon_url"].as_str().map(str::to_string),
         shots: v["images"].as_array().into_iter().flatten().filter(|i| i["url"].is_string()).map(|i| (text(&i["url"]), text(&i["caption"]))).collect(),
     })
+}
+
+/// What the platform last showed, kept across starts: icon URLs and the detail pages by addon id.
+/// The pictures themselves sit in `cache/images`; with this the launcher finds them offline too.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlatformCache {
+    pub icons: HashMap<String, String>,
+    pub info: HashMap<String, AddonInfo>,
+}
+
+impl PlatformCache {
+    const FILE: &'static str = "platform.json";
+
+    /// The stored cache in `dir`; empty when there is none or it cannot be read.
+    pub fn load(dir: &std::path::Path) -> PlatformCache {
+        std::fs::read(dir.join(Self::FILE)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    pub fn save(&self, dir: &std::path::Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        crate::write_atomic(&dir.join(Self::FILE), &serde_json::to_vec(self).expect("cache serializes"))
+    }
 }
 
 /// The website's pack builder with `ids` ticked.
@@ -578,6 +600,19 @@ mod tests {
         assert!(more, "51 addons do not fit on one page of 50");
         assert!(!icon_page(r#"{"total": 2, "page": 1, "per_page": 50, "addons": []}"#).unwrap().1);
         assert!(icon_page("not json").is_none());
+    }
+
+    #[test]
+    fn what_the_platform_showed_survives_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(PlatformCache::load(dir.path()), PlatformCache::default(), "nothing stored yet");
+        let mut cache = PlatformCache::default();
+        cache.icons.insert("lucky".into(), "https://forge.test/img/i.webp".into());
+        cache.info.insert("lucky".into(), AddonInfo { about: "# Hi".into(), icon: None, shots: vec![("https://forge.test/img/1.webp".into(), "Bars".into())] });
+        cache.save(dir.path()).unwrap();
+        assert_eq!(PlatformCache::load(dir.path()), cache);
+        std::fs::write(dir.path().join("platform.json"), "not json").unwrap();
+        assert_eq!(PlatformCache::load(dir.path()), PlatformCache::default(), "a broken file is as good as none");
     }
 
     #[test]
