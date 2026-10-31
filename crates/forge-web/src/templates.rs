@@ -154,11 +154,23 @@ pub struct AddonsPage {
 }
 
 pub struct FindingRow {
+    /// `critical`, `warn`, `notice` or `info`, as the scanner names it.
     pub severity: String,
     pub rule: String,
     pub place: String,
     pub message: String,
     pub snippet: String,
+}
+
+impl FindingRow {
+    /// The severity in words for visitors: `Critical`, `Warning`, `Note`.
+    pub fn label(&self) -> &'static str {
+        match self.severity.as_str() {
+            "critical" => "Critical",
+            "warn" => "Warning",
+            _ => "Note",
+        }
+    }
 }
 
 pub struct VersionRow {

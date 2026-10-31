@@ -681,7 +681,6 @@ async fn a_failed_update_check_says_so() {
     assert!(page.body.contains("last success <time datetime=\"2026-10-29T05:30:00+00:00\">"));
 }
 
-#[tokio::test]
 /// A verified version whose scan still reported a spot, as BordoUI.
 async fn verified_with_findings() -> TestWeb {
     let web = TestWeb::new().await;
@@ -733,4 +732,13 @@ async fn only_warnings_and_worse_look_alarming() {
     let page = web.get("/addons/lucky").await.body;
     assert!(page.contains(r#"<span class="badge bad">"#) && page.contains(r#"<span class="badge warn">"#), "{page}");
     assert!(page.contains(r#"<span class="badge">"#), "a note stays neutral");
+}
+
+#[tokio::test]
+async fn severities_read_as_words() {
+    let mut web = three_severities().await;
+    let page = web.get("/addons/lucky").await.body;
+    for label in [r#"<span class="badge bad">Critical</span>"#, r#"<span class="badge warn">Warning</span>"#, r#"<span class="badge">Note</span>"#] {
+        assert!(page.contains(label), "missing {label}: {page}");
+    }
 }
