@@ -488,3 +488,10 @@ async fn grafana_is_linked_for_those_who_may_open_it() {
     Mock::given(method("GET")).and(path("/v1/admin/stats")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
     assert!(!web.get("/admin/stats").await.body.contains("Grafana"), "moderators cannot go there");
 }
+
+#[tokio::test]
+async fn range_switch_is_big_enough_to_tap() {
+    let mut web = TestWeb::new().await;
+    let css = web.get("/static/app.css").await.body;
+    assert!(css.contains(".range-toggle a { min-height: 44px;"), "a 44 px target on phones");
+}

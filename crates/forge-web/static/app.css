@@ -406,6 +406,7 @@ input.narrow { width: 6em; flex: none; }
   .hero { padding: 24px 0; }
   .hero h1 { font-size: 1.6rem; }
   .top nav > a:not(.button) { padding: 8px 12px; font-size: var(--body); }
+  .range-toggle a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; font-size: var(--body); }
   /* Leave the list as much room as possible: filters side by side, no footer under it */
   .search .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .search .filters > div { min-width: 0; }
