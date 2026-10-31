@@ -6,21 +6,26 @@
   <h1>Statistics</h1>
   <nav class="range-toggle" aria-label="Time range">
     {% for (key, label) in [("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days")] %}
-    <a href="/admin/stats?range={{ key }}"{% if range.as_str() == *key %} aria-current="page"{% endif %}>{{ label }}</a>
+    <a href="{% if section == "overview" %}/admin/stats{% else %}/admin/stats/{{ section }}{% endif %}?range={{ key }}"{% if range.as_str() == *key %} aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
 </div>
 {% if !since.is_empty() %}<p class="muted">Since {{ since }}. Numbers marked <em>now</em> show the present state.</p>{% endif %}
+<nav class="subnav" aria-label="Parts">
+  {% for (id, title) in self.tabs() %}<a href="{{ self.href(id) }}"{% if section == *id %} aria-current="page"{% endif %}>{{ title }}</a>{% endfor %}
+</nav>
 {% if !attention.is_empty() %}
 <section class="notice bad home-section" role="status">
   <h2>Needs attention</h2>
   <ul>{% for a in attention %}<li>{{ a }}</li>{% endfor %}</ul>
 </section>
 {% endif %}
-{% let items = totals %}{% include "stats_list.html" %}
-<nav class="subnav" aria-label="Sections">
-  {% for g in groups %}<a href="#{{ g.id }}">{{ g.title }}</a>{% endfor %}
-</nav>
+{% for p in summaries %}
+<section class="home-section">
+  <div class="title-row"><h2>{{ p.title }}</h2><a href="{{ self.href(p.id) }}">All {{ p.title }} numbers</a></div>
+  {% let items = p.stats %}{% include "stats_list.html" %}
+</section>
+{% endfor %}
 {% for g in groups %}
 <section class="home-section">
   <h2 id="{{ g.id }}">{{ g.title }}</h2>

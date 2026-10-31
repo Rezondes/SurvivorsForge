@@ -97,3 +97,20 @@ async fn permission_from_config(pool: PgPool) {
     let moderator = both.login(7, "mia").await;
     assert_eq!(both.get("/v1/admin/stats", Some(&moderator)).await.status, StatusCode::OK, "only the configuration changed");
 }
+
+#[sqlx::test]
+async fn sections_send_only_their_part(pool: PgPool) {
+    let (app, admin, _) = setup(pool, vec![Role::Admin]).await;
+    let keys = |v: serde_json::Value| -> Vec<String> {
+        let mut k: Vec<String> = v.as_object().unwrap().keys().filter(|k| *k != "since" && *k != "section").cloned().collect();
+        k.sort();
+        k
+    };
+    let overview = app.get("/v1/admin/stats?range=7d", Some(&admin)).await.json();
+    assert_eq!(keys(overview.clone()), ["github", "jobs", "requests", "scans", "telemetry", "website"]);
+    assert_eq!(overview["section"], "overview");
+    assert_eq!(keys(app.get("/v1/admin/stats?section=github", Some(&admin)).await.json()), ["github"]);
+    assert_eq!(keys(app.get("/v1/admin/stats?section=jobs", Some(&admin)).await.json()), ["jobs", "scans"]);
+    assert_eq!(keys(app.get("/v1/admin/stats?section=website", Some(&admin)).await.json()), ["website"]);
+    assert_eq!(app.get("/v1/admin/stats?section=secrets", Some(&admin)).await.error(), "invalid_section");
+}

@@ -404,8 +404,13 @@ async fn stats_range_switch() {
     let mut web = TestWeb::new().await;
     web.login_as("tok", me("mia", "moderator")).await;
     Mock::given(method("GET")).and(path("/v1/admin/stats")).and(query_param("range", "7d")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
-    let page = web.get("/admin/stats?range=7d").await;
-    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    let mut body = String::new();
+    for part in ["", "/website", "/api", "/jobs", "/github", "/launcher"] {
+        let page = web.get(&format!("/admin/stats{part}?range=7d")).await;
+        assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+        body.push_str(&page.body);
+    }
+    let page = common::Page { status: StatusCode::OK, headers: Default::default(), body };
     for text in ["1,234", "GET /v1/registry", "GitHub down", "4,321 of 5,000", "/addons/lucky", "reddit.com", "steam", "Read token (core)", "job sync_addon", "/repositories/{id}/releases", "2026-10-31 10:00", "No failed installs.", r#"<a href="/admin/stats?range=7d" aria-current="page">7 days</a>"#] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
@@ -414,11 +419,18 @@ async fn stats_range_switch() {
     assert!(web.get("/admin").await.body.contains(r#"href="/admin/stats""#), "linked for moderators by default");
 }
 
+/// The overview and the five part pages, one after the other.
 async fn admin_stats_page(body: Value) -> String {
     let mut web = TestWeb::new().await;
     web.login_as("tok", me("root", "admin")).await;
     Mock::given(method("GET")).and(path("/v1/admin/stats")).respond_with(ResponseTemplate::new(200).set_body_json(body)).mount(&web.api).await;
-    web.get("/admin/stats").await.body
+    let mut pages = String::new();
+    for page in ["/admin/stats", "/admin/stats/website", "/admin/stats/api", "/admin/stats/jobs", "/admin/stats/github", "/admin/stats/launcher"] {
+        let reply = web.get(page).await;
+        assert_eq!(reply.status, StatusCode::OK, "{page}");
+        pages.push_str(&reply.body);
+    }
+    pages
 }
 
 #[tokio::test]
@@ -433,9 +445,10 @@ async fn problems_come_first_and_sections_are_grouped() {
         let at = page.find(text).unwrap_or_else(|| panic!("missing {text}: {page}"));
         assert!(at > attention && at < page.find(r#"id="website""#).unwrap(), "{text} sits in the block at the top");
     }
-    for (anchor, title) in [("website", "Website"), ("api", "API"), ("jobs", "Jobs and scans"), ("github", "GitHub"), ("launcher", "Launcher")] {
-        assert!(page.contains(&format!(r##"<a href="#{anchor}">{title}</a>"##)), "jump link {anchor}");
-        assert!(page.contains(&format!(r#"<h2 id="{anchor}">{title}</h2>"#)), "group {anchor}");
+    for (part, title) in [("website", "Website"), ("api", "API"), ("jobs", "Jobs and scans"), ("github", "GitHub"), ("launcher", "Launcher")] {
+        assert!(page.contains(&format!(r#"<a href="/admin/stats/{part}?range=24h">{title}</a>"#)), "tab {part}");
+        assert!(page.contains(&format!(r#"<a href="/admin/stats/{part}?range=24h">All {title} numbers</a>"#)), "overview links {part}");
+        assert!(page.contains(&format!(r#"<h2 id="{part}">{title}</h2>"#)), "page {part}");
     }
     assert!(page.contains("<h3>Busiest routes</h3>"), "tables under their group");
 }
@@ -538,4 +551,17 @@ async fn visits_are_called_visits_everywhere() {
     let page = admin_stats_page(admin_stats_body()).await;
     assert!(page.contains(r#"<th class="num">Visits</th>"#), "{page}");
     assert!(!page.contains("Visitors"), "the public page says visits too");
+}
+
+#[tokio::test]
+async fn parts_are_pages_of_their_own() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("root", "admin")).await;
+    Mock::given(method("GET")).and(path("/v1/admin/stats")).and(query_param("section", "github")).and(query_param("range", "7d"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).expect(1).mount(&web.api).await;
+    let page = web.get("/admin/stats/github?range=7d").await.body;
+    assert!(page.contains(r#"<a href="/admin/stats/github?range=7d" aria-current="page">GitHub</a>"#), "{page}");
+    assert!(page.contains(r#"<a href="/admin/stats/github?range=30d">30 days</a>"#), "the range stays on the part");
+    assert!(!page.contains("Busiest routes") && !page.contains("Needs attention"), "only its own part");
+    assert_eq!(web.get("/admin/stats/secrets").await.status, StatusCode::NOT_FOUND);
 }

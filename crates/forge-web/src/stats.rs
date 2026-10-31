@@ -4,7 +4,7 @@ use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
 use crate::error::{WebError, WebResult};
 use crate::public::grouped;
-use crate::templates::{AdminStatsPage, Permission, StatGroup, StatTable, StatsPage, render};
+use crate::templates::{AdminStatsPage, Permission, StatGroup, StatSummary, StatTable, StatsPage, render};
 use axum::Extension;
 use axum::extract::State;
 use axum::response::Html;
@@ -241,13 +241,32 @@ fn text(v: &Value) -> String {
     }
 }
 
-/// `/admin/stats`: requests, jobs, scans and launcher events of the last 24 hours, 7 or 30 days.
+/// The parts of `/admin/stats`: (path segment, tab title). The overview has no segment.
+pub const SECTIONS: [(&str, &str); 6] = [("overview", "Overview"), ("website", "Website"), ("api", "API"), ("jobs", "Jobs and scans"), ("github", "GitHub"), ("launcher", "Launcher")];
+
+/// `/admin/stats`: what needs attention and a few numbers per part, each linking to its page.
 pub async fn admin_stats(
     State(state): State<AppState>,
     jar: PrivateCookieJar,
     Extension(csrf): Extension<CsrfToken>,
     axum::extract::Query(q): axum::extract::Query<RangeQuery>,
 ) -> WebResult<Html<String>> {
+    stats_page(state, jar, csrf, q, "overview").await
+}
+
+/// `/admin/stats/{section}`: the tables of one part.
+pub async fn admin_stats_section(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    axum::extract::Path(section): axum::extract::Path<String>,
+    axum::extract::Query(q): axum::extract::Query<RangeQuery>,
+) -> WebResult<Html<String>> {
+    let section = SECTIONS.iter().map(|(id, _)| *id).find(|id| *id == section && *id != "overview").ok_or(WebError::NotFound)?;
+    stats_page(state, jar, csrf, q, section).await
+}
+
+async fn stats_page(state: AppState, jar: PrivateCookieJar, csrf: CsrfToken, q: RangeQuery, section: &'static str) -> WebResult<Html<String>> {
     let (user, token) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
     if !user.can(Permission::ViewAdminStats) {
         return Err(WebError::Forbidden);
@@ -256,20 +275,20 @@ pub async fn admin_stats(
         Some(r @ ("24h" | "7d" | "30d")) => r.to_string(),
         _ => "24h".into(),
     };
-    let s = state.api.get(&format!("/v1/admin/stats?range={range}"), Some(&token)).await?;
+    let s = state.api.get(&format!("/v1/admin/stats?range={range}&section={section}"), Some(&token)).await?;
     let (r, sc) = (&s["requests"], &s["scans"]);
     let (g, now) = (&s["github"], Utc::now());
     let left = g["quotas"].as_array().into_iter().flatten().find(|q| q["quota"] == "read_token" || q["quota"] == "anonymous");
     let github = left.map_or_else(|| "unknown".into(), |q| format!("{} of {}", n(&q["remaining"]), n(&q["limit"])));
-    let totals = vec![
-        stat(n(&r["total"]), "API requests"),
-        stat(n(&r["rate_limited"]), "turned away by the rate limit"),
-        stat(n(&sc["scans"]), "scans"),
-        stat(n(&sc["flagged"]), "scans with findings"),
-        stat(n(&sc["errors"]), "scans that failed"),
-        stat(n(&sc["blocked_versions"]), "versions blocked"),
-        stat(github, "public GitHub requests left now"),
-        stat(n(&g["total"]), "GitHub requests"),
+    let sum = |list: &Value, key: &str| list.as_array().into_iter().flatten().map(|x| x[key].as_i64().unwrap_or(0)).sum::<i64>();
+    let launcher_failed: i64 = s["telemetry"]["kinds"].as_array().into_iter().flatten().filter(|k| k["kind"].as_str().is_some_and(|k| k.ends_with("_failed"))).map(|k| k["count"].as_i64().unwrap_or(0)).sum();
+    let summary = |id: &'static str, stats: Vec<Stat>| StatSummary { id, title: SECTIONS.iter().find(|(s, _)| *s == id).map_or(id, |(_, t)| *t), stats };
+    let summaries = vec![
+        summary("website", vec![stat(n(&s["website"]["visits"]), "visits"), stat(n(&s["website"]["views"]), "pages viewed")]),
+        summary("api", vec![stat(n(&r["total"]), "API requests"), stat(n(&r["rate_limited"]), "turned away by the rate limit")]),
+        summary("jobs", vec![stat(grouped(sum(&s["jobs"], "failed")), "failed job runs"), stat(n(&sc["scans"]), "scans"), stat(n(&sc["errors"]), "scans that failed")]),
+        summary("github", vec![stat(n(&g["total"]), "GitHub requests"), stat(github, "public GitHub requests left now")]),
+        summary("launcher", vec![stat(grouped(sum(&s["telemetry"]["kinds"], "count")), "launcher events"), stat(grouped(launcher_failed), "failed installs and updates")]),
     ];
     let t = &s["telemetry"];
     let w = &s["website"];
@@ -335,10 +354,12 @@ pub async fn admin_stats(
             table("Launcher versions", &["Version", "Events"], &t["launcher_versions"], |x| vec![text(&x["version"]), n(&x["count"])], "No events from launchers yet."),
         ]),
     ];
-    let attention = attention(&s, now);
+    let groups: Vec<StatGroup> = groups.into_iter().filter(|g| g.id == section).collect();
+    let attention = if section == "overview" { attention(&s, now) } else { Vec::new() };
+    let summaries = if section == "overview" { summaries } else { Vec::new() };
     let since = when(&s["since"]).map_or_else(String::new, |t| t.format("%Y-%m-%d %H:%M UTC").to_string());
     let grafana = user.can(Permission::ViewGrafana);
-    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, grafana, range, since, totals, attention, groups }))
+    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, grafana, section, range, since, summaries, attention, groups }))
 }
 
 #[cfg(test)]

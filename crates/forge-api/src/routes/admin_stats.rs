@@ -1,5 +1,6 @@
-//! `GET /v1/admin/stats?range=24h|7d|30d`: the detailed numbers of `/admin/stats` for everyone
-//! whose role is in `ADMIN_STATS_ROLES`.
+//! `GET /v1/admin/stats?range=24h|7d|30d&section=…`: the detailed numbers of `/admin/stats` for
+//! everyone whose role is in `ADMIN_STATS_ROLES`. `section` is `overview` (the default: all parts,
+//! without asking GitHub), `website`, `api`, `jobs`, `github` or `launcher`; each sends only its part.
 
 use crate::app::AppState;
 use crate::auth::StatsViewer;
@@ -15,6 +16,8 @@ use serde_json::{Value, json};
 pub struct Range {
     #[serde(default)]
     range: Option<String>,
+    #[serde(default)]
+    section: Option<String>,
 }
 
 fn span(range: Option<&str>) -> ApiResult<TimeDelta> {
@@ -22,15 +25,37 @@ fn span(range: Option<&str>) -> ApiResult<TimeDelta> {
         "24h" => Ok(TimeDelta::hours(24)),
         "7d" => Ok(TimeDelta::days(7)),
         "30d" => Ok(TimeDelta::days(30)),
-        _ => Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_range", "range is 24h, 7d or 30d")),
+        _ => Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_range",
+            "range is 24h, 7d or 30d",
+        )),
     }
 }
 
-pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Query(q): Query<Range>) -> ApiResult<Json<Value>> {
+pub async fn stats(
+    State(state): State<AppState>,
+    StatsViewer(_): StatsViewer,
+    Query(q): Query<Range>,
+) -> ApiResult<Json<Value>> {
     let now = (state.clock)();
     let since = now - span(q.range.as_deref())?;
+    let section = q.section.as_deref().unwrap_or("overview");
+    if !matches!(
+        section,
+        "overview" | "website" | "api" | "jobs" | "github" | "launcher"
+    ) {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_section",
+            "section is overview, website, api, jobs, github or launcher",
+        ));
+    }
+    let wants = |part: &str| section == "overview" || section == part;
     let pool = &state.pool;
-    let requests: Value = sqlx::query_scalar(
+    let mut answer = json!({ "since": since, "section": section });
+    if wants("api") {
+        answer["requests"] = sqlx::query_scalar(
         "WITH r AS (SELECT * FROM api_request_stats WHERE hour >= date_trunc('hour', $1::timestamptz))
          SELECT json_build_object(
              'total', (SELECT coalesce(sum(count), 0) FROM r),
@@ -48,7 +73,9 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    let jobs: Value = sqlx::query_scalar(
+    }
+    if wants("jobs") {
+        answer["jobs"] = sqlx::query_scalar(
         "SELECT coalesce(json_agg(json_build_object('kind', kind, 'open', open, 'running', running, 'done', done, 'failed', failed, 'last_error', last_error) ORDER BY kind), '[]')
          FROM (SELECT kind,
                       count(*) FILTER (WHERE done_at IS NULL AND failed_at IS NULL AND (locked_until IS NULL OR locked_until < $2)) AS open,
@@ -62,7 +89,7 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(now)
     .fetch_one(pool)
     .await?;
-    let scans: Value = sqlx::query_scalar(
+        answer["scans"] = sqlx::query_scalar(
         "SELECT json_build_object(
              'scans', (SELECT count(*) FROM scans WHERE finished_at >= $1),
              'flagged', (SELECT count(*) FROM scans WHERE finished_at >= $1 AND result = 'flagged'),
@@ -73,7 +100,9 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    let telemetry: Value = sqlx::query_scalar(
+    }
+    if wants("launcher") {
+        answer["telemetry"] = sqlx::query_scalar(
         "WITH e AS (SELECT * FROM telemetry_events WHERE created_at >= $1)
          SELECT json_build_object(
              'kinds', (SELECT coalesce(json_agg(json_build_object('kind', kind, 'count', n) ORDER BY kind), '[]')
@@ -91,13 +120,17 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    // Asks GitHub for the public quota (free of charge) and writes what this process counted, so
-    // the numbers below are current.
-    if let Err(e) = state.github.rate_limit().await {
-        tracing::warn!(error = %e, "cannot read the GitHub rate limit");
     }
-    crate::github::usage::USAGE.flush(pool).await?;
-    let github: Value = sqlx::query_scalar(
+    if section == "github" {
+        // Asks GitHub for the public quota (free of charge) and writes what this process counted,
+        // so the numbers below are current; the overview takes the stored ones.
+        if let Err(e) = state.github.rate_limit().await {
+            tracing::warn!(error = %e, "cannot read the GitHub rate limit");
+        }
+        crate::github::usage::USAGE.flush(pool).await?;
+    }
+    if wants("github") {
+        answer["github"] = sqlx::query_scalar(
         "WITH g AS (SELECT * FROM github_request_stats WHERE hour >= date_trunc('hour', $1::timestamptz))
          SELECT json_build_object(
              'quotas', (SELECT coalesce(json_agg(json_build_object('quota', quota, 'resource', resource, 'limit', \"limit\", 'used', used,
@@ -117,9 +150,13 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    let website: Value = sqlx::query_scalar(
+    }
+    if wants("website") {
+        answer["website"] = sqlx::query_scalar(
         "WITH w AS (SELECT * FROM web_counts WHERE day >= ($1::timestamptz)::date)
          SELECT json_build_object(
+             'views', (SELECT coalesce(sum(views), 0) FROM w WHERE kind = 'site'),
+             'visits', (SELECT coalesce(sum(visitors), 0) FROM w WHERE kind = 'site'),
              'per_day', (SELECT coalesce(json_agg(json_build_object('day', day, 'views', views, 'visitors', visitors) ORDER BY day), '[]') FROM w WHERE kind = 'site'),
              'pages', (SELECT coalesce(json_agg(json_build_object('page', value, 'views', v, 'visitors', u) ORDER BY v DESC, value), '[]')
                        FROM (SELECT value, sum(views) AS v, sum(visitors) AS u FROM w WHERE kind = 'page' GROUP BY value ORDER BY v DESC, value LIMIT 20) p),
@@ -136,5 +173,6 @@ pub async fn stats(State(state): State<AppState>, StatsViewer(_): StatsViewer, Q
     .bind(since)
     .fetch_one(pool)
     .await?;
-    Ok(Json(json!({ "since": since, "website": website, "requests": requests, "jobs": jobs, "scans": scans, "telemetry": telemetry, "github": github })))
+    }
+    Ok(Json(answer))
 }

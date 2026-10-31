@@ -520,7 +520,10 @@ pub struct AdminStatsPage {
     pub since: String,
     /// The viewer may open Grafana.
     pub grafana: bool,
-    pub totals: Vec<crate::stats::Stat>,
+    /// `overview` or the part shown (`crate::stats::SECTIONS`).
+    pub section: &'static str,
+    /// The overview's few numbers per part.
+    pub summaries: Vec<StatSummary>,
     /// Problems shown first; empty when all is well.
     pub attention: Vec<String>,
     pub groups: Vec<StatGroup>,
@@ -533,7 +536,26 @@ impl StatTable {
     }
 }
 
-/// A section of `/admin/stats` with its jump anchor.
+impl AdminStatsPage {
+    /// The address of `section` in the current range.
+    pub fn href(&self, section: &str) -> String {
+        let path = if section == "overview" { "/admin/stats".to_string() } else { format!("/admin/stats/{section}") };
+        format!("{path}?range={}", self.range)
+    }
+
+    pub fn tabs(&self) -> &'static [(&'static str, &'static str)] {
+        &crate::stats::SECTIONS
+    }
+}
+
+/// A part of `/admin/stats` on the overview: a few numbers and the link to its page.
+pub struct StatSummary {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub stats: Vec<crate::stats::Stat>,
+}
+
+/// A part of `/admin/stats` with its tables.
 pub struct StatGroup {
     pub id: &'static str,
     pub title: &'static str,
