@@ -56,6 +56,18 @@ struct Core {
     /// The game's exe as last hashed.
     game_exe: Option<ExeSeen>,
     game_updating: bool,
+    /// What the running game update says on the launch button, and how full its bar is.
+    game_step: Option<(String, f32)>,
+    /// Said under the launch button after an update, until the next check.
+    game_note: String,
+    /// Where each running install or update stands.
+    progress: HashMap<String, controller::Progress>,
+    /// How each install or update since the last check ended: (text, failed).
+    outcomes: HashMap<String, (String, bool)>,
+    /// Redraws the window from any thread; set once the window exists.
+    repaint: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// When progress last redrew the window, so a fast download does not redraw it for every read.
+    painted: Option<std::time::Instant>,
     /// The addon in the detail view, and whether it was opened from Browse (else Installed).
     detail: Option<(String, bool)>,
     /// Icon URLs and detail pages the platform last showed, kept across starts in cache/platform.json.
@@ -108,6 +120,12 @@ impl Core {
             game_plan: None,
             game_exe: None,
             game_updating: false,
+            game_step: None,
+            game_note: String::new(),
+            progress: HashMap::new(),
+            outcomes: HashMap::new(),
+            repaint: None,
+            painted: None,
             detail: None,
             platform,
             fetching: HashSet::new(),
@@ -239,6 +257,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         _ if row.out_of_date => "Interface is not 11200: enable \"Load out of date AddOns\" in the game".into(),
         _ => String::new(),
     };
+    let (status, kind, progress) = row_progress(core, &row.id).unwrap_or((status, kind, -1.0));
     AddonRow {
         id: row.id.clone().into(),
         name: row.name.clone().into(),
@@ -250,6 +269,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         description: row.description.clone().into(),
         status: status.into(),
         status_kind: kind,
+        progress,
         action: action.into(),
         busy: core.busy.contains(&row.id),
         can_remove: true,
@@ -260,7 +280,25 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
     }
 }
 
+/// A running install's step, else how the last one ended: (status, status kind, bar or `-1`).
+fn row_progress(core: &Core, id: &str) -> Option<(String, i32, f32)> {
+    if let Some(progress) = core.progress.get(id) {
+        let (text, bar) = controller::progress_label(*progress);
+        return Some((text, 0, bar));
+    }
+    if core.busy.contains(id) {
+        return Some(("Working...".into(), 0, -1.0));
+    }
+    core.outcomes.get(id).map(|(text, failed)| (text.clone(), if *failed { 3 } else { 1 }, -1.0))
+}
+
 fn browse_row(b: controller::BrowseRow, core: &Core) -> AddonRow {
+    let (status, status_kind) = match (b.installed, b.installable) {
+        (true, _) => ("Installed".to_string(), 1),
+        (false, false) => ("Not installable".to_string(), 3),
+        (false, true) => (String::new(), 0),
+    };
+    let (status, status_kind, progress) = row_progress(core, &b.id).unwrap_or((status, status_kind, -1.0));
     AddonRow {
         initial: initial(&b.name),
         icon: icon(core, &b.id),
@@ -270,17 +308,9 @@ fn browse_row(b: controller::BrowseRow, core: &Core) -> AddonRow {
         version: SharedString::new(),
         badge: b.trust.map(str::to_string).unwrap_or(b.category).into(),
         description: b.description.into(),
-        status: match (b.installed, b.installable) {
-            (true, _) => "Installed",
-            (false, false) => "Not installable",
-            (false, true) => "",
-        }
-        .into(),
-        status_kind: match (b.installed, b.installable) {
-            (true, _) => 1,
-            (false, false) => 3,
-            (false, true) => 0,
-        },
+        status: status.into(),
+        status_kind,
+        progress,
         action: if b.installed || !b.installable { "" } else { "Install" }.into(),
         busy: core.busy.contains(&b.id),
         can_remove: false,
@@ -531,15 +561,19 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_game_running(core.game_running);
     ui.set_game_updating(core.game_updating);
     let (label, hint) = match &core.game_plan {
+        Some(plan) if core.game_updating => (String::new(), if plan.exe.is_some() { format!("Updating to v{}", plan.version) } else { "Updating the game data".into() }),
         Some(plan) if plan.exe.is_some() => (
             format!("Update to v{}", plan.version),
             core.game_exe.as_ref().and_then(|e| e.version.clone()).map(|v| format!("You have v{v}.")).unwrap_or_default(),
         ),
         Some(_) => ("Update game data".to_string(), "New game data is out.".to_string()),
-        None => (String::new(), String::new()),
+        None => (String::new(), core.game_note.clone()),
     };
     ui.set_game_update(label.into());
     ui.set_game_hint(hint.into());
+    let (step, bar) = core.game_step.clone().unwrap_or_default();
+    ui.set_game_step(step.into());
+    ui.set_game_progress(bar);
     ui.set_status_text(core.status.clone().into());
     ui.set_status_error(core.status_error);
     ui.set_addons_dir(core.config.addons_dir.to_string_lossy().into_owned().into());
@@ -598,6 +632,17 @@ fn install_remote(
     let update = lock(shared).state.get(id).is_some();
     let mut version = remote.as_ref().map(|r| r.id.clone());
     let result = download_and_install(shared, id, name, repo, spec, source, remote, &mut version);
+    let outcome = match &result {
+        Ok(_) => {
+            let shown = controller::display_version(version.as_deref().unwrap_or_default());
+            (format!("{} {shown}", if update { "Updated to" } else { "Installed" }), false)
+        }
+        Err(e) => (format!("Failed: {e}"), true),
+    };
+    show_progress(shared, true, |core| {
+        core.progress.remove(id);
+        core.outcomes.insert(id.to_string(), outcome);
+    });
     let event = addon.and_then(|addon| telemetry::event(update, &addon, version.as_deref().unwrap_or("unknown"), result.as_ref().map(|_| ())));
     if let Some(event) = event {
         let core = lock(shared);
@@ -628,7 +673,17 @@ fn download_and_install(
     };
     *version = Some(remote.id.clone());
     let zip = downloads.join(format!("{}.zip", unique_name()));
-    client.download(&remote.download, &zip)?;
+    show_progress(shared, true, |core| {
+        core.progress.insert(id.to_string(), controller::Progress::Downloading { done: 0, total: None });
+    });
+    client.download_with(&remote.download, &zip, &mut |done, total| {
+        show_progress(shared, false, |core| {
+            core.progress.insert(id.to_string(), controller::Progress::Downloading { done, total });
+        });
+    })?;
+    show_progress(shared, true, |core| {
+        core.progress.insert(id.to_string(), controller::Progress::Installing);
+    });
     let mut core = lock(shared);
     let request = Request { zip: &zip, id, name, source, version: remote.id.clone(), expected_sha256: remote.sha256.clone() };
     let result = install::install_zip(&addons, &mut core.state, request);
@@ -742,6 +797,7 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>)
             }
             Some(Ok(job)) => {
                 core.busy.insert(id.clone());
+                core.outcomes.remove(&id);
                 core.set_status(format!("Installing {}...", job.0), false);
                 Some(job)
             }
@@ -795,6 +851,22 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
     refresh(ui, shared);
 }
 
+/// Applies `change` and redraws the window: at once when `now`, else at most ten times a second.
+fn show_progress(shared: &Shared, now: bool, change: impl FnOnce(&mut Core)) {
+    let repaint = {
+        let mut core = lock(shared);
+        change(&mut core);
+        let due = now || core.painted.is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(100));
+        if due {
+            core.painted = Some(std::time::Instant::now());
+        }
+        core.repaint.clone().filter(|_| due)
+    };
+    if let Some(repaint) = repaint {
+        repaint();
+    }
+}
+
 /// The game's folder, two levels above `<game>/benilla-config/AddOns`, when it holds the game's data.
 fn game_dir(addons_dir: &Path) -> Option<PathBuf> {
     addons_dir.parent()?.parent().filter(|dir| dir.join("Data").is_dir()).map(Path::to_path_buf)
@@ -833,7 +905,6 @@ fn on_update_game(ui: &AppWindow, shared: &Shared) {
             core.set_status("Updating the game...".into(), false);
         }
         refresh(&ui, &shared);
-        let weak = ui.as_weak();
         run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
             let (client, dir, seen) = {
                 let core = lock(shared);
@@ -845,22 +916,20 @@ fn on_update_game(ui: &AppWindow, shared: &Shared) {
                 // Asked again right before: the server keeps only the newest parts.
                 let (exe, build) = look_at_game(&dir, seen.as_ref());
                 let plan = game_update::check(&server, &dir, build, exe.as_ref())?;
-                let total = plan.download_size();
-                let mut done = 0;
-                game_update::update(&server, &dir, &plan, &mut |bytes| {
-                    done += bytes;
-                    lock(shared).set_status(format!("Updating the game: {} of {} MB", done / 1_048_576, total.div_ceil(1_048_576)), false);
-                    let shared = shared.clone();
-                    let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+                game_update::update(&server, &dir, &plan, &mut |step| {
+                    let now = !matches!(step, game_update::Step::Downloading { .. });
+                    show_progress(shared, now, |core| core.game_step = Some(game_update::step_label(&step)));
                 })?;
                 let (exe, _) = look_at_game(&dir, None);
                 Ok::<_, Error>((plan, exe))
             })();
             let mut core = lock(shared);
             core.game_updating = false;
+            core.game_step = None;
             let (plan, exe) = result?;
             core.game_plan = None;
             core.game_exe = exe;
+            core.game_note = if plan.exe.is_some() { format!("Updated to v{}.", plan.version) } else { "Game data updated.".into() };
             Ok(if plan.exe.is_some() { format!("Azeroth Survivors is updated to {}", plan.version) } else { "The game's data is up to date".into() })
         });
     });
@@ -886,6 +955,8 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
             .collect();
         for (id, _) in &jobs {
             core.busy.insert(id.clone());
+            core.outcomes.remove(id);
+            core.progress.insert(id.clone(), controller::Progress::Waiting);
         }
         core.set_status(format!("Updating {} addons...", jobs.len()), false);
         (jobs, skipped_names)
@@ -896,7 +967,8 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
     run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
         let total = jobs.len();
         let mut failed = Vec::new();
-        for (id, (name, repo, spec, source, remote)) in jobs {
+        for (i, (id, (name, repo, spec, source, remote))) in jobs.into_iter().enumerate() {
+            show_progress(shared, true, |core| core.set_status(format!("Updating {} of {total}: {name}", i + 1), false));
             if let Err(e) = install_remote(shared, &id, &name, &repo, &spec, source, remote) {
                 failed.push(format!("{name}: {e}"));
             }
@@ -926,6 +998,8 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             return;
         }
         core.checking = true;
+        core.outcomes.clear();
+        core.game_note.clear();
         core.rescan();
         core.set_status("Checking for updates...".into(), false);
     }
@@ -1468,6 +1542,14 @@ fn main() -> Result<(), slint::PlatformError> {
     let shared: Shared = Arc::new(Mutex::new(Core::new(data_dir, config)));
 
     let ui = AppWindow::new()?;
+    {
+        let (weak, s) = (ui.as_weak(), shared.clone());
+        // ponytail: the closure holds the Arc of the Core it sits in; both live as long as the app.
+        lock(&shared).repaint = Some(Arc::new(move || {
+            let s = s.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &s));
+        }));
+    }
     ui.set_app_version(APP_VERSION.into());
     ui.set_self_update_in_place(self_update::can_replace_self());
 

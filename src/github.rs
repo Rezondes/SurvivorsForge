@@ -145,12 +145,17 @@ impl Client {
 
     /// Any file of at most `max` bytes, without the installation ID.
     pub fn get_file(&self, url: &str, max: u64) -> Result<Vec<u8>> {
+        self.get_file_with(url, max, &mut |_| {})
+    }
+
+    /// `get_file`, telling `progress` the bytes of each piece as it arrives.
+    pub fn get_file_with(&self, url: &str, max: u64, progress: &mut dyn FnMut(u64)) -> Result<Vec<u8>> {
         if !(url.starts_with("https://") || url.starts_with("http://")) {
             return Err(Error::Network(format!("not a web address: {url}")));
         }
         let mut bytes = Vec::new();
         let reader = Self::call(self.agent.get(url))?.into_reader();
-        std::io::Read::read_to_end(&mut std::io::Read::take(reader, max + 1), &mut bytes)
+        std::io::Read::read_to_end(&mut Counted { inner: std::io::Read::take(reader, max + 1), progress }, &mut bytes)
             .map_err(|e| Error::Network(e.to_string()))?;
         if bytes.len() as u64 > max {
             return Err(Error::Network(format!("file larger than {max} bytes: {url}")));
@@ -162,6 +167,11 @@ impl Client {
     /// GitHub: the URL comes from the server, which must not point the launcher elsewhere, and
     /// every redirect is checked the same way.
     pub fn download(&self, url: &str, dest: &Path) -> Result<()> {
+        self.download_with(url, dest, &mut |_, _| {})
+    }
+
+    /// `download`, telling `progress` the bytes so far and the size, when the server says it.
+    pub fn download_with(&self, url: &str, dest: &Path, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<()> {
         if !download_allowed(url) {
             return Err(Error::ForbiddenHost(url.to_string()));
         }
@@ -178,13 +188,19 @@ impl Client {
         if (300..400).contains(&resp.status()) {
             return Err(Error::Network(format!("too many redirects from {url}")));
         }
+        let total = resp.header("content-length").and_then(|v| v.parse::<u64>().ok());
         let tmp = dest.with_extension("part");
         if let Some(dir) = dest.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let result = (|| -> std::io::Result<()> {
             let mut file = std::fs::File::create(&tmp)?;
-            std::io::copy(&mut resp.into_reader().take(512 * 1024 * 1024), &mut file)?;
+            let mut done = 0u64;
+            let mut count = |n: u64| {
+                done += n;
+                progress(done, total);
+            };
+            std::io::copy(&mut Counted { inner: resp.into_reader().take(512 * 1024 * 1024), progress: &mut count }, &mut file)?;
             file.sync_all()
         })();
         if let Err(e) = result {
@@ -193,6 +209,20 @@ impl Client {
         }
         std::fs::rename(&tmp, dest)?;
         Ok(())
+    }
+}
+
+/// A reader that tells `progress` how many bytes each read brought.
+struct Counted<'a, R> {
+    inner: R,
+    progress: &'a mut dyn FnMut(u64),
+}
+
+impl<R: Read> Read for Counted<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        (self.progress)(n as u64);
+        Ok(n)
     }
 }
 

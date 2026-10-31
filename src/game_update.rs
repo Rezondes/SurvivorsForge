@@ -45,19 +45,31 @@ pub fn find_exe(game_dir: &Path, linux: bool) -> Option<(PathBuf, Build)> {
 /// The game writes its version right before this text in its exe ("0.133.0A new version is out!").
 const VERSION_MARK: &[u8] = b"A new version is out!";
 
-/// Reads a file of the game server, by its path relative to `GAME_SERVER`.
+/// Reads a file of the game server, by its path relative to `GAME_SERVER`, telling `progress` the
+/// bytes of each piece as it arrives.
 pub trait GameServer {
-    fn get(&self, path: &str) -> Result<Vec<u8>>;
+    fn get(&self, path: &str, progress: &mut dyn FnMut(u64)) -> Result<Vec<u8>>;
 }
 
 /// The real server, through the launcher's HTTP client.
 pub struct WebServer(pub crate::github::Client);
 
 impl GameServer for WebServer {
-    fn get(&self, path: &str) -> Result<Vec<u8>> {
+    fn get(&self, path: &str, progress: &mut dyn FnMut(u64)) -> Result<Vec<u8>> {
         // A part is 20 MiB; the indexes are small.
-        self.0.get_file(&format!("{GAME_SERVER}{path}"), 64 * 1024 * 1024)
+        self.0.get_file_with(&format!("{GAME_SERVER}{path}"), 64 * 1024 * 1024, progress)
     }
+}
+
+/// Where an update stands, for the launcher to show.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Step {
+    /// Bytes of the whole plan so far, and of all of it.
+    Downloading { done: u64, total: u64 },
+    /// A file is unpacked and compared with the server's size and SHA-256.
+    Checking,
+    /// A checked file goes in place of the old one.
+    Installing,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -186,7 +198,7 @@ pub fn look_at_exe(path: &Path, known: Option<&ExeSeen>) -> Option<ExeSeen> {
 
 /// Asks the server what is newest for `build` and compares it with the game in `game_dir`.
 pub fn check(server: &dyn GameServer, game_dir: &Path, build: Build, exe: Option<&ExeSeen>) -> Result<Plan> {
-    let text = |path: &str| -> Result<String> { String::from_utf8(server.get(path)?).map_err(|e| Error::Parse(format!("{path}: {e}"))) };
+    let text = |path: &str| -> Result<String> { String::from_utf8(server.get(path, &mut |_| {})?).map_err(|e| Error::Parse(format!("{path}: {e}"))) };
     let latest = parse_latest(&text(&format!("{}latest.json", build.base()))?)?;
     let patches = parse_patches(&text("data/patches.json")?)?;
     Ok(plan(latest, patches, exe.map(|e| (e, build)), &game_dir.join("Data")))
@@ -227,17 +239,23 @@ pub fn plan(latest: Latest, patches: Vec<GameFile>, exe: Option<(&ExeSeen, Build
 }
 
 /// Downloads `file` from `base` (relative to the server), unpacks it next to `target`, checks its
-/// size and SHA-256 and only then puts it in place of `target`. `progress` gets the bytes of each
-/// part once it is down.
-pub fn install(server: &dyn GameServer, base: &str, file: &GameFile, target: &Path, progress: &mut dyn FnMut(u64)) -> Result<()> {
+/// size and SHA-256 and only then puts it in place of `target`. `downloaded` gets the bytes as they
+/// arrive, `step` the checking and installing.
+pub fn install(
+    server: &dyn GameServer,
+    base: &str,
+    file: &GameFile,
+    target: &Path,
+    downloaded: &mut dyn FnMut(u64),
+    step: &mut dyn FnMut(Step),
+) -> Result<()> {
     let fresh = sibling(target, "survivorsforge-new");
     let result = (|| -> Result<()> {
         let mut packed = Vec::new();
         for part in &file.parts {
-            let bytes = server.get(&format!("{base}{}", part.url))?;
-            progress(bytes.len() as u64);
-            packed.extend_from_slice(&bytes);
+            packed.extend_from_slice(&server.get(&format!("{base}{}", part.url), downloaded)?);
         }
+        step(Step::Checking);
         let mut output = std::fs::File::create(&fresh)?;
         let mut hash = Sha256::new();
         let mut unpack = flate2::read::GzDecoder::new(&packed[..]);
@@ -257,6 +275,7 @@ pub fn install(server: &dyn GameServer, base: &str, file: &GameFile, target: &Pa
         }
         output.sync_all()?;
         drop(output);
+        step(Step::Installing);
         // The old file's permissions: the native Linux build stays executable.
         if let Ok(meta) = std::fs::metadata(target) {
             std::fs::set_permissions(&fresh, meta.permissions())?;
@@ -283,17 +302,38 @@ fn sibling(target: &Path, suffix: &str) -> PathBuf {
     target.with_file_name(name)
 }
 
-/// Brings the game in `game_dir` to `plan`: the exe, then each data patch.
-pub fn update(server: &dyn GameServer, game_dir: &Path, plan: &Plan, progress: &mut dyn FnMut(u64)) -> Result<()> {
+/// Brings the game in `game_dir` to `plan`: the exe, then each data patch. `step` hears where it stands.
+pub fn update(server: &dyn GameServer, game_dir: &Path, plan: &Plan, step: &mut dyn FnMut(Step)) -> Result<()> {
+    let total = plan.download_size();
+    let mut done = 0u64;
+    // Two borrows of `step` in one call would not do: downloads report through this cell.
+    let step = std::cell::RefCell::new(step);
+    let mut downloaded = |n: u64| {
+        done += n;
+        (step.borrow_mut())(Step::Downloading { done, total });
+    };
+    let mut steps = |s: Step| (step.borrow_mut())(s);
     if let Some((exe, build, target)) = &plan.exe {
-        install(server, build.base(), exe, target, progress)?;
+        install(server, build.base(), exe, target, &mut downloaded, &mut steps)?;
     }
     let data = game_dir.join("Data");
     std::fs::create_dir_all(&data)?;
     for patch in &plan.patches {
-        install(server, "data/", patch, &data.join(&patch.name), progress)?;
+        install(server, "data/", patch, &data.join(&patch.name), &mut downloaded, &mut steps)?;
     }
     Ok(())
+}
+
+/// What the launch button says for `step` (short: the button is narrow), and how full its bar is.
+pub fn step_label(step: &Step) -> (String, f32) {
+    match step {
+        Step::Downloading { done, total } => (
+            format!("{} / {} MB", done / 1_048_576, total.div_ceil(1_048_576)),
+            if *total == 0 { 0.0 } else { (*done as f64 / *total as f64).min(1.0) as f32 },
+        ),
+        Step::Checking => ("Checking".into(), 1.0),
+        Step::Installing => ("Installing".into(), 1.0),
+    }
 }
 
 #[cfg(test)]
@@ -310,9 +350,13 @@ mod tests {
     }
 
     impl GameServer for Fake {
-        fn get(&self, path: &str) -> Result<Vec<u8>> {
+        fn get(&self, path: &str, progress: &mut dyn FnMut(u64)) -> Result<Vec<u8>> {
             self.asked.borrow_mut().push(path.to_string());
-            self.files.get(path).cloned().ok_or(Error::NotFound)
+            let bytes = self.files.get(path).cloned().ok_or(Error::NotFound)?;
+            // In two pieces, as a network read would bring them.
+            progress(bytes.len() as u64 / 2);
+            progress(bytes.len() as u64 - bytes.len() as u64 / 2);
+            Ok(bytes)
         }
     }
 
@@ -436,11 +480,16 @@ mod tests {
         let exe = publish(&mut server, "", "0.133.0", "", b"new exe, a bit longer");
         let patch = publish(&mut server, "data/", "patch-4", "patch-4.MPQ", b"patch four");
         let plan = Plan { version: "0.133.0".into(), notes: String::new(), exe: Some((exe, Build::Windows, dir.path().join(GAME_EXE))), patches: vec![patch] };
-        let mut done = 0;
-        update(&server, dir.path(), &plan, &mut |n| done += n).unwrap();
+        let mut steps = Vec::new();
+        update(&server, dir.path(), &plan, &mut |s| steps.push(s)).unwrap();
         assert_eq!(std::fs::read(dir.path().join(GAME_EXE)).unwrap(), b"new exe, a bit longer");
         assert_eq!(std::fs::read(dir.path().join("Data").join("patch-4.MPQ")).unwrap(), b"patch four");
-        assert_eq!(done, plan.download_size());
+        let total = plan.download_size();
+        let downloads: Vec<u64> = steps.iter().filter_map(|s| match s { Step::Downloading { done, total: t } => { assert_eq!(*t, total); Some(*done) } _ => None }).collect();
+        assert!(downloads.windows(2).all(|w| w[0] <= w[1]) && downloads.last() == Some(&total), "{downloads:?}");
+        let named: Vec<&Step> = steps.iter().filter(|s| !matches!(s, Step::Downloading { .. })).collect();
+        assert_eq!(named, [&Step::Checking, &Step::Installing, &Step::Checking, &Step::Installing], "per file: the exe, then the patch");
+        assert_eq!(step_label(&Step::Downloading { done: 1_048_576, total: 4_194_304 }), ("1 / 4 MB".to_string(), 0.25));
         assert_eq!(server.asked.borrow().as_slice(), ["0.133.0/part-000.bin", "0.133.0/part-001.bin", "data/patch-4/part-000.bin", "data/patch-4/part-001.bin"]);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2, "no leftovers: the exe and Data");
     }
@@ -476,9 +525,9 @@ mod tests {
         let mut server = Fake::default();
         let mut exe = publish(&mut server, "", "0.133.0", "", b"new exe");
         exe.sha256 = "e".repeat(64);
-        assert!(matches!(install(&server, "", &exe, &target, &mut |_| {}), Err(Error::HashMismatch { .. })));
+        assert!(matches!(install(&server, "", &exe, &target, &mut |_| {}, &mut |_| {}), Err(Error::HashMismatch { .. })));
         exe.parts[1].url = "gone/part.bin".into();
-        assert_eq!(install(&server, "", &exe, &target, &mut |_| {}), Err(Error::NotFound));
+        assert_eq!(install(&server, "", &exe, &target, &mut |_| {}, &mut |_| {}), Err(Error::NotFound));
         assert_eq!(std::fs::read(&target).unwrap(), b"old exe");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "nothing left behind");
     }

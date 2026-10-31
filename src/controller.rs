@@ -597,8 +597,48 @@ impl ZipPlan {
     }
 }
 
+/// Where an addon's install or update stands while it runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Progress {
+    /// "Update all" gets to it after the ones before it.
+    Waiting,
+    /// `total` is `None` when the server sends no size (GitHub's source zips).
+    Downloading { done: u64, total: Option<u64> },
+    /// The download is checked against the scanned file and put in place.
+    Installing,
+}
+
+/// What a row says while it runs, and how full its bar is (`-1` for no bar).
+pub fn progress_label(progress: Progress) -> (String, f32) {
+    match progress {
+        Progress::Waiting => ("Waiting".into(), -1.0),
+        Progress::Downloading { done, total: Some(total) } if total > 0 => {
+            let part = (done as f64 / total as f64).min(1.0);
+            (format!("Downloading {}%", (part * 100.0).floor()), part as f32)
+        }
+        Progress::Downloading { done, .. } => (format!("Downloading {}", megabytes(done)), -1.0),
+        Progress::Installing => ("Checking and installing".into(), 1.0),
+    }
+}
+
+/// Bytes as megabytes with one decimal, the way the status texts show them.
+pub fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn progress_says_what_runs_and_how_far() {
+        use super::{Progress, progress_label};
+        assert_eq!(progress_label(Progress::Waiting), ("Waiting".to_string(), -1.0));
+        assert_eq!(progress_label(Progress::Downloading { done: 450, total: Some(1000) }), ("Downloading 45%".to_string(), 0.45));
+        assert_eq!(progress_label(Progress::Downloading { done: 2000, total: Some(1000) }).1, 1.0, "never over full");
+        assert_eq!(progress_label(Progress::Downloading { done: 1_258_291, total: None }), ("Downloading 1.2 MB".to_string(), -1.0));
+        assert_eq!(progress_label(Progress::Downloading { done: 0, total: Some(0) }).0, "Downloading 0.0 MB");
+        assert_eq!(progress_label(Progress::Installing), ("Checking and installing".to_string(), 1.0));
+    }
+
     use super::*;
 
     #[test]

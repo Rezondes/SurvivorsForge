@@ -13,6 +13,8 @@ export struct AddonRow {
     status: string,
     // 0 neutral, 1 ok, 2 update available, 3 error
     status-kind: int,
+    // How full the bar of a running download is, 0 to 1; below 0 without a bar.
+    progress: float,
     // Empty when the row offers no main action.
     action: string,
     busy: bool,
@@ -22,6 +24,21 @@ export struct AddonRow {
     // Browse only: the row can go into an addon pack, and is picked for one.
     can-pick: bool,
     picked: bool,
+}
+
+// A thin bar for a running download.
+export component ProgressBar inherits Rectangle {
+    in property <float> value;
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.line;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        height: parent.height;
+        border-radius: 2px;
+        background: Theme.gold;
+    }
 }
 
 // One block of a description: 0 paragraph, 1 heading, 2 list item, 3 code, 4 quote, 5 image.
@@ -985,7 +1002,7 @@ export component DetailView inherits VerticalLayout {
             alignment: center;
             spacing: 6px;
             Text {
-                text: root.detail.row.busy ? "Working..." : root.detail.row.status;
+                text: root.detail.row.status;
                 font-size: Theme.body;
                 horizontal-alignment: right;
                 color: root.detail.row.busy ? Theme.text-muted
@@ -993,6 +1010,9 @@ export component DetailView inherits VerticalLayout {
                     : root.detail.row.status-kind == 2 ? Theme.warn
                     : root.detail.row.status-kind == 3 ? Theme.danger
                     : Theme.text-muted;
+            }
+            if root.detail.row.busy && root.detail.row.progress >= 0 : ProgressBar {
+                value: root.detail.row.progress;
             }
             if root.detail.row.action != "" : ActionButton {
                 text: root.detail.row.action;
@@ -1196,8 +1216,9 @@ export component AddonRowView inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
+            spacing: 4px;
             Text {
-                text: root.addon.busy ? "Working..." : root.addon.status;
+                text: root.addon.status;
                 font-size: Theme.meta;
                 horizontal-alignment: right;
                 color: root.addon.busy ? Theme.text-muted
@@ -1205,6 +1226,9 @@ export component AddonRowView inherits Rectangle {
                     : root.addon.status-kind == 2 ? Theme.warn
                     : root.addon.status-kind == 3 ? Theme.danger
                     : Theme.text-muted;
+            }
+            if root.addon.busy && root.addon.progress >= 0 : ProgressBar {
+                value: root.addon.progress;
             }
         }
 
@@ -1385,7 +1409,7 @@ export component AddonTileView inherits Rectangle {
             }
             Text {
                 horizontal-stretch: 1;
-                text: root.addon.busy ? "Working..." : root.addon.status;
+                text: root.addon.status;
                 font-size: Theme.meta;
                 vertical-alignment: center;
                 horizontal-alignment: right;
@@ -1396,6 +1420,9 @@ export component AddonTileView inherits Rectangle {
                     : root.addon.status-kind == 3 ? Theme.danger
                     : Theme.text-muted;
             }
+        }
+        if root.addon.busy && root.addon.progress >= 0 : ProgressBar {
+            value: root.addon.progress;
         }
         Rectangle { vertical-stretch: 1; }
         if root.addon.action != "" : ActionButton {

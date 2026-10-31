@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
-    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, Dropdown, AddonDetail, DetailView, PickBox,
+    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles
 } from "components.slint";
 
@@ -353,6 +353,9 @@ export component AppWindow inherits Window {
     // What is installed, under the update button.
     in property <string> game-hint;
     in property <bool> game-updating;
+    // The running game update's step ("12.0 MB / 48.0 MB") and how full its bar is.
+    in property <string> game-step;
+    in property <float> game-progress;
     callback update-game();
     callback update-all();
     callback install-zip();
@@ -466,7 +469,7 @@ export component AppWindow inherits Window {
                 alignment: center;
                 spacing: 4px;
                 ActionButton {
-                    text: root.game-running ? "Game running" : root.game-updating ? "Updating the game..." : root.game-update != "" ? root.game-update : "Launch game";
+                    text: root.game-running ? "Game running" : root.game-updating ? (root.game-step != "" ? root.game-step : "Updating the game...") : root.game-update != "" ? root.game-update : "Launch game";
                     primary: true;
                     large: true;
                     // Off at once on the click, before the game's window shows up.
@@ -479,11 +482,22 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
-                if root.game-update != "" && root.game-missing == "" && !root.game-updating && !root.game-running : LinkButton {
-                    text: "Start without updating";
-                    clicked => { root.launch-game(); }
+                // One slot for the bar while the game updates and the link before: the header keeps its height.
+                if root.game-updating || root.game-update != "" || root.game-hint != "" : Rectangle {
+                    height: Theme.touch ? 44px : 22px;
+                    if root.game-updating : ProgressBar {
+                        y: (parent.height - self.height) / 2;
+                        width: parent.width;
+                        value: root.game-progress;
+                    }
+                    if !root.game-updating && root.game-update != "" && root.game-missing == "" && !root.game-running : LinkButton {
+                        width: parent.width;
+                        height: parent.height;
+                        text: "Start without updating";
+                        clicked => { root.launch-game(); }
+                    }
                 }
-                if root.game-hint != "" && !root.game-updating : Text {
+                if root.game-hint != "" : Text {
                     text: root.game-hint;
                     font-size: Theme.meta;
                     color: Theme.text-muted;
