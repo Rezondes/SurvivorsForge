@@ -19,7 +19,7 @@
 <section class="panel list">
   {% if found.is_empty() %}<p class="muted">No addon matches.</p>{% endif %}
   {% for (slug, name, trust) in found %}
-  <div class="member"><a href="/admin/addons/{{ slug }}">{{ name }}</a> <span class="badge">{{ trust }}</span></div>
+  <div class="member"><a href="/admin/addons/{{ slug }}">{{ name }}</a> <span class="badge">{{ trust }}</span> <a class="button" href="/addons/{{ slug }}/edit">Edit</a></div>
   {% endfor %}
 </section>
 {% endblock %}

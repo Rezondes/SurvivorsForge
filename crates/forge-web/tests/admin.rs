@@ -222,6 +222,7 @@ async fn admins_find_addons_by_name() {
         .await;
     let page = web.get("/admin/addons?q=luck").await;
     assert!(page.body.contains("href=\"/admin/addons/lucky\"") && page.body.contains("Lucky Odds"), "{}", page.body);
+    assert!(page.body.contains(r#"<a class="button" href="/addons/lucky/edit">Edit</a>"#), "straight to the edit page: {}", page.body);
     assert!(web.get("/admin").await.body.contains("action=\"/admin/addons\""), "search on the admin start page");
 }
 
