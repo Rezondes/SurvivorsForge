@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 const FILE: &str = "config.json";
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     pub addons_dir: PathBuf,
     /// The game version the user plays, for compatibility warnings; chosen in the settings.
@@ -15,6 +15,37 @@ pub struct Config {
     pub api_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_url: Option<String>,
+    /// Count installs and updates in the platform's public statistics (`crate::telemetry`).
+    #[serde(default = "yes")]
+    pub telemetry: bool,
+    /// Send the random `install_id` along; only matters while `telemetry` is on.
+    #[serde(default = "yes")]
+    pub send_install_id: bool,
+    /// Random, made on the first start; it says nothing about the user or the computer.
+    #[serde(default = "new_install_id")]
+    pub install_id: Option<String>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn new_install_id() -> Option<String> {
+    Some(crate::telemetry::new_install_id())
+}
+
+impl Default for Config {
+    fn default() -> Config {
+        Config {
+            addons_dir: PathBuf::new(),
+            game_version: None,
+            api_url: None,
+            web_url: None,
+            telemetry: true,
+            send_install_id: true,
+            install_id: new_install_id(),
+        }
+    }
 }
 
 /// A platform address typed in the settings: empty for the default, else an http(s) URL without
@@ -43,9 +74,15 @@ pub fn data_dir() -> PathBuf {
 }
 
 impl Config {
+    /// The saved settings. A file from before `install_id` gets one now and keeps it.
     pub fn load(dir: &Path) -> Option<Config> {
         let text = std::fs::read_to_string(dir.join(FILE)).ok()?;
-        serde_json::from_str(&text).ok()
+        let config: Config = serde_json::from_str(&text).ok()?;
+        let raw: serde_json::Value = serde_json::from_str(&text).ok()?;
+        if raw.get("install_id").is_none() {
+            let _ = config.save(dir);
+        }
+        Some(config)
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
@@ -294,6 +331,27 @@ mod tests {
         let config = Config { addons_dir: PathBuf::from(r"P:\AddOns"), ..Default::default() };
         config.save(dir.path()).unwrap();
         assert_eq!(Config::load(dir.path()), Some(config));
+    }
+
+    #[test]
+    fn install_id_created_once() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
+        let first = Config::load(dir.path()).unwrap();
+        assert!(first.install_id.is_some());
+        assert_eq!(Config::load(dir.path()).unwrap().install_id, first.install_id, "saved on the first load");
+        assert_ne!(Config::default().install_id, first.install_id, "every installation its own");
+    }
+
+    #[test]
+    fn old_config_loads_with_telemetry_on() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.telemetry && config.send_install_id);
+        let off = Config { telemetry: false, send_install_id: false, ..config };
+        off.save(dir.path()).unwrap();
+        assert_eq!(Config::load(dir.path()), Some(off), "the choice is kept");
     }
 
     #[test]

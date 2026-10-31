@@ -17,6 +17,7 @@ use survivorsforge::scan::{scan_addons, InstalledAddon};
 use survivorsforge::self_update::{self, Available};
 use survivorsforge::state::{Reconciled, Source, State};
 use survivorsforge::updates::{self, RemoteVersion, UpdateStatus};
+use survivorsforge::telemetry::{self, ApiSender};
 use survivorsforge::{archive, unique_name, Error, APP_REPO, APP_VERSION};
 
 slint::include_modules!();
@@ -116,8 +117,9 @@ impl Core {
         install::work_dir(self.addons_dir()).join("downloads")
     }
 
+    /// A platform client; it carries the installation ID when the user allows it.
     fn client(&self) -> Client {
-        Client::new()
+        Client::new().with_install_id(telemetry::install_header(&self.config))
     }
 
     fn api_url(&self) -> String {
@@ -130,7 +132,7 @@ impl Core {
 
     /// Release and tag metadata, through the platform.
     fn github(&self) -> ApiGitHub {
-        ApiGitHub::new(Client::new(), &self.api_url())
+        ApiGitHub::new(self.client(), &self.api_url())
     }
 
     fn rescan(&mut self) {
@@ -406,7 +408,8 @@ fn ask(ui: &AppWindow, title: &str, text: &str, ok: &str, danger: bool, action: 
     PENDING.with(|p| *p.borrow_mut() = Some(Box::new(action)));
 }
 
-/// Downloads `remote` (or the latest version of `repo`) and installs it as entry `id`.
+/// Downloads `remote` (or the latest version of `repo`) and installs it as entry `id`, and counts
+/// the install or update of a verified addon for the platform's statistics.
 fn install_remote(
     shared: &Shared,
     id: &str,
@@ -415,6 +418,30 @@ fn install_remote(
     spec: &SourceSpec,
     source: Source,
     remote: Option<RemoteVersion>,
+) -> survivorsforge::Result<String> {
+    let addon = telemetry::reported_addon(&source).map(str::to_string);
+    let update = lock(shared).state.get(id).is_some();
+    let mut version = remote.as_ref().map(|r| r.id.clone());
+    let result = download_and_install(shared, id, name, repo, spec, source, remote, &mut version);
+    let event = addon.and_then(|addon| telemetry::event(update, &addon, version.as_deref().unwrap_or("unknown"), result.as_ref().map(|_| ())));
+    if let Some(event) = event {
+        let core = lock(shared);
+        telemetry::report(&core.config, &ApiSender { api: core.api_url() }, &[event]);
+    }
+    result
+}
+
+/// The work of `install_remote`; `version` learns the version once it is known.
+#[allow(clippy::too_many_arguments)]
+fn download_and_install(
+    shared: &Shared,
+    id: &str,
+    name: &str,
+    repo: &str,
+    spec: &SourceSpec,
+    source: Source,
+    remote: Option<RemoteVersion>,
+    version: &mut Option<String>,
 ) -> survivorsforge::Result<String> {
     let (client, github, downloads, addons) = {
         let core = lock(shared);
@@ -427,6 +454,7 @@ fn install_remote(
         Some(remote) => remote,
         None => updates::resolve_remote(&github, repo, spec)?,
     };
+    *version = Some(remote.id.clone());
     let zip = downloads.join(format!("{}.zip", unique_name()));
     client.download(&remote.download, &zip)?;
     let mut core = lock(shared);
@@ -917,7 +945,9 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         let game_version =
             if game_index > 0 { core.game_versions.get(game_index as usize - 1).map(|g| g.name.clone()) } else { None };
         let platform_changed = api_url != core.config.api_url;
-        let config = Config { addons_dir: path, game_version, api_url, web_url };
+        let telemetry = ui.get_settings_telemetry();
+        let send_install_id = ui.get_settings_send_install_id();
+        let config = Config { addons_dir: path, game_version, api_url, web_url, telemetry, send_install_id, ..core.config.clone() };
         // Another platform: its list, versions and categories replace the old ones.
         let recheck = config.addons_dir != core.config.addons_dir || platform_changed;
         let saved = config.save(&core.data_dir);
@@ -984,6 +1014,8 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_web_url(core.config.web_url.clone().unwrap_or_default().into());
     ui.set_settings_api_default(registry::api_url(None).into());
     ui.set_settings_web_default(registry::web_url(None).into());
+    ui.set_settings_telemetry(core.config.telemetry);
+    ui.set_settings_send_install_id(core.config.send_install_id);
     fill_game_versions(ui, &core);
 }
 

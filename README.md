@@ -249,6 +249,19 @@ run it: [docs/local-setup.md](docs/local-setup.md) on your own machine, [docs/se
 
 `SURVIVORSFORGE_DATA_DIR` overrides the settings folder. A damaged `state.json` is moved to `state.json.bak` and the app starts with an empty state.
 
+## Statistics
+
+After each install or update of a verified addon the launcher sends one anonymous event to the
+platform (`POST /v1/telemetry/events`): the kind (`install`, `update`, or `install_failed` /
+`update_failed` with a fixed error code such as `hash_mismatch`), the addon's registry ID and
+version, the launcher version and the operating system. No paths, names or error texts leave
+the computer. The platform shows the totals on its `/stats` page.
+
+With it comes a random installation ID (`install_id` in `config.json`), made on the first start.
+It is sent as `X-SurvivorsForge-Install` with requests to the platform API, never to GitHub, and
+helps to find the requests of one installation when something goes wrong. *Settings, Statistics*
+turns off the events (and with them the ID) or only the ID.
+
 ## Releases and self-update
 
 `.github/workflows/ci.yml` runs tests and Clippy on Windows and Ubuntu 22.04 for every push and pull request.

@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
-    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, Dropdown, AddonDetail, DetailView
+    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, Dropdown, AddonDetail, DetailView, PickBox
 } from "components.slint";
 
 export { AddonRow, AddonDetail, Theme }
@@ -166,6 +166,9 @@ component SettingsView inherits VerticalLayout {
     in-out property <string> web-url;
     in property <string> api-default;
     in property <string> web-default;
+    // Anonymous counts for the platform's statistics; the ID only while they are on.
+    in-out property <bool> telemetry;
+    in-out property <bool> send-install-id;
     callback browse();
     callback save();
 
@@ -210,6 +213,42 @@ component SettingsView inherits VerticalLayout {
             text <=> root.web-url;
             placeholder: root.web-default;
             accepted => { root.save(); }
+        }
+    }
+    SettingRow {
+        label: "Statistics";
+        VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 10px;
+                PickBox {
+                    label: "Count my installs in the public statistics";
+                    checked: root.telemetry;
+                    toggled => { root.telemetry = !root.telemetry; }
+                }
+                Text {
+                    text: "Count my installs in the public statistics";
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                padding-left: 34px;
+                PickBox {
+                    label: "Send an anonymous installation ID";
+                    enabled: root.telemetry;
+                    checked: root.send-install-id;
+                    toggled => { root.send-install-id = !root.send-install-id; }
+                }
+                Text {
+                    text: "Send an anonymous installation ID";
+                    font-size: Theme.body;
+                    color: root.telemetry ? Theme.text : Theme.text-muted;
+                    vertical-alignment: center;
+                }
+            }
         }
     }
     SettingRow {
@@ -334,6 +373,8 @@ export component AppWindow inherits Window {
     in-out property <string> settings-web-url;
     in property <string> settings-api-default;
     in property <string> settings-web-default;
+    in-out property <bool> settings-telemetry;
+    in-out property <bool> settings-send-install-id;
     callback settings-browse();
     callback settings-save();
 
@@ -612,6 +653,8 @@ export component AppWindow inherits Window {
                     web-url <=> root.settings-web-url;
                     api-default: root.settings-api-default;
                     web-default: root.settings-web-default;
+                    telemetry <=> root.settings-telemetry;
+                    send-install-id <=> root.settings-send-install-id;
                     message-error: root.settings-message-error;
                     version: root.app-version;
                     file-dialog: root.file-dialog;

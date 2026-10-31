@@ -327,11 +327,15 @@ component Pill inherits Rectangle {
 export component PickBox inherits Rectangle {
     in property <bool> checked;
     in property <string> label;
+    // Off: dimmed and does not react.
+    in property <bool> enabled: true;
     callback toggled();
 
     accessible-role: checkbox;
     accessible-label: root.label;
     accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    opacity: root.enabled ? 1 : 0.4;
     width: Theme.touch ? 44px : 24px;
     height: self.width;
 
@@ -351,6 +355,7 @@ export component PickBox inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { root.toggled(); }
     }
@@ -358,6 +363,7 @@ export component PickBox inherits Rectangle {
     focus := FocusScope {
         width: 0;
         height: 0;
+        enabled: root.enabled;
         key-pressed(event) => {
             if (event.text == " " || event.text == Key.Return) {
                 root.toggled();

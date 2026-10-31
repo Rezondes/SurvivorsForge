@@ -90,6 +90,9 @@ const MAX_REDIRECTS: usize = 5;
 #[derive(Clone)]
 pub struct Client {
     agent: ureq::Agent,
+    /// Sent as `X-SurvivorsForge-Install` with every platform request (`get_text`); downloads
+    /// from GitHub never carry it.
+    install_id: Option<String>,
     /// Follows no redirect itself, so every hop of a download is checked.
     downloads: ureq::Agent,
 }
@@ -108,7 +111,13 @@ impl Client {
                 .timeout_read(Duration::from_secs(60))
                 .user_agent(&format!("{}/{}", crate::APP_NAME, crate::APP_VERSION))
         };
-        Client { agent: builder().build(), downloads: builder().redirects(0).build() }
+        Client { agent: builder().build(), install_id: None, downloads: builder().redirects(0).build() }
+    }
+
+    /// The same client, sending `install_id` to the platform (`telemetry::install_header`).
+    pub fn with_install_id(mut self, install_id: Option<String>) -> Client {
+        self.install_id = install_id;
+        self
     }
 
     fn call(req: ureq::Request) -> Result<ureq::Response> {
@@ -119,8 +128,13 @@ impl Client {
         }
     }
 
+    /// A platform request; only these carry the installation ID.
     pub fn get_text(&self, url: &str) -> Result<String> {
-        Self::call(self.agent.get(url))?.into_string().map_err(|e| Error::Network(e.to_string()))
+        let mut request = self.agent.get(url);
+        if let Some(id) = &self.install_id {
+            request = request.set(crate::telemetry::INSTALL_HEADER, id);
+        }
+        Self::call(request)?.into_string().map_err(|e| Error::Network(e.to_string()))
     }
 
     /// Downloads into a temp file next to `dest` and renames it only when complete. Only from

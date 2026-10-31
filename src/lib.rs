@@ -8,6 +8,7 @@ pub mod repo_detect;
 pub mod scan;
 pub mod self_update;
 pub mod state;
+pub mod telemetry;
 pub mod updates;
 
 pub use forge_core::{archive, toc};
