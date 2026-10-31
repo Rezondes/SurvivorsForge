@@ -317,25 +317,55 @@ pub async fn ban(State(state): State<AppState>, jar: PrivateCookieJar, Path((git
 pub struct AddonSearch {
     #[serde(default)]
     q: String,
+    page: Option<i64>,
     msg: Option<String>,
     error: Option<String>,
 }
 
-/// `GET /admin/addons?q=`: find an addon by name to manage it.
+/// `GET /admin/addons?q=&page=`: every addon, also blocked ones, to manage it; laid out like
+/// "My addons".
 pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Query(search): Query<AddonSearch>) -> WebResult<Html<String>> {
-    let (user, _) = admin(&state, &jar).await?;
+    let (user, token) = admin(&state, &jar).await?;
     let q = search.q.trim().to_string();
-    let query = reqwest::Url::parse_with_params("http://x/v1/addons", &[("q", q.as_str()), ("sort", if q.is_empty() { "name" } else { "relevance" })])
-        .map(|u| u.query().unwrap_or_default().to_string())
-        .unwrap_or_default();
-    let list = state.api.get(&format!("/v1/addons?{query}"), None).await?;
-    let found = list["addons"]
+    let page = search.page.unwrap_or(1).max(1);
+    let query = |page: i64| {
+        let mut pairs = vec![("page", page.to_string())];
+        if !q.is_empty() {
+            pairs.insert(0, ("q", q.clone()));
+        }
+        reqwest::Url::parse_with_params("http://x/", &pairs).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default()
+    };
+    let list = state.api.get(&format!("/v1/admin/addons?{}", query(page)), Some(&token)).await?;
+    let rows = list["addons"]
         .as_array()
         .into_iter()
         .flatten()
-        .map(|a| (s(&a["slug"]), s(&a["name"]), a["trust"].as_str().unwrap_or("none").to_string()))
+        .map(|a| crate::templates::AdminAddonRow {
+            slug: s(&a["slug"]),
+            name: s(&a["name"]),
+            repo: s(&a["repo"]),
+            owner: s(&a["owner"]),
+            author: s(&a["author"]),
+            latest_tag: s(&a["latest_tag"]),
+            notice: crate::trust::notice(a["trust"].as_str().unwrap_or("unscanned"), false, false),
+            findings: a["findings"]["critical"].as_i64().unwrap_or(0) + a["findings"]["warn"].as_i64().unwrap_or(0),
+            blocked: a["blocked"] == true,
+            locked: a["locked"] == true,
+        })
         .collect();
-    Ok(render(&crate::templates::AdminAddonsPage { user: Some(user), csrf: csrf.0, q, found, msg: search.msg, error: search.error }))
+    let total = list["total"].as_i64().unwrap_or(0);
+    let per_page = list["per_page"].as_i64().unwrap_or(50).max(1);
+    Ok(render(&crate::templates::AdminAddonsPage {
+        user: Some(user),
+        csrf: csrf.0,
+        rows,
+        total,
+        prev: (page > 1).then(|| format!("/admin/addons?{}", query(page - 1))),
+        next: (page * per_page < total).then(|| format!("/admin/addons?{}", query(page + 1))),
+        q,
+        msg: search.msg,
+        error: search.error,
+    }))
 }
 
 /// `POST /admin/addons/sync`: checks every addon for updates now, in the background.

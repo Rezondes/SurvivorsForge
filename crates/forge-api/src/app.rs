@@ -103,7 +103,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/admins", get(routes::admin_moderation::admins))
         .route("/v1/admin/versions/{id}/accept-source", post(routes::admin_verify::accept_source))
         .route("/v1/addons/{slug}/claim", post(routes::addons::claim))
-        .route("/v1/admin/addons", post(routes::addons::admin_create))
+        .route("/v1/admin/addons", get(routes::admin_queue::addons).post(routes::addons::admin_create))
         .route("/v1/admin/addons/sync", post(routes::refresh::sync_all))
         .route("/v1/addons/{slug}/sync", post(routes::refresh::sync_one))
         .route("/v1/admin/addons/{slug}/owner", post(routes::admin_moderation::transfer_owner))

@@ -44,6 +44,49 @@ pub async fn review_queue(State(state): State<AppState>, StaffUser(_): StaffUser
 }
 
 #[derive(Deserialize)]
+pub struct AddonListQuery {
+    q: Option<String>,
+    page: Option<i64>,
+}
+
+pub const ADDON_PAGE: i64 = 50;
+
+/// `GET /v1/admin/addons?q=&page=`: every addon that is not deleted, also blocked ones and ones
+/// whose repo cannot be reached, which the public search hides. Searched in name, slug and repo.
+pub async fn addons(State(state): State<AppState>, StaffUser(_): StaffUser, Query(q): Query<AddonListQuery>) -> ApiResult<Json<Value>> {
+    let page = q.page.unwrap_or(1).max(1);
+    // A LIKE pattern of the search text; its own % and _ count literally.
+    let pattern = q.q.as_deref().map(str::trim).filter(|q| !q.is_empty()).map(|q| {
+        format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
+    });
+    let list: Value = sqlx::query_scalar(
+        "WITH hits AS (
+             SELECT a.* FROM addons a
+             WHERE a.deleted_at IS NULL
+               AND ($1::text IS NULL OR a.name ILIKE $1 OR a.slug::text ILIKE $1 OR a.repo_full_name ILIKE $1))
+         SELECT json_build_object(
+             'total', (SELECT count(*) FROM hits), 'page', $2::bigint, 'per_page', $3::bigint,
+             'addons', coalesce((SELECT json_agg(json_build_object(
+                             'slug', h.slug, 'name', h.name, 'repo', h.repo_full_name, 'owner', u.login,
+                             'author', coalesce(u.login::text, h.author_name),
+                             'blocked', h.blocked_at IS NOT NULL, 'locked', h.locked_at IS NOT NULL,
+                             'latest_tag', v.tag, 'trust', t.trust,
+                             'findings', json_build_object('critical', coalesce(t.critical, 0), 'warn', coalesce(t.warn, 0)))
+                             ORDER BY lower(h.name), h.id)
+                          FROM (SELECT * FROM hits ORDER BY lower(name), id LIMIT $3 OFFSET ($2 - 1) * $3) h
+                          LEFT JOIN users u ON u.id = h.owner_id
+                          LEFT JOIN versions v ON v.id = relevant_version(h.id)
+                          LEFT JOIN version_trust t ON t.version_id = v.id), '[]'))",
+    )
+    .bind(pattern)
+    .bind(page)
+    .bind(ADDON_PAGE)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(list))
+}
+
+#[derive(Deserialize)]
 pub struct AuditQuery {
     admin: Option<String>,
     action: Option<String>,

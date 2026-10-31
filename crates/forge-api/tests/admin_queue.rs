@@ -162,3 +162,27 @@ async fn admins_grant_and_revoke_admin_rights(pool: PgPool) {
     let audit = app.get("/v1/admin/audit?action=user_role", Some(&admin)).await.json();
     assert_eq!(audit["entries"].as_array().map(Vec::len), Some(2), "{audit}");
 }
+
+#[sqlx::test]
+async fn staff_list_every_addon_also_blocked_ones(pool: PgPool) {
+    let (app, owner, admin) = setup(pool).await;
+    app.publish(2, "bob", "odds").await;
+    version(&app, "v1.2.0", 1, true).await;
+    sqlx::query("UPDATE addons SET blocked_at = now() WHERE slug = 'odds'").execute(&app.pool).await.unwrap();
+    sqlx::query("UPDATE addons SET owner_id = NULL, author_name = 'cadoky' WHERE slug = 'lucky'").execute(&app.pool).await.unwrap();
+
+    let list = app.get("/v1/admin/addons", Some(&admin)).await.json();
+    assert_eq!(list["total"], 2, "{list}");
+    let rows = list["addons"].as_array().unwrap();
+    let slugs: Vec<&str> = rows.iter().map(|a| a["slug"].as_str().unwrap()).collect();
+    assert_eq!(slugs, ["lucky", "odds"], "by name, the blocked one too");
+    let lucky = &rows[0];
+    assert_eq!((lucky["owner"].clone(), lucky["author"].as_str(), lucky["repo"].as_str()), (json!(null), Some("cadoky"), Some("alice/lucky")));
+    assert_eq!((lucky["latest_tag"].as_str(), lucky["trust"].as_str(), lucky["findings"]["warn"].as_i64()), (Some("v1.2.0"), Some("flagged"), Some(1)));
+    assert_eq!((rows[1]["blocked"].as_bool(), rows[1]["owner"].as_str(), rows[1]["latest_tag"].clone()), (Some(true), Some("bob"), json!(null)));
+
+    let found = app.get("/v1/admin/addons?q=bob%2Fod", Some(&admin)).await.json();
+    assert_eq!(found["addons"].as_array().unwrap().len(), 1, "by repo too: {found}");
+    assert_eq!(app.get("/v1/admin/addons?q=LUCK", Some(&admin)).await.json()["addons"][0]["slug"], "lucky");
+    assert_eq!(app.get("/v1/admin/addons", Some(&owner)).await.status, StatusCode::FORBIDDEN);
+}

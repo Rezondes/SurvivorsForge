@@ -215,14 +215,36 @@ async fn every_version_of_an_addon_can_be_verified_or_blocked() {
 async fn admins_find_addons_by_name() {
     let mut web = as_admin().await;
     Mock::given(method("GET"))
-        .and(path("/v1/addons"))
+        .and(path("/v1/admin/addons"))
         .and(wiremock::matchers::query_param("q", "luck"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 1, "addons": [{ "slug": "lucky", "name": "Lucky Odds", "trust": "flagged" }] })))
+        .and(wiremock::matchers::query_param("page", "1"))
+        .and(wiremock::matchers::header("authorization", "Bearer tok"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 51, "page": 1, "per_page": 50, "addons": [
+            { "slug": "lucky", "name": "Lucky Odds", "repo": "cadoky/LuckyOdds", "owner": "cadoky", "author": "cadoky", "blocked": false, "locked": false,
+              "latest_tag": "v1.2.0", "trust": "flagged", "findings": { "critical": 0, "warn": 2 } },
+            { "slug": "gone", "name": "Gone", "repo": "x/gone", "owner": null, "author": "someone", "blocked": true, "locked": true,
+              "latest_tag": null, "trust": null, "findings": { "critical": 0, "warn": 0 } }
+        ] })))
         .mount(&web.api)
         .await;
     let page = web.get("/admin/addons?q=luck").await;
-    assert!(page.body.contains("href=\"/admin/addons/lucky\"") && page.body.contains("Lucky Odds"), "{}", page.body);
-    assert!(page.body.contains(r#"<a class="button" href="/addons/lucky/edit">Edit</a>"#), "straight to the edit page: {}", page.body);
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    for text in [
+        "<th>Addon</th><th>Owner</th><th>Newest version</th>",
+        r#"<a href="/admin/addons/lucky">Lucky Odds</a>"#,
+        r#"href="https://github.com/cadoky/LuckyOdds""#,
+        "v1.2.0",
+        "2 findings",
+        r#"<a class="button secondary" href="/addons/lucky/edit">Edit</a>"#,
+        r#"<a class="button" href="/admin/addons/lucky">Moderate</a>"#,
+        r#"<span class="badge bad">Blocked</span>"#,
+        r#"<span class="badge warn">Repo not reachable</span>"#,
+        "someone (not claimed)",
+        "No release yet",
+        r#"href="/admin/addons?q=luck&#38;page=2""#,
+    ] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
     assert!(web.get("/admin").await.body.contains("action=\"/admin/addons\""), "search on the admin start page");
 }
 
@@ -358,7 +380,7 @@ async fn only_role_managers_see_role_select() {
 #[tokio::test]
 async fn admin_checks_every_addon_for_updates() {
     let mut web = as_admin().await;
-    get_json(&web, "/v1/addons", json!({ "addons": [] })).await;
+    get_json(&web, "/v1/admin/addons", json!({ "total": 0, "page": 1, "per_page": 50, "addons": [] })).await;
     let page = web.get("/admin/addons").await;
     assert!(page.body.contains(r#"action="/admin/addons/sync""#), "{}", page.body);
     expect(&web, "POST", "/v1/admin/addons/sync", json!({})).await;

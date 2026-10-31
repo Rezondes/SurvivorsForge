@@ -732,10 +732,30 @@ pub struct AdminAddonsPage {
     pub user: Option<Visitor>,
     pub csrf: String,
     pub q: String,
-    /// (slug, name, trust of the current version)
-    pub found: Vec<(String, String, String)>,
+    pub rows: Vec<AdminAddonRow>,
+    pub total: i64,
+    pub prev: Option<String>,
+    pub next: Option<String>,
     pub msg: Option<String>,
     pub error: Option<String>,
+}
+
+/// One addon in the admin addon list.
+pub struct AdminAddonRow {
+    pub slug: String,
+    pub name: String,
+    /// `owner/name` on GitHub.
+    pub repo: String,
+    /// Login of the owner; empty while nobody claimed the addon.
+    pub owner: String,
+    /// The owner, or the author's name while nobody claimed the addon.
+    pub author: String,
+    /// Tag of the version players get; empty without one.
+    pub latest_tag: String,
+    pub notice: Notice,
+    pub findings: i64,
+    pub blocked: bool,
+    pub locked: bool,
 }
 
 #[derive(Template)]

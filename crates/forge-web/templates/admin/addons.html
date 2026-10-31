@@ -12,14 +12,35 @@
 {% if let Some(m) = msg %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 <form class="panel" method="get" action="/admin/addons" role="search">
-  <label for="q">Name</label>
+  <label for="q">Name, address or repo</label>
   <input id="q" type="search" name="q" value="{{ q }}">
   <p><button type="submit">Search</button></p>
 </form>
-<section class="panel list">
-  {% if found.is_empty() %}<p class="muted">No addon matches.</p>{% endif %}
-  {% for (slug, name, trust) in found %}
-  <div class="member"><a href="/admin/addons/{{ slug }}">{{ name }}</a> <span class="badge">{{ trust }}</span> <a class="button" href="/addons/{{ slug }}/edit">Edit</a></div>
+<p class="muted">{{ total }} addon{% if total != 1 %}s{% endif %}, also blocked ones.</p>
+{% if rows.is_empty() %}
+<section class="panel"><p class="muted">No addon matches.</p></section>
+{% else %}
+<div class="table-wrap list">
+<table>
+  <thead><tr><th>Addon</th><th>Owner</th><th>Newest version</th><th><span class="sr-only">Actions</span></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/admin/addons/{{ r.slug }}">{{ r.name }}</a>
+        {% if r.blocked %} <span class="badge bad">Blocked</span>{% endif %}
+        {% if r.locked %} <span class="badge warn">Repo not reachable</span>{% endif %}
+        <br><a class="muted" href="https://github.com/{{ r.repo }}" rel="noopener">{{ r.repo }}</a></td>
+      <td>{% if r.owner != "" %}{{ r.owner }}{% else %}<span class="muted">{{ r.author }} (not claimed)</span>{% endif %}</td>
+      <td>{% if r.latest_tag != "" %}{{ r.latest_tag }} <span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span>{% if r.findings > 0 %} {{ r.findings }} finding{% if r.findings != 1 %}s{% endif %}{% endif %}{% else %}<span class="muted">No release yet</span>{% endif %}</td>
+      <td class="row-actions"><a class="button" href="/admin/addons/{{ r.slug }}">Moderate</a> <a class="button secondary" href="/addons/{{ r.slug }}/edit">Edit</a></td>
+    </tr>
   {% endfor %}
-</section>
+  </tbody>
+</table>
+</div>
+{% endif %}
+<nav class="pager">
+  {% if let Some(p) = prev %}<a href="{{ p }}">Previous</a>{% endif %}
+  {% if let Some(n) = next %}<a href="{{ n }}">Next</a>{% endif %}
+</nav>
 {% endblock %}
