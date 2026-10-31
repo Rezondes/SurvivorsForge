@@ -16,7 +16,7 @@
   <p>Only continue if you trust the author.</p>
   <p class="actions">
     <a class="button secondary" href="/addons/{{ slug }}">Back to {{ name }}</a>
-    <a class="button danger" href="{{ row.asset_url }}" rel="noopener">I understand, download from GitHub</a>
+    <a class="button danger" href="/addons/{{ slug|urlencode }}/versions/{{ row.tag|urlencode }}/download?confirmed=1" rel="noopener">I understand, download from GitHub</a>
   </p>
 </section>
 {% endblock %}

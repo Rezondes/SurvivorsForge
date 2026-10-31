@@ -105,6 +105,21 @@ async fn create_show_build_and_download(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn pack_download_counted(pool: PgPool) {
+    let (app, _dir) = app_with_packs(pool).await;
+    let token = app.publish(1, "alice", "lucky").await;
+    checked_version(&app, "lucky", "clean").await;
+    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await.json()["id"].as_str().unwrap().to_string();
+    app.get(&format!("/v1/packs/{id}/download"), None).await;
+    let counts = || sqlx::query_scalar::<_, i64>("SELECT coalesce(sum(count), 0)::bigint FROM download_counts WHERE source = 'pack'").fetch_one(&app.pool);
+    assert_eq!(counts().await.unwrap(), 0, "a build is no download");
+    build(&app, &id).await;
+    app.get(&format!("/v1/packs/{id}/download"), None).await;
+    app.get(&format!("/v1/packs/{id}/download"), None).await;
+    assert_eq!(counts().await.unwrap(), 1, "once per visitor and day");
+}
+
+#[sqlx::test]
 async fn only_checked_versions_and_within_limits(pool: PgPool) {
     let (app, _dir) = app_with_packs(pool).await;
     let app = TestApp::with_config(app.pool.clone(), |c| {

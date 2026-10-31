@@ -22,6 +22,18 @@ pub async fn game_of(state: &AppState, query: &GameQuery) -> ApiResult<Option<i3
     }
 }
 
+/// `POST /v1/addons/{slug}/downloads`: the website counts a download it sends to GitHub.
+pub async fn count_download(
+    State(state): State<AppState>,
+    _: crate::rate_limit::FromWebsite,
+    crate::rate_limit::VisitorIp(ip): crate::rate_limit::VisitorIp,
+    Path(slug): Path<String>,
+) -> ApiResult<axum::http::StatusCode> {
+    let addon = load_addon(&state.pool, &slug).await?;
+    crate::downloads::count(&state, crate::downloads::Source::Website, addon.id, ip).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 pub async fn list(State(state): State<AppState>, Path(slug): Path<String>, Query(query): Query<GameQuery>) -> ApiResult<Json<Value>> {
     let addon = load_addon(&state.pool, &slug).await?;
     let game = game_of(&state, &query).await?;

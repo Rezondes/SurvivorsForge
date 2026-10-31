@@ -64,8 +64,25 @@ fn version_row(v: &Value, verified_author: bool) -> VersionRow {
 }
 
 /// Where a download button points: GitHub directly, or the confirmation page first.
+/// Every download goes through the website once, so it is counted; a version that needs a
+/// confirmation shows the warning there first.
 fn download_href(slug: &str, row: &VersionRow) -> String {
-    if row.notice.confirm { format!("/addons/{slug}/versions/{}/download", seg(&row.tag)) } else { row.asset_url.clone() }
+    format!("/addons/{slug}/versions/{}/download", seg(&row.tag))
+}
+
+#[derive(Deserialize, Default)]
+pub struct DownloadQuery {
+    /// Set by the button of the warning page.
+    #[serde(default)]
+    confirmed: Option<String>,
+}
+
+/// Counts the download for `/stats`; a slow or failing API never holds the download up.
+async fn count_download(state: &AppState, slug: &str) {
+    let (path, body) = (format!("/v1/addons/{}/downloads", seg(slug)), serde_json::json!({}));
+    if let Ok(Err(e)) = tokio::time::timeout(std::time::Duration::from_secs(2), state.api.post(&path, None, &body)).await {
+        tracing::warn!(error = ?e, "cannot count a download");
+    }
 }
 
 async fn findings(state: &AppState, slug: &str, tag: &str) -> WebResult<Vec<FindingRow>> {
@@ -278,13 +295,15 @@ pub async fn download(
     jar: PrivateCookieJar,
     Extension(csrf): Extension<CsrfToken>,
     Path((slug, tag)): Path<(String, String)>,
+    Query(query): Query<DownloadQuery>,
 ) -> WebResult<Response> {
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
     let (a, row) = version_data(&state, &slug, &tag).await?;
     if !row.notice.downloadable {
         return Ok(error_page(StatusCode::FORBIDDEN, "Not downloadable", row.notice.text));
     }
-    if !row.notice.confirm {
+    if !row.notice.confirm || query.confirmed.is_some() {
+        count_download(&state, &slug).await;
         return Ok(Redirect::to(&row.asset_url).into_response());
     }
     let found = findings(&state, &slug, &tag).await?;

@@ -191,12 +191,14 @@ async fn risky_download_needs_confirmation() {
     assert!(page.body.contains("href=\"/addons/lucky/versions/v1/download\""));
     let confirm = web.get("/addons/lucky/versions/v1/download").await;
     assert_eq!(confirm.status, StatusCode::OK);
-    assert!(confirm.body.contains("I understand, download from GitHub") && confirm.body.contains(ASSET));
+    assert!(confirm.body.contains(r#"href="/addons/lucky/versions/v1/download?confirmed=1""#), "the button goes through the website");
+    let confirmed = web.get("/addons/lucky/versions/v1/download?confirmed=1").await;
+    assert_eq!((confirmed.status, confirmed.location()), (StatusCode::SEE_OTHER, ASSET));
 
     let mut safe = with_addon("verified", "available").await;
-    assert!(safe.get("/addons/lucky").await.body.contains(&format!("href=\"{ASSET}\"")), "direct link");
+    assert!(safe.get("/addons/lucky").await.body.contains("href=\"/addons/lucky/versions/v1/download\" rel=\"external noopener\""), "counted on the way");
     let direct = safe.get("/addons/lucky/versions/v1/download").await;
-    assert_eq!((direct.status, direct.location()), (StatusCode::SEE_OTHER, ASSET));
+    assert_eq!((direct.status, direct.location()), (StatusCode::SEE_OTHER, ASSET), "even when the API cannot count it");
 
     let mut blocked = with_addon("blocked", "available").await;
     assert_eq!(blocked.get("/addons/lucky/versions/v1/download").await.status, StatusCode::FORBIDDEN);
@@ -611,4 +613,12 @@ async fn the_home_title_fits_a_phone() {
     let mut web = TestWeb::new().await;
     let page = web.get("/").await.body;
     assert!(page.contains("<h1>Addons, checked</h1>") && page.contains("<p class=\"lead\">For Azeroth Survivors."), "{page}");
+}
+
+#[tokio::test]
+async fn downloads_are_counted_before_the_redirect() {
+    let mut web = with_addon("verified", "available").await;
+    Mock::given(method("POST")).and(path("/v1/addons/lucky/downloads")).respond_with(ResponseTemplate::new(204)).expect(1).mount(&web.api).await;
+    let direct = web.get("/addons/lucky/versions/v1/download").await;
+    assert_eq!((direct.status, direct.location()), (StatusCode::SEE_OTHER, ASSET));
 }

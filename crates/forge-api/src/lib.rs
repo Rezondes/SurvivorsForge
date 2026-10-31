@@ -6,6 +6,7 @@ pub mod audit;
 pub mod auth;
 pub mod cache;
 pub mod config;
+pub mod downloads;
 pub mod error;
 pub mod github;
 pub mod images;

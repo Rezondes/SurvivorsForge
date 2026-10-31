@@ -30,6 +30,26 @@ impl axum::extract::FromRequestParts<crate::app::AppState> for VisitorIp {
     }
 }
 
+/// A request straight from the website (`WEBSITE_IP`); everyone else gets `403`.
+pub struct FromWebsite;
+
+impl axum::extract::FromRequestParts<crate::app::AppState> for FromWebsite {
+    type Rejection = crate::error::ApiError;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &crate::app::AppState) -> Result<Self, Self::Rejection> {
+        let peer = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|c| c.0.ip())
+            .or_else(|| parts.extensions.get::<MockConnectInfo<SocketAddr>>().map(|c| c.0.ip()));
+        if peer.is_some() && peer == state.config.website_ip {
+            Ok(FromWebsite)
+        } else {
+            Err(crate::error::ApiError::new(StatusCode::FORBIDDEN, "forbidden", "Only the website counts its downloads"))
+        }
+    }
+}
+
 /// The address of the direct sender (Caddy or the website, not the visitor behind them).
 pub fn peer_ip(request: &Request) -> IpAddr {
     // Tests set the peer with `MockConnectInfo`.

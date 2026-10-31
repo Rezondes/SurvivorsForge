@@ -80,9 +80,9 @@ pub fn etag_matches(if_none_match: &HeaderValue, etag: &[u8]) -> bool {
     if_none_match.as_bytes().split(|&b| b == b',').map(|t| t.trim_ascii()).any(|t| t == b"*" || strip(t) == etag)
 }
 
-/// Writes that only count something (telemetry) and change no cached answer.
+/// Writes that only count something (telemetry, downloads) and change no cached answer.
 fn counts_only(path: &str) -> bool {
-    path.starts_with("/v1/telemetry/")
+    path.starts_with("/v1/telemetry/") || (path.starts_with("/v1/addons/") && path.ends_with("/downloads"))
 }
 
 pub async fn middleware(State(cache): State<Arc<ResponseCache>>, request: Request, next: Next) -> Response {

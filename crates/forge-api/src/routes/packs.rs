@@ -393,7 +393,7 @@ const RETRY_FAILED_AFTER: Duration = Duration::hours(1);
 
 /// `GET /v1/packs/{id}/download`: a redirect to the zip when it is built, else `202` while the
 /// worker builds it (the client asks again).
-pub async fn download(State(state): State<AppState>, Path(public_id): Path<String>) -> ApiResult<Response> {
+pub async fn download(State(state): State<AppState>, crate::rate_limit::VisitorIp(ip): crate::rate_limit::VisitorIp, Path(public_id): Path<String>) -> ApiResult<Response> {
     let pack = load(&state, &public_id).await?;
     if !entries(&state, pack.id).await?.iter().all(|a| a.available) {
         return Err(ApiError::new(StatusCode::CONFLICT, "pack_unavailable", "An addon of this pack is no longer available"));
@@ -403,6 +403,7 @@ pub async fn download(State(state): State<AppState>, Path(public_id): Path<Strin
     match file(&state, key).await? {
         Some(f) if f.status == "ready" => {
             sqlx::query("UPDATE pack_files SET last_download_at = $2 WHERE content_key = $1").bind(key).bind(now).execute(&state.pool).await?;
+            crate::downloads::count(&state, crate::downloads::Source::Pack, pack.id, ip).await?;
             return Ok(Redirect::to(&format!("{}/{key}.zip", state.config.public_pack_url)).into_response());
         }
         Some(f) if f.status == "building" => {}
