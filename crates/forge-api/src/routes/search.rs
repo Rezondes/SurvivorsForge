@@ -19,6 +19,8 @@ pub struct SearchQuery {
     pub category: Option<String>,
     pub trust: Vec<String>,
     pub game: Option<String>,
+    /// GitHub login of the owner, or the author name of an unclaimed addon; any case.
+    pub author: Option<String>,
     pub sort: Option<String>,
     pub page: i64,
     pub per_page: i64,
@@ -38,6 +40,7 @@ pub fn parse_query(raw: Option<&str>) -> SearchQuery {
             "category" => query.category = Some(value),
             "trust" => query.trust.extend(value.split(',').map(|t| t.trim().to_string())),
             "game" => query.game = Some(value),
+            "author" => query.author = Some(value),
             "sort" => query.sort = Some(value),
             "page" => query.page = value.parse().unwrap_or(1).max(1),
             "per_page" => query.per_page = value.parse().unwrap_or(DEFAULT_PER_PAGE).clamp(1, MAX_PER_PAGE),
@@ -91,6 +94,7 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap, RawQuery(ra
                AND ($3::text IS NULL OR a.category IN (SELECT name FROM categories WHERE name = $3::citext OR parent = $3::citext))
                AND (cardinality($4::text[]) = 0 OR t.trust = ANY($4))
                AND ($5::int IS NULL OR game_compatible(relevant_version(a.id), $5) IS NOT FALSE)
+               AND ($9::text IS NULL OR lower(coalesce((SELECT login::text FROM users WHERE id = a.owner_id), a.author_name)) = lower($9))
          )
          SELECT json_build_object(
              'total', (SELECT count(*) FROM found),
@@ -116,6 +120,7 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap, RawQuery(ra
         .bind(query.page)
         .bind(query.per_page)
         .bind(&state.config.public_image_url)
+        .bind(&query.author)
         .fetch_one(&state.pool)
         .await?;
     let body = body.to_string();

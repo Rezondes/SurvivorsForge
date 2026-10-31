@@ -130,7 +130,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         reqwest::Url::parse(&format!("http://x/?{raw}")).map(|u| u.query_pairs().into_owned().collect()).unwrap_or_default();
     let param = |k: &str| params.iter().find(|(key, v)| key == k && !v.is_empty()).map(|(_, v)| v.clone());
     let query: Vec<(&str, String)> =
-        ["q", "category", "trust", "sort", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
+        ["q", "category", "trust", "sort", "author", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
     let api_query = reqwest::Url::parse_with_params("http://x/v1/addons", &query).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
     let list = state.api.get(&format!("/v1/addons?{api_query}"), None).await?;
 
@@ -151,6 +151,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         category: param("category").unwrap_or_default(),
         trust: param("trust").unwrap_or_default(),
         sort: param("sort").unwrap_or_default(),
+        author: param("author").unwrap_or_default(),
         total,
         categories: crate::templates::CategoryOption::groups(crate::app::categories(&state).await?),
         cards,

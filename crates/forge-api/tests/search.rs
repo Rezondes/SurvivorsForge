@@ -166,3 +166,13 @@ async fn etag_304(pool: PgPool) {
     assert_eq!(second.status, StatusCode::NOT_MODIFIED);
     assert!(second.body.is_empty());
 }
+
+#[sqlx::test]
+async fn author_filter_lists_one_authors_addons(pool: PgPool) {
+    let app = common::TestApp::new(pool);
+    app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
+    let slugs = |v: serde_json::Value| -> Vec<String> { v["addons"].as_array().unwrap().iter().map(|a| a["slug"].as_str().unwrap().to_string()).collect() };
+    assert_eq!(slugs(app.get("/v1/addons?author=ALICE", None).await.json()), ["lucky"], "ignores case");
+    assert_eq!(slugs(app.get("/v1/addons?author=nobody", None).await.json()), Vec::<String>::new());
+}

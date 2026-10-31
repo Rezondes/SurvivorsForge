@@ -144,6 +144,8 @@ pub struct AddonsPage {
     pub category: String,
     pub trust: String,
     pub sort: String,
+    /// Only the addons of this author (`?author=`); empty for all.
+    pub author: String,
     pub total: i64,
     /// For the filter, all of them.
     /// Top-level categories with their subcategories, for the grouped filter.

@@ -780,3 +780,17 @@ async fn the_version_heading_drops_the_v() {
     let page = web.get("/addons/lucky").await.body;
     assert!(page.contains(r#"<h2>Version <span title="v1">1</span></h2>"#), "{page}");
 }
+
+#[tokio::test]
+async fn the_author_leads_to_their_addons() {
+    let mut web = with_addon("scanned", "available").await;
+    assert!(web.get("/addons/lucky").await.body.contains(r#"by <a href="/addons?author=alice">alice</a>"#));
+
+    let web = TestWeb::new().await;
+    mock(&web, "/v1/categories", categories()).await;
+    Mock::given(method("GET")).and(path("/v1/addons")).and(query_param("author", "alice"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "addons": [] }))).expect(1).mount(&web.api).await;
+    let mut web = web;
+    let page = web.get("/addons?author=alice").await.body;
+    assert!(page.contains(r#"Addons by <strong>alice</strong> · <a href="/addons">Show all addons</a>"#), "{page}");
+}

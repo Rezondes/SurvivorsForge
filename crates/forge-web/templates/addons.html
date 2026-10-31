@@ -4,8 +4,10 @@
 {% block content %}
 <h1>Addons</h1>
 {% if let Some(c) = checks %}{% include "checks.html" %}{% endif %}
+{% if !author.is_empty() %}<p class="muted">Addons by <strong>{{ author }}</strong> · <a href="/addons">Show all addons</a></p>{% endif %}
 <form class="search" method="get" action="/addons" role="search"
       hx-get="/addons" hx-trigger="input changed delay:300ms from:input, change from:select, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status" hx-swap="innerHTML scroll:top">
+  {% if !author.is_empty() %}<input type="hidden" name="author" value="{{ author }}">{% endif %}
   <label for="q">Search</label>
   <input id="q" type="search" name="q" value="{{ q }}" placeholder="Name or what it does" autocomplete="off">
   <div class="filters">
