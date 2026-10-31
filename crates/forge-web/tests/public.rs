@@ -705,3 +705,11 @@ async fn the_install_button_comes_before_the_findings() {
     let mut flagged = with_addon("flagged", "available").await;
     assert!(flagged.get("/addons/lucky").await.body.contains("<details class=\"findings-box\" open>"), "open when it matters");
 }
+
+#[tokio::test]
+async fn findings_say_whether_someone_looked_at_them() {
+    let mut web = verified_with_findings().await;
+    assert!(web.get("/addons/lucky").await.body.contains("The scan reported these spots. An admin looked at them before verifying this file."));
+    let mut flagged = with_addon("flagged", "available").await;
+    assert!(flagged.get("/addons/lucky").await.body.contains("Reported by the automatic scan. Nobody has checked them by hand."));
+}
