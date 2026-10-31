@@ -495,3 +495,11 @@ async fn range_switch_is_big_enough_to_tap() {
     let css = web.get("/static/app.css").await.body;
     assert!(css.contains(".range-toggle a { min-height: 44px;"), "a 44 px target on phones");
 }
+
+#[tokio::test]
+async fn website_numbers_say_they_count_whole_days() {
+    let page = admin_stats_page(admin_stats_body()).await;
+    let website = &page[page.find(r#"<h2 id="website">"#).unwrap()..page.find(r#"<h2 id="api">"#).unwrap()];
+    assert!(website.contains("Counted by whole days (UTC)"), "{website}");
+    assert!(website.contains("<h3>Website visits per day (UTC)</h3>"));
+}

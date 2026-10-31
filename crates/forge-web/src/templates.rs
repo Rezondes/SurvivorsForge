@@ -526,6 +526,8 @@ pub struct AdminStatsPage {
 pub struct StatGroup {
     pub id: &'static str,
     pub title: &'static str,
+    /// A line under the heading; empty for none.
+    pub note: &'static str,
     pub tables: Vec<StatTable>,
 }
 

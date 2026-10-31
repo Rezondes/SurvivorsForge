@@ -251,10 +251,10 @@ pub async fn admin_stats(
     let t = &s["telemetry"];
     let w = &s["website"];
     let visits = |title: &str, head: &str, list: &Value| table(title, &[head, "Views", "Visitors"], list, |x| vec![text(&x["value"]), n(&x["views"]), n(&x["visitors"])], "No visits yet.");
-    let group = |id: &'static str, title: &'static str, tables: Vec<StatTable>| StatGroup { id, title, tables };
+    let group = |id: &'static str, title: &'static str, tables: Vec<StatTable>| StatGroup { id, title, note: "", tables };
     let groups = vec![
-        group("website", "Website", vec![
-            table("Website visits per day", &["Day", "Views", "Visitors"], &reversed(&w["per_day"]), |x| vec![text(&x["day"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
+        StatGroup { note: "Counted by whole days (UTC): the 24 hours range shows today and yesterday.", ..group("website", "Website", vec![
+            table("Website visits per day (UTC)", &["Day", "Views", "Visitors"], &reversed(&w["per_day"]), |x| vec![text(&x["day"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
             table("Most viewed pages", &["Page", "Views", "Visitors"], &w["pages"], |x| vec![text(&x["page"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
             table("Most viewed addons and packs", &["Page", "Views", "Visitors"], &w["targets"], |x| {
                 vec![text(&x["page"]).replace("{slug}", &text(&x["target"])).replace("{id}", &text(&x["target"])), n(&x["views"]), n(&x["visitors"])]
@@ -262,7 +262,7 @@ pub async fn admin_stats(
             visits("Where visitors come from", "Site", &w["referrers"]),
             visits("Countries", "Country", &w["countries"]),
             visits("Devices", "Device", &w["devices"]),
-        ]),
+        ]) },
         group("api", "API", vec![
             table("Busiest routes", &["Route", "Requests", "Average ms", "Slowest ms"], &r["routes"], |x| {
                 vec![format!("{} {}", text(&x["method"]), text(&x["route"])), n(&x["count"]), n(&x["avg_ms"]), n(&x["max_ms"])]

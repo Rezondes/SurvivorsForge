@@ -24,6 +24,7 @@
 {% for g in groups %}
 <section class="home-section">
   <h2 id="{{ g.id }}">{{ g.title }}</h2>
+  {% if !g.note.is_empty() %}<p class="muted">{{ g.note }}</p>{% endif %}
   {% for t in g.tables %}
   <h3>{{ t.title }}</h3>
   {% if t.rows.is_empty() %}
