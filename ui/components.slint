@@ -1006,7 +1006,7 @@ export component DetailView inherits VerticalLayout {
     HorizontalLayout {
         alignment: start;
         spacing: 12px;
-        if root.detail.on-website : LinkButton {
+        if root.detail.on-website : ActionButton {
             text: "Open on the website";
             clicked => { root.website(); }
         }
