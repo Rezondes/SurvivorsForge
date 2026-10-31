@@ -140,6 +140,11 @@ impl Client {
 
     /// An image of the platform (icon, screenshot), at most `max` bytes; without the installation ID.
     pub fn get_image(&self, url: &str, max: u64) -> Result<Vec<u8>> {
+        self.get_file(url, max)
+    }
+
+    /// Any file of at most `max` bytes, without the installation ID.
+    pub fn get_file(&self, url: &str, max: u64) -> Result<Vec<u8>> {
         if !(url.starts_with("https://") || url.starts_with("http://")) {
             return Err(Error::Network(format!("not a web address: {url}")));
         }
@@ -148,7 +153,7 @@ impl Client {
         std::io::Read::read_to_end(&mut std::io::Read::take(reader, max + 1), &mut bytes)
             .map_err(|e| Error::Network(e.to_string()))?;
         if bytes.len() as u64 > max {
-            return Err(Error::Network(format!("image larger than {max} bytes: {url}")));
+            return Err(Error::Network(format!("file larger than {max} bytes: {url}")));
         }
         Ok(bytes)
     }

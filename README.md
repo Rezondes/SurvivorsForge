@@ -301,6 +301,7 @@ Players of the browser version of the game upload addons as one zip. An addon pa
 - **Details** of an addon: description, screenshots, *Open on the website* and *GitHub*.
 - **Settings**: AddOns folder, game version, platform API and website address, the two statistics switches, the launcher version.
 - **Launch game** starts `AzerothSurvivors.exe` next to `benilla-config` (Linux: a native build whose name starts with `AzerothSurvivors`; a Windows build under Proton cannot be started from here).
+- **Game updates**: with each update check the launcher compares the game with the indexes the game updates itself by: `https://wow.aethus.pl/exe/latest.json` for the Windows exe (also under Proton), `exe/linux/latest.json` for the native Linux build `AzerothSurvivors`, `exe/data/patches.json` for the files in `Data`. The exe's SHA-256 is read once per size and time. When something differs, the launch button becomes *Update to v…* (*Start without updating* below it): the parts are joined into one gzip, unpacked, checked against size and SHA-256 and only then put in place, with the old file's permissions (`src/game_update.rs`).
 
 The website opens an addon in the launcher with a `survivorsforge://addon/<id>` link. A release build registers the scheme for the current user on every start, so it follows the executable when it moves (Windows: `HKCU\Software\Classes`, Linux: a `.desktop` file and `xdg-mime`). A launcher that already runs gets the link from the new one over `127.0.0.1:47615`, and the new one quits.
 

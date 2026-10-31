@@ -6510,6 +6510,7 @@ name = "survivorsforge"
 version = "0.5.2"
 dependencies = [
  "directories",
+ "flate2",
  "forge-core",
  "image",
  "open",

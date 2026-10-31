@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use survivorsforge::config::{self, Config};
 use survivorsforge::controller::{self, Badge, Row, RowState, UNMANAGED_PREFIX};
 use survivorsforge::deep_link;
+use survivorsforge::game_update::{self, ExeSeen, WebServer};
 use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, WebGitHub};
 use survivorsforge::install::{self, Request};
 use survivorsforge::registry::{self, Origin, Registry, SourceSpec};
@@ -50,6 +51,11 @@ struct Core {
     pack_busy: bool,
     /// The game started from here still runs: the launch button waits for it to close.
     game_running: bool,
+    /// What the game's server has that the game folder lacks; `None` when up to date or unknown.
+    game_plan: Option<game_update::Plan>,
+    /// The game's exe as last hashed.
+    game_exe: Option<ExeSeen>,
+    game_updating: bool,
     /// The addon in the detail view, and whether it was opened from Browse (else Installed).
     detail: Option<(String, bool)>,
     /// Icon URLs and detail pages the platform last showed, kept across starts in cache/platform.json.
@@ -99,6 +105,9 @@ impl Core {
             picked: Default::default(),
             pack_busy: false,
             game_running: false,
+            game_plan: None,
+            game_exe: None,
+            game_updating: false,
             detail: None,
             platform,
             fetching: HashSet::new(),
@@ -520,6 +529,17 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     };
     ui.set_game_missing(game_missing.into());
     ui.set_game_running(core.game_running);
+    ui.set_game_updating(core.game_updating);
+    let (label, hint) = match &core.game_plan {
+        Some(plan) if plan.exe.is_some() => (
+            format!("Update to v{}", plan.version),
+            core.game_exe.as_ref().and_then(|e| e.version.clone()).map(|v| format!("You have v{v}.")).unwrap_or_default(),
+        ),
+        Some(_) => ("Update game data".to_string(), "New game data is out.".to_string()),
+        None => (String::new(), String::new()),
+    };
+    ui.set_game_update(label.into());
+    ui.set_game_hint(hint.into());
     ui.set_status_text(core.status.clone().into());
     ui.set_status_error(core.status_error);
     ui.set_addons_dir(core.config.addons_dir.to_string_lossy().into_owned().into());
@@ -775,6 +795,77 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
     refresh(ui, shared);
 }
 
+/// The game's folder, two levels above `<game>/benilla-config/AddOns`, when it holds the game's data.
+fn game_dir(addons_dir: &Path) -> Option<PathBuf> {
+    addons_dir.parent()?.parent().filter(|dir| dir.join("Data").is_dir()).map(Path::to_path_buf)
+}
+
+/// The game's exe in `dir` as last hashed (again only once it changed), and the build whose index
+/// fits it. Without an exe, the platform's build: its data patches are the same.
+fn look_at_game(dir: &Path, seen: Option<&ExeSeen>) -> (Option<ExeSeen>, game_update::Build) {
+    let native = if cfg!(windows) { game_update::Build::Windows } else { game_update::Build::Linux };
+    match game_update::find_exe(dir, !cfg!(windows)) {
+        Some((path, build)) => (game_update::look_at_exe(&path, seen), build),
+        None => (None, native),
+    }
+}
+
+/// Asks first, with the size and the game's own notes, then updates the game from its server.
+fn on_update_game(ui: &AppWindow, shared: &Shared) {
+    let (plan, running) = {
+        let core = lock(shared);
+        (core.game_plan.clone(), core.game_running || core.game_updating)
+    };
+    let Some(plan) = plan else { return };
+    if running {
+        return;
+    }
+    let what = if plan.exe.is_some() { format!("Azeroth Survivors {} is out.", plan.version) } else { "New game data is out.".to_string() };
+    let size = (plan.download_size() as f64 / 1_048_576.0).ceil();
+    let notes = if plan.notes.is_empty() { String::new() } else { format!("\n\n{}", plan.notes) };
+    let text = format!("{what} SurvivorsForge downloads {size} MB from wow.aethus.pl, checks them and puts them in the game's folder. Close the game first.{notes}");
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    ask(ui, "Update the game", &text, "Update", false, move || {
+        let Some(ui) = weak.upgrade() else { return };
+        {
+            let mut core = lock(&shared);
+            core.game_updating = true;
+            core.set_status("Updating the game...".into(), false);
+        }
+        refresh(&ui, &shared);
+        let weak = ui.as_weak();
+        run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
+            let (client, dir, seen) = {
+                let core = lock(shared);
+                (core.client(), game_dir(core.addons_dir()), core.game_exe.clone())
+            };
+            let result = (|| {
+                let dir = dir.ok_or_else(|| Error::Io("The game's folder with its Data folder was not found".into()))?;
+                let server = WebServer(client);
+                // Asked again right before: the server keeps only the newest parts.
+                let (exe, build) = look_at_game(&dir, seen.as_ref());
+                let plan = game_update::check(&server, &dir, build, exe.as_ref())?;
+                let total = plan.download_size();
+                let mut done = 0;
+                game_update::update(&server, &dir, &plan, &mut |bytes| {
+                    done += bytes;
+                    lock(shared).set_status(format!("Updating the game: {} of {} MB", done / 1_048_576, total.div_ceil(1_048_576)), false);
+                    let shared = shared.clone();
+                    let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+                })?;
+                let (exe, _) = look_at_game(&dir, None);
+                Ok::<_, Error>((plan, exe))
+            })();
+            let mut core = lock(shared);
+            core.game_updating = false;
+            let (plan, exe) = result?;
+            core.game_plan = None;
+            core.game_exe = exe;
+            Ok(if plan.exe.is_some() { format!("Azeroth Survivors is updated to {}", plan.version) } else { "The game's data is up to date".into() })
+        });
+    });
+}
+
 fn on_update_all(ui: &AppWindow, shared: &Shared) {
     let jobs = {
         let mut core = lock(shared);
@@ -853,6 +944,15 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             Ok(Some(release)) => self_update::available(APP_VERSION, &release),
             _ => None,
         };
+        let (game_dir, seen) = {
+            let core = lock(shared);
+            (game_dir(core.addons_dir()), core.game_exe.clone())
+        };
+        let game = game_dir.map(|dir| {
+            let (exe, build) = look_at_game(&dir, seen.as_ref());
+            let plan = game_update::check(&WebServer(client.clone()), &dir, build, exe.as_ref()).ok().filter(game_update::Plan::behind);
+            (plan, exe)
+        });
         let (game_versions, results) = if offline {
             (Vec::new(), updates::check_all_direct(&*github, &mut state, &registry))
         } else {
@@ -882,6 +982,10 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             core.statuses = results.into_iter().collect();
         }
         core.self_update = self_update;
+        if let Some((plan, exe)) = game {
+            core.game_plan = plan;
+            core.game_exe = exe;
+        }
         core.offline = offline;
         core.categories = categories;
         core.checking = false;
@@ -1443,6 +1547,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     on!(on_launch_game, |ui, shared| on_launch_game(&ui, shared));
+    on!(on_update_game, |ui, shared| on_update_game(&ui, shared));
     on!(on_update_all, |ui, shared| on_update_all(&ui, shared));
     on!(on_install_zip, |ui, shared| on_install_zip(&ui, shared));
     on!(on_add_repo, |ui, _shared| {

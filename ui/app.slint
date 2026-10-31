@@ -348,6 +348,12 @@ export component AppWindow inherits Window {
     // The game started from here still runs.
     in property <bool> game-running;
     callback launch-game();
+    // "Update to v0.133.0" when the game's server has a newer game; empty when up to date.
+    in property <string> game-update;
+    // What is installed, under the update button.
+    in property <string> game-hint;
+    in property <bool> game-updating;
+    callback update-game();
     callback update-all();
     callback install-zip();
     callback add-repo();
@@ -460,12 +466,29 @@ export component AppWindow inherits Window {
                 alignment: center;
                 spacing: 4px;
                 ActionButton {
-                    text: root.game-running ? "Game running" : "Launch game";
+                    text: root.game-running ? "Game running" : root.game-updating ? "Updating the game..." : root.game-update != "" ? root.game-update : "Launch game";
                     primary: true;
                     large: true;
                     // Off at once on the click, before the game's window shows up.
-                    enabled: root.game-missing == "" && !root.game-running;
+                    enabled: (root.game-missing == "" || root.game-update != "") && !root.game-running && !root.game-updating;
+                    clicked => {
+                        if root.game-update != "" {
+                            root.update-game();
+                        } else {
+                            root.launch-game();
+                        }
+                    }
+                }
+                if root.game-update != "" && root.game-missing == "" && !root.game-updating && !root.game-running : LinkButton {
+                    text: "Start without updating";
                     clicked => { root.launch-game(); }
+                }
+                if root.game-hint != "" && !root.game-updating : Text {
+                    text: root.game-hint;
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
                 }
                 if root.game-missing != "" : Text {
                     text: root.game-missing;
