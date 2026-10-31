@@ -30,6 +30,7 @@
   {% when Some with (l) %}
     <h2>Version {% if l.row.tag_short != l.row.tag %}<span title="{{ l.row.tag }}">{{ l.row.tag_short }}</span>{% else %}{{ l.row.tag }}{% endif %}</h2>
     {% if l.row.published != "" %}<p class="muted">Published {{ l.row.published }}{% if let Some(n) = l.row.downloads %} · {{ n }} downloads{% endif %}</p>{% endif %}
+    {% if let Some(c) = checks %}{% include "checks.html" %}{% endif %}
     <div class="notice {{ l.row.notice.class }}" role="status">
       <strong>{{ l.row.notice.badge }}.</strong> {{ l.row.notice.text }}
     </div>

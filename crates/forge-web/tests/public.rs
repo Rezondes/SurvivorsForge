@@ -622,3 +622,46 @@ async fn downloads_are_counted_before_the_redirect() {
     let direct = web.get("/addons/lucky/versions/v1/download").await;
     assert_eq!((direct.status, direct.location()), (StatusCode::SEE_OTHER, ASSET));
 }
+
+fn stats_body() -> Value {
+    let soon = |minutes: i64| json!(format!("2099-01-01T00:{minutes:02}:00Z"));
+    json!({
+        "launcher": { "downloads": 12345, "releases": 4, "current_tag": "v0.4.3", "current_downloads": 678 },
+        "addons": { "installs": 90, "updates": 40, "installs_30d": 9, "updates_30d": 4, "active_installations_30d": 8, "on_current_launcher_30d": 6 },
+        "top_addons_30d": [{ "slug": "lucky", "name": "Lucky Odds", "installs": 5 }],
+        "platform": { "addons": 31, "verified_addons": 12, "creators": 9, "game_versions": 3, "scanned_versions": 200, "blocked_versions": 2,
+                      "github_downloads": 5000, "website_downloads": 70, "packs": 6, "public_packs": 2, "pack_downloads": 11 },
+        "checks": { "releases": { "last": "2026-10-31T10:00:00Z", "next": soon(15) }, "sources": { "last": null, "next": soon(30) } }
+    })
+}
+
+#[tokio::test]
+async fn stats_page_renders_groups_and_privacy() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/stats", stats_body()).await;
+    let page = web.get("/stats").await;
+    assert_eq!(page.status, StatusCode::OK);
+    for text in ["12,345", "downloads of v0.4.3, the newest version", "75%", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", "not yet"] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+    assert!(web.get("/").await.body.contains(r#"<a href="/stats">Statistics</a>"#), "linked in the footer");
+}
+
+#[tokio::test]
+async fn addons_page_shows_check_times() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/stats", stats_body()).await;
+    mock(&web, "/v1/categories", categories()).await;
+    Mock::given(method("GET")).and(path("/v1/addons")).respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "addons": [] }))).mount(&web.api).await;
+    let page = web.get("/addons").await;
+    assert!(page.body.contains(r#"<p class="muted checks">Updates checked <time datetime="2026-10-31T10:00:00+00:00">"#), "{}", page.body);
+    assert!(page.body.contains("next check <time datetime=\"2099-01-01T00:15:00+00:00\">in "));
+}
+
+#[tokio::test]
+async fn pages_show_without_check_times() {
+    let mut web = with_addon("scanned", "available").await;
+    let page = web.get("/addons/lucky").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(!page.body.contains("Updates checked"), "the API did not tell");
+}

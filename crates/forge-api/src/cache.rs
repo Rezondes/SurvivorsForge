@@ -46,6 +46,7 @@ impl ResponseCache {
             ["v1", "github", ..] => Some(GITHUB_TTL),
             ["v1", "registry"] | ["v1", "addons"] | ["v1", "addons", _] | ["v1", "addons", _, "versions"] => Some(self.ttl),
             ["v1", "addons", _, "versions", _, "findings"] | ["v1", "game-versions"] | ["v1", "categories"] => Some(self.ttl * 5),
+            ["v1", "stats"] => Some(self.ttl),
             _ => None,
         }
     }

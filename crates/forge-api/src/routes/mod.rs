@@ -17,6 +17,7 @@ pub mod registry;
 pub mod reports;
 pub mod scan;
 pub mod search;
+pub mod stats;
 pub mod telemetry;
 pub mod versions;
 pub mod webhooks;

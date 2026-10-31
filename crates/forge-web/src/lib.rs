@@ -11,5 +11,6 @@ pub mod packs;
 pub mod public;
 pub mod rate_limit;
 pub mod session;
+pub mod stats;
 pub mod templates;
 pub mod trust;

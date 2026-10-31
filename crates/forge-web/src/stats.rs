@@ -1,0 +1,160 @@
+//! `/stats`, and the line about the release check that the addon pages show.
+
+use crate::app::{AppState, visitor};
+use crate::csrf::CsrfToken;
+use crate::error::WebResult;
+use crate::public::grouped;
+use crate::templates::{StatsPage, render};
+use axum::Extension;
+use axum::extract::State;
+use axum::response::Html;
+use axum_extra::extract::PrivateCookieJar;
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+
+/// One periodic check in words: "4 min ago", "in 11 min".
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Check {
+    pub last: String,
+    pub next: String,
+    /// The exact times, for `<time datetime>`.
+    pub last_at: String,
+    pub next_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Checks {
+    pub releases: Check,
+    pub sources: Check,
+}
+
+/// A labelled number of the statistics page.
+pub struct Stat {
+    pub value: String,
+    pub label: String,
+}
+
+pub struct TopAddon {
+    pub slug: String,
+    pub name: String,
+    pub installs: String,
+}
+
+fn when(v: &Value) -> Option<DateTime<Utc>> {
+    v.as_str()?.parse().ok()
+}
+
+fn span(seconds: i64) -> String {
+    match seconds {
+        s if s < 60 => "less than a minute".into(),
+        s if s < 3600 => format!("{} min", s / 60),
+        s if s < 2 * 86400 => format!("{} h", s / 3600),
+        s => format!("{} days", s / 86400),
+    }
+}
+
+pub fn ago(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    match (now - at).num_seconds() {
+        s if s < 60 => "just now".into(),
+        s => format!("{} ago", span(s)),
+    }
+}
+
+pub fn until(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    match (at - now).num_seconds() {
+        s if s < 60 => "now".into(),
+        s => format!("in {}", span(s)),
+    }
+}
+
+fn check(v: &Value, now: DateTime<Utc>) -> Check {
+    let (last, next) = (when(&v["last"]), when(&v["next"]));
+    Check {
+        last: last.map_or_else(|| "not yet".into(), |t| ago(t, now)),
+        next: next.map_or_else(|| "soon".into(), |t| until(t, now)),
+        last_at: last.map(|t| t.to_rfc3339()).unwrap_or_default(),
+        next_at: next.map(|t| t.to_rfc3339()).unwrap_or_default(),
+    }
+}
+
+pub fn checks_of(stats: &Value, now: DateTime<Utc>) -> Checks {
+    Checks { releases: check(&stats["checks"]["releases"], now), sources: check(&stats["checks"]["sources"], now) }
+}
+
+/// The check times for the addon pages; a page still shows when the API cannot tell them.
+pub async fn checks(state: &AppState) -> Option<Checks> {
+    let stats = state.api.get("/v1/stats", None).await.ok()?;
+    Some(checks_of(&stats, Utc::now()))
+}
+
+fn n(v: &Value) -> String {
+    grouped(v.as_i64().unwrap_or(0))
+}
+
+fn stat(value: String, label: &str) -> Stat {
+    Stat { value, label: label.to_string() }
+}
+
+pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
+    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let s = state.api.get("/v1/stats", None).await?;
+    let (l, a, p) = (&s["launcher"], &s["addons"], &s["platform"]);
+    let current = l["current_tag"].as_str().unwrap_or_default();
+    let active = a["active_installations_30d"].as_i64().unwrap_or(0);
+    let on_current = a["on_current_launcher_30d"].as_i64().unwrap_or(0);
+    let launcher = vec![
+        stat(n(&l["downloads"]), "downloads of every version"),
+        stat(n(&l["current_downloads"]), &if current.is_empty() { "downloads of the newest version".into() } else { format!("downloads of {current}, the newest version") }),
+        stat(n(&l["releases"]), "releases"),
+    ];
+    let addons = vec![
+        stat(n(&a["installs"]), "installs through the launcher"),
+        stat(n(&a["updates"]), "updates through the launcher"),
+        stat(n(&a["installs_30d"]), "installs in the last 30 days"),
+        stat(n(&a["updates_30d"]), "updates in the last 30 days"),
+        stat(grouped(active), "launchers active in the last 30 days (those that send an installation ID)"),
+        stat(if active == 0 { "-".into() } else { format!("{}%", on_current * 100 / active) }, "of them on the newest launcher"),
+    ];
+    let platform = vec![
+        stat(n(&p["addons"]), "addons"),
+        stat(n(&p["verified_addons"]), "verified by hand"),
+        stat(n(&p["creators"]), "creators"),
+        stat(n(&p["scanned_versions"]), "versions scanned"),
+        stat(n(&p["blocked_versions"]), "versions blocked"),
+        stat(n(&p["game_versions"]), "game versions known"),
+        stat(n(&p["github_downloads"]), "downloads of addon releases on GitHub"),
+        stat(n(&p["website_downloads"]), "addon downloads through this website"),
+        stat(n(&p["packs"]), "addon packs"),
+        stat(n(&p["public_packs"]), "public packs"),
+        stat(n(&p["pack_downloads"]), "pack downloads"),
+    ];
+    let top = s["top_addons_30d"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| TopAddon { slug: t["slug"].as_str().unwrap_or_default().into(), name: t["name"].as_str().unwrap_or_default().into(), installs: n(&t["installs"]) })
+        .collect();
+    Ok(render(&StatsPage { user, csrf: csrf.0, launcher, addons, platform, top, checks: checks_of(&s, Utc::now()) }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn times_read_naturally() {
+        let now: DateTime<Utc> = "2026-10-31T10:07:00Z".parse().unwrap();
+        assert_eq!(ago("2026-10-31T10:03:00Z".parse().unwrap(), now), "4 min ago");
+        assert_eq!(ago("2026-10-31T10:06:30Z".parse().unwrap(), now), "just now");
+        assert_eq!(until("2026-10-31T10:15:00Z".parse().unwrap(), now), "in 8 min");
+        assert_eq!(until("2026-10-31T16:00:00Z".parse().unwrap(), now), "in 5 h");
+        assert_eq!(until("2026-10-31T10:06:00Z".parse().unwrap(), now), "now", "overdue: running now");
+        assert_eq!(ago("2026-10-27T10:07:00Z".parse().unwrap(), now), "4 days ago");
+    }
+
+    #[test]
+    fn missing_times_say_so() {
+        let checks = checks_of(&serde_json::json!({}), Utc::now());
+        assert_eq!((checks.releases.last.as_str(), checks.releases.next.as_str()), ("not yet", "soon"));
+    }
+}

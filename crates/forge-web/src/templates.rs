@@ -121,10 +121,24 @@ pub struct Card {
 }
 
 #[derive(Template)]
+#[template(path = "stats.html")]
+pub struct StatsPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub launcher: Vec<crate::stats::Stat>,
+    pub addons: Vec<crate::stats::Stat>,
+    pub platform: Vec<crate::stats::Stat>,
+    pub top: Vec<crate::stats::TopAddon>,
+    pub checks: crate::stats::Checks,
+}
+
+#[derive(Template)]
 #[template(path = "addons.html")]
 pub struct AddonsPage {
     pub user: Option<Visitor>,
     pub csrf: String,
+    /// When the releases were checked; `None` when the API cannot tell.
+    pub checks: Option<crate::stats::Checks>,
     pub q: String,
     pub category: String,
     pub trust: String,
@@ -191,6 +205,7 @@ pub struct LatestBlock {
 pub struct AddonPage {
     pub user: Option<Visitor>,
     pub csrf: String,
+    pub checks: Option<crate::stats::Checks>,
     pub canonical: String,
     pub slug: String,
     pub name: String,

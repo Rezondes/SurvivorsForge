@@ -23,6 +23,11 @@ pub struct Worker {
     periodic: Vec<(&'static str, Duration)>,
 }
 
+/// How often the releases of every addon are polled (`sync::POLL_RELEASES`).
+pub const POLL_RELEASES_EVERY: Duration = Duration::minutes(15);
+/// How often stored versions are compared with GitHub (`source_check::CHECK_SOURCES`).
+pub const CHECK_SOURCES_EVERY: Duration = Duration::hours(6);
+
 /// The worker of the platform: every job kind and every periodic job.
 pub fn platform(state: AppState) -> Worker {
     let sync_state = state.clone();
@@ -79,9 +84,9 @@ pub fn platform(state: AppState) -> Worker {
             let state = downloads_state.clone();
             async move { crate::downloads::prune(&state.pool, (state.clock)()).await }
         })
-        .every(sync::POLL_RELEASES, Duration::minutes(15))
+        .every(sync::POLL_RELEASES, POLL_RELEASES_EVERY)
         .every(crate::pack_job::PRUNE, Duration::hours(1))
-        .every(crate::source_check::CHECK_SOURCES, Duration::hours(6))
+        .every(crate::source_check::CHECK_SOURCES, CHECK_SOURCES_EVERY)
         .every(crate::request_stats::PRUNE, Duration::days(1))
         .every(crate::launcher_stats::POLL, Duration::hours(1))
         .every(crate::routes::telemetry::PRUNE, Duration::days(1))

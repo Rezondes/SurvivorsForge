@@ -3,6 +3,7 @@
 {% block head %}<meta name="description" content="Addons for Azeroth Survivors, checked for harmful code.">{% endblock %}
 {% block content %}
 <h1>Addons</h1>
+{% if let Some(c) = checks %}{% include "checks.html" %}{% endif %}
 <form class="search" method="get" action="/addons" role="search"
       hx-get="/addons" hx-trigger="input changed delay:300ms from:input, change from:select, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status" hx-swap="innerHTML scroll:top">
   <label for="q">Search</label>

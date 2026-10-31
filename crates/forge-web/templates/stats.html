@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Statistics - SurvivorsForge{% endblock %}
+{% block head %}<meta name="description" content="How often SurvivorsForge and its addons are downloaded, installed and updated.">{% endblock %}
+{% block content %}
+<h1>Statistics</h1>
+<p class="lead">How SurvivorsForge and its addons are used. The numbers are anonymous; <a href="#privacy">what the launcher sends</a>.</p>
+
+<section class="home-section">
+  <h2>The launcher</h2>
+  {% let items = launcher %}{% include "stats_list.html" %}
+  <p class="muted">From GitHub's download counts of the releases; self-updates count too.</p>
+</section>
+
+<section class="home-section">
+  <h2>Addons through the launcher</h2>
+  {% let items = addons %}{% include "stats_list.html" %}
+  {% if !top.is_empty() %}
+  <h3>Installed most in the last 30 days</h3>
+  <ol class="top-list">
+    {% for t in top %}<li><a href="/addons/{{ t.slug|urlencode }}">{{ t.name }}</a> <span class="muted">{{ t.installs }} installs</span></li>{% endfor %}
+  </ol>
+  {% endif %}
+</section>
+
+<section class="home-section">
+  <h2>The platform</h2>
+  {% let items = platform %}{% include "stats_list.html" %}
+</section>
+
+<section class="home-section">
+  <h2>Checks</h2>
+  <dl class="stats">
+    <div class="stat"><dt>New releases, every 15 minutes</dt><dd class="small">last <time datetime="{{ checks.releases.last_at }}">{{ checks.releases.last }}</time>, next <time datetime="{{ checks.releases.next_at }}">{{ checks.releases.next }}</time></dd></div>
+    <div class="stat"><dt>Files unchanged on GitHub, every 6 hours</dt><dd class="small">last <time datetime="{{ checks.sources.last_at }}">{{ checks.sources.last }}</time>, next <time datetime="{{ checks.sources.next_at }}">{{ checks.sources.next }}</time></dd></div>
+  </dl>
+</section>
+
+<section class="panel home-section" id="privacy">
+  <h2>What the launcher sends</h2>
+  <p>After each install or update of a verified addon, the launcher sends one anonymous event: whether it was an install or an update, the addon and its version, the launcher version and the operating system. When it fails, a fixed code such as <code>hash_mismatch</code> goes along, never an error text, a path or a name.</p>
+  <p>Each launcher also has a random installation ID. It says nothing about you or your computer and helps to find out what went wrong when something fails. It goes only to this platform, never to GitHub, and is forgotten after 90 days; the counts stay.</p>
+  <p>No IP address is stored. To count each visitor once a day, the address is turned into a code with a key that changes every day and is never written down.</p>
+  <p>In the launcher, <strong>Settings, Statistics</strong> turns the events off, or only the installation ID.</p>
+</section>
+{% endblock %}

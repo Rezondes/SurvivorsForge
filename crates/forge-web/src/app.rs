@@ -92,6 +92,7 @@ pub fn router(state: AppState) -> Router {
         .route("/addons/{slug}/versions", get(crate::public::versions))
         .route("/addons/{slug}/versions/{tag}", get(crate::public::version))
         .route("/addons/{slug}/versions/{tag}/download", get(crate::public::download))
+        .route("/stats", get(crate::stats::stats))
         .route("/packs", get(crate::packs::packs))
         .route("/packs/new", get(crate::packs::new_pack).post(crate::packs::create_pack))
         .route("/packs/{id}", get(crate::packs::pack))

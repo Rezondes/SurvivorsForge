@@ -146,6 +146,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
     Ok(render(&AddonsPage {
         user,
         csrf: csrf.0,
+        checks: crate::stats::checks(&state).await,
         q: param("q").unwrap_or_default(),
         category: param("category").unwrap_or_default(),
         trust: param("trust").unwrap_or_default(),
@@ -159,7 +160,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
 }
 
 /// `24365` as `24,365`.
-fn grouped(n: i64) -> String {
+pub(crate) fn grouped(n: i64) -> String {
     let digits = n.unsigned_abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
@@ -209,6 +210,7 @@ pub async fn addon(
     let repo_owner = s(&a["repo"]).split('/').next().unwrap_or_default().to_string();
     let can_claim = a["claimed"] == false && user.as_ref().is_some_and(|u| u.login.eq_ignore_ascii_case(&repo_owner));
     let page = AddonPage {
+        checks: crate::stats::checks(&state).await,
         can_claim,
         install_url: state.install_url(),
         error: claim.error,
