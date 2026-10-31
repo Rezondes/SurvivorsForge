@@ -535,10 +535,6 @@ export component AppWindow inherits Window {
                 padding: 20px;
                 spacing: 16px;
 
-                SectionHeading {
-                    text: root.page == 0 ? "Installed" : root.page == 1 ? "Verified Addons" : "Settings";
-                }
-
                 if root.page != 2 && !root.showing-detail : HorizontalLayout {
                     spacing: Theme.gap-tight;
                     Field {
