@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}API for launchers - SurvivorsForge{% endblock %}
+{% block title %}{{ title }} - SurvivorsForge{% endblock %}
 {% block head %}<script src="/static/api-docs.js?v={{ crate::app::asset_version() }}" defer></script>{% endblock %}
 {% block content %}
 <div class="docs-layout">
@@ -12,8 +12,8 @@
     </ul>
   </nav>
   <section class="panel description">
-    <h1>API for launchers</h1>
-    <p><a class="button" href="/api-docs/playground">Try it in the playground</a></p>
+    <h1>{{ title }}</h1>
+    {% if playground %}<p><a class="button" href="/api-docs/playground">Try it in the playground</a></p>{% endif %}
     {{ description_html|safe }}
   </section>
 </div>

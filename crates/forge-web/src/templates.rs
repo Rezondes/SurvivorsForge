@@ -905,16 +905,19 @@ pub struct PackBuildingPage {
 }
 
 #[derive(Template)]
-#[template(path = "api_docs.html")]
-pub struct ApiDocsPage {
+#[template(path = "docs.html")]
+pub struct DocsPage {
     pub user: Option<Visitor>,
     pub csrf: String,
-    /// `docs/public-api.md` without its title, through the same sanitizer as addon descriptions.
+    pub title: &'static str,
+    /// The "Try it in the playground" button of the API docs.
+    pub playground: bool,
+    /// A file of `docs/` without its title, through the same sanitizer as addon descriptions.
     pub description_html: String,
     pub toc: Vec<TocEntry>,
 }
 
-/// One heading of the API docs in the side navigation.
+/// One heading of a docs page in the side navigation.
 pub struct TocEntry {
     pub id: String,
     pub text: String,

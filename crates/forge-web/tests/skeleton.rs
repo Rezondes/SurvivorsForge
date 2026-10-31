@@ -221,6 +221,21 @@ async fn api_docs_show_the_public_api_markdown() {
 }
 
 #[tokio::test]
+async fn creator_guide_shows_the_markdown_with_working_step_links() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/creator-guide").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.body.matches("<h1>").count(), 1, "the page's own title only");
+    assert!(page.body.contains("<title>Guide for addon creators - SurvivorsForge</title>"));
+    assert!(!page.body.contains("/api-docs/playground"), "no playground button here");
+    // The step list at the top links to the headings by the same ids GitHub gives them.
+    assert!(page.body.contains(r#"<h3 id="5-add-the-release-workflow">"#), "{}", page.body);
+    assert!(page.body.contains(r##"href="#5-add-the-release-workflow""##), "{}", page.body);
+    assert!(page.body.contains("name: Release\n\n# Adds a \"Run workflow\""), "the workflow stays a code block, its comment no heading");
+    assert!(web.get("/").await.body.contains(r#"href="/creator-guide""#), "linked in the footer");
+}
+
+#[tokio::test]
 async fn playground_shows_the_answer_and_reaches_only_public_endpoints() {
     let mut web = TestWeb::new().await;
     Mock::given(method("GET"))

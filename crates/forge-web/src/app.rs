@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::csrf::{self, CsrfToken};
 use crate::error::{WebError, WebResult, error_page};
 use crate::session::{self, SESSION_COOKIE};
-use crate::templates::{ApiDocsPage, ApiPlaygroundPage, IndexPage, LoginPage, TocEntry, Visitor, render};
+use crate::templates::{ApiPlaygroundPage, DocsPage, IndexPage, LoginPage, TocEntry, Visitor, render};
 use axum::extract::{FromRef, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -87,6 +87,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(index))
         .route("/api-docs", get(api_docs))
         .route("/api-docs/playground", get(api_playground))
+        .route("/creator-guide", get(creator_guide))
         .route("/addons", get(crate::public::addons))
         .route("/addons/{slug}", get(crate::public::addon))
         .route("/addons/{slug}/versions", get(crate::public::versions))
@@ -230,11 +231,19 @@ async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extension(c
 
 /// The public API for other launchers, from the same file as `docs/public-api.md` on GitHub.
 async fn api_docs(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
-    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
-    let md = include_str!("../../../docs/public-api.md");
+    docs_page(&state, &jar, csrf, "API for launchers", true, include_str!("../../../docs/public-api.md")).await
+}
+
+/// From the repo to one-button releases, from the same file as `docs/creator-guide.md` on GitHub.
+async fn creator_guide(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
+    docs_page(&state, &jar, csrf, "Guide for addon creators", false, include_str!("../../../docs/creator-guide.md")).await
+}
+
+async fn docs_page(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, title: &'static str, playground: bool, md: &str) -> WebResult<Html<String>> {
+    let user = visitor(state, jar).await?.map(|(v, _)| v);
     // The page has its own h1; the Markdown's title would come out as a second heading.
     let (description_html, toc) = heading_ids(&forge_core::markdown::render(md.split_once('\n').map_or(md, |(_, rest)| rest), ""));
-    Ok(render(&ApiDocsPage { user, csrf: csrf.0, description_html, toc }))
+    Ok(render(&DocsPage { user, csrf: csrf.0, title, playground, description_html, toc }))
 }
 
 /// Gives every `h3` and `h4` of rendered Markdown an id from its text, and lists them for the

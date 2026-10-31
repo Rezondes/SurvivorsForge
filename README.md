@@ -132,7 +132,7 @@ To approximate a Steam Deck in Game Mode, set `XDG_CURRENT_DESKTOP=gamescope` (f
 | `crates/` | The platform (see Platform) |
 | `compose.yaml` (server), `compose.local.yaml` (whole platform locally), `compose.dev.yaml` (Postgres for `cargo test`), `.env.example`, `.env.local.example` | Running the platform (see [docs/self-hosting.md](docs/self-hosting.md), [docs/local-setup.md](docs/local-setup.md)) |
 | `scripts/compose-smoke.sh` | Smoke test of the API stack in CI |
-| `docs/` | Local setup, self-hosting, public API |
+| `docs/` | Local setup, self-hosting, public API, guide for addon creators |
 
 ## How it works
 
@@ -290,7 +290,7 @@ Creators log in with GitHub through a GitHub App and publish addons from their o
 
 Players of the browser version of the game upload addons as one zip. An addon pack bundles several addons into that zip, every addon in its own folder, on the website (`/packs/new`) or in the launcher (*Browse*, tick the addons, *Save as zip* or *Share as link*). A shared pack link shows what is inside and gives the same zip.
 
-`compose.yaml` runs Postgres, API, worker, website and Caddy; the `monitoring` profile adds Prometheus, Loki, Tempo, Alloy, cAdvisor, node-exporter, a Docker socket proxy and Grafana (image built from `docker/forge-grafana.Dockerfile`). How to run it: [docs/local-setup.md](docs/local-setup.md) on your own machine, [docs/self-hosting.md](docs/self-hosting.md) on a server. Other launchers may read the addon index without a key: [docs/public-api.md](docs/public-api.md).
+`compose.yaml` runs Postgres, API, worker, website and Caddy; the `monitoring` profile adds Prometheus, Loki, Tempo, Alloy, cAdvisor, node-exporter, a Docker socket proxy and Grafana (image built from `docker/forge-grafana.Dockerfile`). How to run it: [docs/local-setup.md](docs/local-setup.md) on your own machine, [docs/self-hosting.md](docs/self-hosting.md) on a server. Other launchers may read the addon index without a key: [docs/public-api.md](docs/public-api.md). Addon creators new to GitHub: [docs/creator-guide.md](docs/creator-guide.md), from the repo to one-button releases. The website shows both files as pages (`/api-docs`, `/creator-guide`), compiled in with `include_str!`.
 
 ## Launcher pages
 
