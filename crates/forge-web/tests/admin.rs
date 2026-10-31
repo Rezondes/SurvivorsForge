@@ -413,3 +413,37 @@ async fn stats_range_switch() {
     get_json(&web, "/v1/admin/reports", json!([])).await;
     assert!(web.get("/admin").await.body.contains(r#"href="/admin/stats""#), "linked for moderators by default");
 }
+
+async fn admin_stats_page(body: Value) -> String {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("root", "admin")).await;
+    Mock::given(method("GET")).and(path("/v1/admin/stats")).respond_with(ResponseTemplate::new(200).set_body_json(body)).mount(&web.api).await;
+    web.get("/admin/stats").await.body
+}
+
+#[tokio::test]
+async fn problems_come_first_and_sections_are_grouped() {
+    let mut body = admin_stats_body();
+    body["github"]["quotas"][0]["remaining"] = json!(120);
+    body["telemetry"]["failing_addons"] = json!([{ "slug": "lucky", "failed": 3, "total": 4 }]);
+    body["scans"]["errors"] = json!(2);
+    let page = admin_stats_page(body).await;
+    let attention = page.find("Needs attention").expect("a problem block");
+    for text in ["sync_addon: 2 failed runs", "GitHub quota read_token (core): 120 of 5,000 left", "2 scans failed", "lucky: 3 of 4 installs or updates failed"] {
+        let at = page.find(text).unwrap_or_else(|| panic!("missing {text}: {page}"));
+        assert!(at > attention && at < page.find(r#"id="website""#).unwrap(), "{text} sits in the block at the top");
+    }
+    for (anchor, title) in [("website", "Website"), ("api", "API"), ("jobs", "Jobs and scans"), ("github", "GitHub"), ("launcher", "Launcher")] {
+        assert!(page.contains(&format!(r##"<a href="#{anchor}">{title}</a>"##)), "jump link {anchor}");
+        assert!(page.contains(&format!(r#"<h2 id="{anchor}">{title}</h2>"#)), "group {anchor}");
+    }
+    assert!(page.contains("<h3>Busiest routes</h3>"), "tables under their group");
+}
+
+#[tokio::test]
+async fn no_problem_block_when_all_is_well() {
+    let mut body = admin_stats_body();
+    body["jobs"][0]["failed"] = json!(0);
+    let page = admin_stats_page(body).await;
+    assert!(!page.contains("Needs attention"), "{page}");
+}

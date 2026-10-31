@@ -4,7 +4,7 @@ use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
 use crate::error::{WebError, WebResult};
 use crate::public::grouped;
-use crate::templates::{AdminStatsPage, Permission, StatTable, StatsPage, render};
+use crate::templates::{AdminStatsPage, Permission, StatGroup, StatTable, StatsPage, render};
 use axum::Extension;
 use axum::extract::State;
 use axum::response::Html;
@@ -167,6 +167,29 @@ fn table(title: &str, head: &[&str], list: &Value, cells: impl Fn(&Value) -> Vec
     }
 }
 
+/// What needs a look first: failing jobs, scans and installs, and a GitHub quota near its end.
+pub fn attention(s: &Value, now: chrono::DateTime<Utc>) -> Vec<String> {
+    let list = |v: &Value| v.as_array().cloned().unwrap_or_default();
+    let mut found = Vec::new();
+    for job in list(&s["jobs"]).iter().filter(|j| j["failed"].as_i64().unwrap_or(0) > 0) {
+        found.push(format!("{}: {} failed runs, last error: {}", text(&job["kind"]), n(&job["failed"]), text(&job["last_error"])));
+    }
+    for q in list(&s["github"]["quotas"]) {
+        let (left, limit) = (q["remaining"].as_i64().unwrap_or(0), q["limit"].as_i64().unwrap_or(0));
+        if limit > 0 && left * 10 < limit {
+            let reset = when(&q["reset_at"]).map_or_else(String::new, |t| format!(", resets {}", until(t, now)));
+            found.push(format!("GitHub quota {} ({}): {} of {} left{reset}", text(&q["quota"]), text(&q["resource"]), n(&q["remaining"]), n(&q["limit"])));
+        }
+    }
+    if s["scans"]["errors"].as_i64().unwrap_or(0) > 0 {
+        found.push(format!("{} scans failed", n(&s["scans"]["errors"])));
+    }
+    for a in list(&s["telemetry"]["failing_addons"]) {
+        found.push(format!("{}: {} of {} installs or updates failed", text(&a["slug"]), n(&a["failed"]), n(&a["total"])));
+    }
+    found
+}
+
 /// The newest first.
 fn reversed(list: &Value) -> Value {
     Value::Array(list.as_array().into_iter().flatten().rev().cloned().collect())
@@ -213,49 +236,61 @@ pub async fn admin_stats(
     let t = &s["telemetry"];
     let w = &s["website"];
     let visits = |title: &str, head: &str, list: &Value| table(title, &[head, "Views", "Visitors"], list, |x| vec![text(&x["value"]), n(&x["views"]), n(&x["visitors"])], "No visits yet.");
-    let tables = vec![
-        table("Website visits per day", &["Day", "Views", "Visitors"], &reversed(&w["per_day"]), |x| vec![text(&x["day"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
-        table("Most viewed pages", &["Page", "Views", "Visitors"], &w["pages"], |x| vec![text(&x["page"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
-        table("Most viewed addons and packs", &["Page", "Views", "Visitors"], &w["targets"], |x| {
-            vec![text(&x["page"]).replace("{slug}", &text(&x["target"])).replace("{id}", &text(&x["target"])), n(&x["views"]), n(&x["visitors"])]
-        }, "No visits yet."),
-        visits("Where visitors come from", "Site", &w["referrers"]),
-        visits("Countries", "Country", &w["countries"]),
-        visits("Devices", "Device", &w["devices"]),
-        table("Busiest routes", &["Route", "Requests", "Average ms", "Slowest ms"], &r["routes"], |x| {
-            vec![format!("{} {}", text(&x["method"]), text(&x["route"])), n(&x["count"]), n(&x["avg_ms"]), n(&x["max_ms"])]
-        }, "No requests yet."),
-        table("Clients", &["Client", "Requests"], &r["clients"], |x| vec![text(&x["client"]), n(&x["count"])], "No requests yet."),
-        table("Status codes", &["Status", "Requests"], &r["statuses"], |x| vec![text(&x["status"]), n(&x["count"])], "No requests yet."),
-        table("Jobs", &["Kind", "Waiting", "Running", "Done", "Failed", "Last error"], &s["jobs"], |x| {
-            vec![text(&x["kind"]), n(&x["open"]), n(&x["running"]), n(&x["done"]), n(&x["failed"]), text(&x["last_error"])]
-        }, "No jobs."),
-        table("GitHub quotas", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
-            let at = |v: &Value| when(v);
-            vec![
-                format!("{} ({})", text(&x["quota"]), text(&x["resource"])),
-                n(&x["limit"]),
-                n(&x["used"]),
-                n(&x["remaining"]),
-                at(&x["reset_at"]).map_or_else(|| "-".into(), |t| until(t, now)),
-                at(&x["seen_at"]).map_or_else(|| "-".into(), |t| ago(t, now)),
-            ]
-        }, "GitHub has not answered yet."),
-        table("GitHub requests by origin", &["Caused by", "Requests"], &g["origins"], |x| vec![text(&x["origin"]), n(&x["count"])], "No GitHub requests."),
-        table("GitHub endpoints", &["Endpoint", "Quota", "Requests", "Errors"], &g["endpoints"], |x| {
-            vec![text(&x["endpoint"]), text(&x["quota"]), n(&x["count"]), n(&x["errors"])]
-        }, "No GitHub requests."),
-        table("GitHub requests per hour", &["Hour (UTC)", "Requests"], &reversed(&g["per_hour"]), |x| {
-            vec![when(&x["hour"]).map_or_else(|| text(&x["hour"]), |t| t.format("%Y-%m-%d %H:00").to_string()), n(&x["count"])]
-        }, "No GitHub requests."),
-        table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![text(&x["kind"]), n(&x["count"])], "No events from launchers yet."),
-        table("Addons that fail to install", &["Addon", "Failed", "All events"], &t["failing_addons"], |x| {
-            vec![text(&x["slug"]), n(&x["failed"]), n(&x["total"])]
-        }, "No failed installs."),
-        table("Error codes", &["Code", "Events"], &t["error_codes"], |x| vec![text(&x["code"]), n(&x["count"])], "No errors."),
-        table("Launcher versions", &["Version", "Events"], &t["launcher_versions"], |x| vec![text(&x["version"]), n(&x["count"])], "No events from launchers yet."),
+    let group = |id: &'static str, title: &'static str, tables: Vec<StatTable>| StatGroup { id, title, tables };
+    let groups = vec![
+        group("website", "Website", vec![
+            table("Website visits per day", &["Day", "Views", "Visitors"], &reversed(&w["per_day"]), |x| vec![text(&x["day"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
+            table("Most viewed pages", &["Page", "Views", "Visitors"], &w["pages"], |x| vec![text(&x["page"]), n(&x["views"]), n(&x["visitors"])], "No visits yet."),
+            table("Most viewed addons and packs", &["Page", "Views", "Visitors"], &w["targets"], |x| {
+                vec![text(&x["page"]).replace("{slug}", &text(&x["target"])).replace("{id}", &text(&x["target"])), n(&x["views"]), n(&x["visitors"])]
+            }, "No visits yet."),
+            visits("Where visitors come from", "Site", &w["referrers"]),
+            visits("Countries", "Country", &w["countries"]),
+            visits("Devices", "Device", &w["devices"]),
+        ]),
+        group("api", "API", vec![
+            table("Busiest routes", &["Route", "Requests", "Average ms", "Slowest ms"], &r["routes"], |x| {
+                vec![format!("{} {}", text(&x["method"]), text(&x["route"])), n(&x["count"]), n(&x["avg_ms"]), n(&x["max_ms"])]
+            }, "No requests yet."),
+            table("Clients", &["Client", "Requests"], &r["clients"], |x| vec![text(&x["client"]), n(&x["count"])], "No requests yet."),
+            table("Status codes", &["Status", "Requests"], &r["statuses"], |x| vec![text(&x["status"]), n(&x["count"])], "No requests yet."),
+        ]),
+        group("jobs", "Jobs and scans", vec![
+            table("Jobs", &["Kind", "Waiting", "Running", "Done", "Failed", "Last error"], &s["jobs"], |x| {
+                vec![text(&x["kind"]), n(&x["open"]), n(&x["running"]), n(&x["done"]), n(&x["failed"]), text(&x["last_error"])]
+            }, "No jobs."),
+        ]),
+        group("github", "GitHub", vec![
+            table("GitHub quotas", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
+                let at = |v: &Value| when(v);
+                vec![
+                    format!("{} ({})", text(&x["quota"]), text(&x["resource"])),
+                    n(&x["limit"]),
+                    n(&x["used"]),
+                    n(&x["remaining"]),
+                    at(&x["reset_at"]).map_or_else(|| "-".into(), |t| until(t, now)),
+                    at(&x["seen_at"]).map_or_else(|| "-".into(), |t| ago(t, now)),
+                ]
+            }, "GitHub has not answered yet."),
+            table("GitHub requests by origin", &["Caused by", "Requests"], &g["origins"], |x| vec![text(&x["origin"]), n(&x["count"])], "No GitHub requests."),
+            table("GitHub endpoints", &["Endpoint", "Quota", "Requests", "Errors"], &g["endpoints"], |x| {
+                vec![text(&x["endpoint"]), text(&x["quota"]), n(&x["count"]), n(&x["errors"])]
+            }, "No GitHub requests."),
+            table("GitHub requests per hour", &["Hour (UTC)", "Requests"], &reversed(&g["per_hour"]), |x| {
+                vec![when(&x["hour"]).map_or_else(|| text(&x["hour"]), |t| t.format("%Y-%m-%d %H:00").to_string()), n(&x["count"])]
+            }, "No GitHub requests."),
+        ]),
+        group("launcher", "Launcher", vec![
+            table("Launcher events", &["Kind", "Events"], &t["kinds"], |x| vec![text(&x["kind"]), n(&x["count"])], "No events from launchers yet."),
+            table("Addons that fail to install", &["Addon", "Failed", "All events"], &t["failing_addons"], |x| {
+                vec![text(&x["slug"]), n(&x["failed"]), n(&x["total"])]
+            }, "No failed installs."),
+            table("Error codes", &["Code", "Events"], &t["error_codes"], |x| vec![text(&x["code"]), n(&x["count"])], "No errors."),
+            table("Launcher versions", &["Version", "Events"], &t["launcher_versions"], |x| vec![text(&x["version"]), n(&x["count"])], "No events from launchers yet."),
+        ]),
     ];
-    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, range, totals, tables }))
+    let attention = attention(&s, now);
+    Ok(render(&AdminStatsPage { user: Some(user), csrf: csrf.0, range, totals, attention, groups }))
 }
 
 #[cfg(test)]

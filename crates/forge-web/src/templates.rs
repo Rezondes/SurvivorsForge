@@ -509,6 +509,15 @@ pub struct AdminStatsPage {
     /// `24h`, `7d` or `30d`.
     pub range: String,
     pub totals: Vec<crate::stats::Stat>,
+    /// Problems shown first; empty when all is well.
+    pub attention: Vec<String>,
+    pub groups: Vec<StatGroup>,
+}
+
+/// A section of `/admin/stats` with its jump anchor.
+pub struct StatGroup {
+    pub id: &'static str,
+    pub title: &'static str,
     pub tables: Vec<StatTable>,
 }
 
