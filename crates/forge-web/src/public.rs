@@ -270,7 +270,9 @@ pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Exte
     let verified_author = a["verified_author"] == true;
     let rows = list.as_array().into_iter().flatten().map(|v| version_row(v, verified_author)).collect::<Vec<_>>();
     let rows = rows.into_iter().map(|r| (download_href(&slug, &r), r)).collect();
-    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), rows, perms }))
+    // GitHub counts downloads of release files only, not the source zips of tags.
+    let counted = a["source_type"] != "tag";
+    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), rows, perms, counted }))
 }
 
 async fn version_data(state: &AppState, slug: &str, tag: &str) -> WebResult<(Value, VersionRow)> {

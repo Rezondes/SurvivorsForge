@@ -9,12 +9,13 @@
 {% else %}
 <div class="table-wrap list">
 <table>
-  <thead><tr><th>Version</th><th>Published</th><th>Safety check</th><th>Game version</th><th>SHA-256</th><th></th></tr></thead>
+  <thead><tr><th>Version</th><th>Published</th><th>Downloads</th><th>Safety check</th><th>Game version</th><th>SHA-256</th><th></th></tr></thead>
   <tbody>
   {% for (href, r) in rows %}
     <tr>
       <td><a href="/addons/{{ slug }}/versions/{{ r.tag }}">{{ r.tag }}</a>{% if r.prerelease %} <span class="badge">Pre-release</span>{% endif %}{% if r.deleted %} <span class="badge">Removed on GitHub</span>{% endif %}</td>
       <td>{{ r.published }}</td>
+      <td>{% if !counted %}<span class="muted">not counted</span>{% else %}{% if let Some(n) = r.downloads %}{{ n }}{% else %}0{% endif %}{% endif %}</td>
       <td><span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span></td>
       <td>{{ r.game }}</td>
       <td><code>{{ r.sha256|truncate(12) }}</code></td>

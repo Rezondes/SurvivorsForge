@@ -921,3 +921,24 @@ async fn addons_and_versions_can_be_reported() {
         assert!(again.body.contains(text), "missing {text}: {}", again.body);
     }
 }
+
+#[tokio::test]
+async fn every_version_shows_its_downloads() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/addons/lucky", addon("scanned")).await;
+    let mut list = versions("scanned", "available");
+    list[0]["downloads"] = json!(12345);
+    list[1]["downloads"] = json!(0);
+    mock(&web, "/v1/addons/lucky/versions", list).await;
+    let page = web.get("/addons/lucky/versions").await;
+    assert!(page.body.contains("<th>Downloads</th>"), "{}", page.body);
+    assert!(page.body.contains("<td>12,345</td>") && page.body.contains("<td>0</td>"), "a version nobody downloaded says 0: {}", page.body);
+
+    let mut tag_addon = addon("scanned");
+    tag_addon["source_type"] = json!("tag");
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/addons/lucky", tag_addon).await;
+    mock(&web, "/v1/addons/lucky/versions", versions("scanned", "available")).await;
+    let page = web.get("/addons/lucky/versions").await;
+    assert!(page.body.contains("not counted"), "GitHub counts no source zips: {}", page.body);
+}

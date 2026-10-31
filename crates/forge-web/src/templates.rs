@@ -294,6 +294,8 @@ pub struct VersionsPage {
     pub rows: Vec<(String, VersionRow)>,
     /// What the visitor may edit; `None` shows no edit toolbar.
     pub perms: Option<Perms>,
+    /// GitHub counts the downloads (release files, not the source zips of tags).
+    pub counted: bool,
 }
 
 #[derive(Template)]
