@@ -241,7 +241,7 @@ async fn addon_api_shows_the_game_docs_with_their_date_and_the_discord_channel()
     let page = web.get("/docs/addon-api").await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("<title>Addon API of the game - SurvivorsForge</title>"));
-    assert!(page.body.contains("27 October 2026 at"), "the version it is, for later updates");
+    assert!(page.body.contains("1 November 2026"), "the version it is, for later updates");
     assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564599899469914203""#), "{}", page.body);
     assert!(page.body.contains(r#"<h4 id="azs-getruntime-seconds-or-nil">"#), "{}", page.body);
     assert!(web.get("/docs").await.body.contains(r#"href="/docs/addon-api""#), "linked from the docs page");
