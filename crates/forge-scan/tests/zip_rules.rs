@@ -107,6 +107,32 @@ fn bomb_detected_with_bounded_memory() {
 }
 
 #[test]
+fn toc_larger_than_any_real_one_is_critical() {
+    // 1 MB passes the size limits of the zip, but no .toc is that large.
+    let toc: &'static [u8] = Box::leak(format!("## Interface: 11200\n{}", " ".repeat(1024 * 1024)).into_bytes().into_boxed_slice());
+    let report = scan(&zip(&[("Big/Big.toc", toc), ("Big/Big.lua", b"x = 1\n")]), &folders(&["Big"]), &[]);
+    let f = report.findings.iter().find(|f| f.rule == "zip.bomb" && f.severity == Severity::Critical).expect("critical zip.bomb");
+    assert_eq!(f.file, "Big/Big.toc");
+    assert!(f.message.contains(".toc"), "{}", f.message);
+}
+
+#[test]
+fn toc_bomb_is_not_read_again_after_the_size_limit() {
+    // 100 MB of zeros as a .toc: the size limit stops it, and nothing reads it whole afterwards.
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer.start_file("X/X.toc", SimpleFileOptions::default().large_file(true)).unwrap();
+    let chunk = vec![0u8; 1024 * 1024];
+    for _ in 0..100 {
+        writer.write_all(&chunk).unwrap();
+    }
+    let bytes = writer.finish().unwrap().into_inner();
+    let started = std::time::Instant::now();
+    let report = scan(&bytes, &folders(&["X"]), &[]);
+    assert_eq!(finding(&report, "zip.bomb").severity, Severity::Critical);
+    assert!(started.elapsed().as_secs() < 10, "took {:?}", started.elapsed());
+}
+
+#[test]
 fn too_many_entries_is_critical() {
     let names: Vec<String> = (0..5001).map(|i| format!("Lucky/f{i}.txt")).collect();
     let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b"x"[..])).collect();

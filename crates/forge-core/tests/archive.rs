@@ -117,3 +117,21 @@ fn extract_writes_only_addon_folders() {
     let entries: Vec<_> = std::fs::read_dir(out.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
     assert_eq!(entries, ["SurvivorUI"]);
 }
+
+#[test]
+fn toc_larger_than_the_limit_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let big = format!("## Interface: 11200\n{}", " ".repeat(forge_core::archive::MAX_TOC_BYTES as usize));
+    let zip = make_zip(dir.path(), "a.zip", &[("X/X.toc", big.as_str())]);
+    assert!(matches!(analyze(&zip), Err(Error::TocTooLarge(p)) if p == "X/X.toc"), "{:?}", analyze(&zip).map(|a| a.len()));
+}
+
+#[test]
+fn big_but_normal_toc_is_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines: String = (0..500).map(|i| format!("Modules/Module{i:03}.lua\n")).collect();
+    let toc = format!("## Interface: 11200\n## Title: Big\n{lines}");
+    let zip = make_zip(dir.path(), "a.zip", &[("Big/Big.toc", toc.as_str())]);
+    let found = analyze(&zip).unwrap();
+    assert_eq!(found[0].name, "Big");
+}

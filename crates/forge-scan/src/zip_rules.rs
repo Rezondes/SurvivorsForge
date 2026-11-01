@@ -1,7 +1,7 @@
 //! Rules for the zip itself: paths, file types, sizes and addon folders. Works on bytes in memory.
 
 use crate::finding::{Report, Severity};
-use forge_core::archive::{analyze_reader, safe_components};
+use forge_core::archive::{MAX_TOC_BYTES, analyze_reader, safe_components};
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 
@@ -121,6 +121,7 @@ pub fn check(zip: &[u8], expected_folders: &[String], foreign_folders: &[String]
     let mut texts = Vec::new();
     let mut total: u64 = 0;
     let mut unsafe_paths = false;
+    let mut bomb = false;
     let mut deep_reported = false;
     for i in 0..archive.len() {
         let (path, is_dir, encrypted, mode, compressed) = match archive.by_index_raw(i) {
@@ -207,6 +208,7 @@ pub fn check(zip: &[u8], expected_folders: &[String], foreign_folders: &[String]
                 format!("The files add up to more than {} MB", MAX_TOTAL_BYTES / 1024 / 1024)
             };
             report.add("zip.bomb", Severity::Critical, &path, None, message);
+            bomb = true;
             if total > MAX_TOTAL_BYTES {
                 return texts;
             }
@@ -237,7 +239,8 @@ pub fn check(zip: &[u8], expected_folders: &[String], foreign_folders: &[String]
             texts.push(TextFile { path, bytes: kept });
         }
     }
-    if !unsafe_paths {
+    // After a bomb, nothing reads the raw zip again: the size limits apply only in the loop above.
+    if !unsafe_paths && !bomb {
         check_folders(zip, expected_folders, foreign_folders, &texts, report);
     }
     texts
@@ -245,7 +248,14 @@ pub fn check(zip: &[u8], expected_folders: &[String], foreign_folders: &[String]
 
 /// The addon folders in the zip against the folders the addon registered.
 fn check_folders(zip: &[u8], expected: &[String], foreign: &[String], texts: &[TextFile], report: &mut Report) {
-    let detected = analyze_reader(Cursor::new(zip)).unwrap_or_default();
+    let detected = match analyze_reader(Cursor::new(zip)) {
+        Ok(detected) => detected,
+        Err(forge_core::Error::TocTooLarge(path)) => {
+            report.add("zip.bomb", Severity::Critical, &path, None, format!("The .toc is larger than {} KB", MAX_TOC_BYTES / 1024));
+            return;
+        }
+        Err(_) => Vec::new(),
+    };
     for addon in &detected {
         if foreign.iter().any(|f| f.eq_ignore_ascii_case(&addon.name)) {
             report.add("zip.foreign_folder", Severity::Critical, &addon.prefix, None,

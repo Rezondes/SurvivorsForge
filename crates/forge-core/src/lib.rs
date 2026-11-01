@@ -25,6 +25,8 @@ pub enum Error {
     FolderTwice(String),
     /// A pack would pass this many bytes.
     TooLarge(u64),
+    /// A `.toc` in the zip is larger than `archive::MAX_TOC_BYTES`.
+    TocTooLarge(String),
 }
 
 impl fmt::Display for Error {
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
             Error::Parse(e) => write!(f, "Unexpected response: {e}"),
             Error::FolderTwice(folder) => write!(f, "Two addons use the folder {folder}"),
             Error::TooLarge(max) => write!(f, "The pack would be larger than {} MB", max / 1_000_000),
+            Error::TocTooLarge(path) => write!(f, "The .toc file {path} is larger than {} KB", archive::MAX_TOC_BYTES / 1024),
         }
     }
 }

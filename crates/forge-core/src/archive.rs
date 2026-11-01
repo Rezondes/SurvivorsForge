@@ -45,6 +45,10 @@ pub fn analyze(zip_path: &Path) -> Result<Vec<DetectedAddon>> {
     analyze_reader(File::open(zip_path)?)
 }
 
+/// A `.toc` lists a title, a few tags and the files to load: a few KB. Reading no more keeps a
+/// `.toc` that inflates to gigabytes from filling the memory.
+pub const MAX_TOC_BYTES: u64 = 64 * 1024;
+
 /// `analyze` for a zip that is not a file, e.g. one in memory.
 pub fn analyze_reader<R: Read + Seek>(reader: R) -> Result<Vec<DetectedAddon>> {
     let mut zip = zip::ZipArchive::new(reader).map_err(|e| Error::Zip(e.to_string()))?;
@@ -62,7 +66,10 @@ pub fn analyze_reader<R: Read + Seek>(reader: R) -> Result<Vec<DetectedAddon>> {
         let matching = dirs.last().is_some_and(|d| d.eq_ignore_ascii_case(stem));
         let name = if matching { dirs.last().unwrap().clone() } else { stem.to_string() };
         let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        (&mut file).take(MAX_TOC_BYTES + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_TOC_BYTES {
+            return Err(Error::TocTooLarge(parts.join("/")));
+        }
         candidates.push((dirs.len(), !matching, dirs.join("/"), name.clone(), Toc::parse_bytes(&bytes, &name)));
     }
     candidates.sort_by_key(|(depth, other_name, prefix, name, toc)| {
