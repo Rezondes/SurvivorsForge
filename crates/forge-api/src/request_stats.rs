@@ -2,7 +2,7 @@
 //! `api_request_stats` once a minute, and also feed the Prometheus metrics on `METRICS_BIND_ADDR`.
 
 use axum::extract::{MatchedPath, Request, State};
-use axum::http::header;
+use axum::http::{header, Method};
 use axum::middleware::Next;
 use axum::response::Response;
 use chrono::{DateTime, DurationRound, TimeDelta, Utc};
@@ -146,6 +146,13 @@ pub struct Recorder {
     pub website: Option<IpAddr>,
 }
 
+/// The method as a label and stats key. An extension method is any token the client picks, so
+/// it counts as `other`; otherwise every new one would stay in memory as a label for good.
+fn method_label(method: &Method) -> &str {
+    let standard = matches!(*method, Method::GET | Method::HEAD | Method::POST | Method::PUT | Method::PATCH | Method::DELETE | Method::OPTIONS | Method::TRACE | Method::CONNECT);
+    if standard { method.as_str() } else { "other" }
+}
+
 /// Counts every request, also those the rate limit or the cache answered. Container healthchecks
 /// (`/healthz`) are left out: they are no API use.
 pub async fn middleware(State(recorder): State<Recorder>, request: Request, next: Next) -> Response {
@@ -154,7 +161,7 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     if route == "/healthz" {
         return next.run(request).await;
     }
-    let method = request.method().as_str().to_string();
+    let method = method_label(request.method()).to_string();
     let user_agent = request.headers().get(header::USER_AGENT).and_then(|v| v.to_str().ok());
     let client = classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website);
     // One span per request (OpenTelemetry, `forge_trace`), continuing the website's trace.
@@ -219,6 +226,13 @@ mod tests {
         assert_eq!(classify(Some("reqwest"), website, Some(website)), Client::Website);
         assert_eq!(classify(Some("curl/8.0"), other, Some(website)), Client::Other);
         assert_eq!(classify(None, other, None), Client::Other);
+    }
+
+    #[test]
+    fn labels_extension_methods_as_other() {
+        assert_eq!(method_label(&Method::GET), "GET");
+        assert_eq!(method_label(&Method::DELETE), "DELETE");
+        assert_eq!(method_label(&Method::from_bytes("X".repeat(4096).as_bytes()).unwrap()), "other");
     }
 
     #[test]
