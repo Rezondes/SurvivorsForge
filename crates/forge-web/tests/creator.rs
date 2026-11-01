@@ -648,3 +648,61 @@ async fn scan_page_needs_login() {
     let page = web.get("/scan").await;
     assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login"));
 }
+
+#[tokio::test]
+async fn owners_ask_for_a_verification_with_their_discord_post() {
+    let mut web = logged_in(owner()).await;
+    get_json(&web, "/v1/addons/lucky/verification-request", json!(null)).await;
+    let page = web.get("/addons/lucky/verification").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains(r#"<a href="/addons/lucky/verification" aria-current="page">Verification</a>"#), "{}", page.body);
+    assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564402358094405744""#), "links the channel: {}", page.body);
+    assert!(page.body.contains(r#"name="discord_url""#) && page.body.contains(r#"type="url""#), "{}", page.body);
+
+    let link = "https://discord.com/channels/1557821819032051852/1564402358094405744/1570000000000000000";
+    Mock::given(method("POST"))
+        .and(path("/v1/addons/lucky/verification-request"))
+        .and(body_partial_json(json!({ "discord_url": link })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "id": 1, "status": "open", "tag": "v2" })))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let reply = web.post_form("/addons/lucky/verification", &[("discord_url", link)]).await;
+    assert_eq!((reply.status, reply.location()), (StatusCode::SEE_OTHER, "/addons/lucky/verification"));
+}
+
+#[tokio::test]
+async fn the_verification_tab_shows_where_the_request_stands() {
+    for (state, expect, form) in [
+        (json!({ "status": "open", "tag": "v2", "note": "" }), "waiting for the admins", false),
+        (json!({ "status": "approved", "tag": "v2", "note": "" }), "An admin verified v2", false),
+        (json!({ "status": "rejected", "tag": "v2", "note": "Post the changelog too" }), "Post the changelog too", true),
+    ] {
+        let mut web = logged_in(owner()).await;
+        get_json(&web, "/v1/addons/lucky/verification-request", state).await;
+        let body = web.get("/addons/lucky/verification").await.body;
+        assert!(body.contains(expect), "{expect}: {body}");
+        assert_eq!(body.contains(r#"name="discord_url""#), form, "{expect}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn a_refused_request_shows_the_reason_in_the_form() {
+    let mut web = logged_in(owner()).await;
+    get_json(&web, "/v1/addons/lucky/verification-request", json!(null)).await;
+    Mock::given(method("POST"))
+        .and(path("/v1/addons/lucky/verification-request"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({ "error": "invalid_link", "message": "Send the link to your post in the channel verified-addons" })))
+        .mount(&web.api)
+        .await;
+    let page = web.post_form("/addons/lucky/verification", &[("discord_url", "https://example.com")]).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("Send the link to your post in the channel verified-addons"), "{}", page.body);
+    assert!(page.body.contains(r#"value="https://example.com""#), "keeps what was typed: {}", page.body);
+}
+
+#[tokio::test]
+async fn only_owners_open_the_verification_tab() {
+    let mut web = logged_in(json!({ "owner": false, "edit_description": true, "edit_images": true, "admin": false })).await;
+    assert_eq!(web.get("/addons/lucky/verification").await.status, StatusCode::FORBIDDEN);
+}

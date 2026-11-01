@@ -303,7 +303,7 @@ async fn old_docs_paths_redirect_to_their_new_place() {
 async fn the_nav_link_of_the_current_section_is_marked() {
     let mut web = TestWeb::new().await;
     web.login_as("tok", common::me("alice", "admin")).await;
-    for (route, body) in [("/v1/me/addons", json!([])), ("/v1/admin/review-queue", json!([])), ("/v1/admin/reports", json!([]))] {
+    for (route, body) in [("/v1/me/addons", json!([])), ("/v1/admin/review-queue", json!([])), ("/v1/admin/reports", json!([])), ("/v1/admin/verification-requests", json!([]))] {
         Mock::given(method("GET")).and(path(route)).respond_with(ResponseTemplate::new(200).set_body_json(body)).mount(&web.api).await;
     }
     // Pages whose API call fails still show the nav of their section.

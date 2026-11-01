@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Verification requests - Admin - SurvivorsForge{% endblock %}
+{% block content %}
+<p><a href="/admin">Admin</a></p>
+<h1>Verification requests</h1>
+<p class="muted">Creators ask for a check by hand. Read their Discord post and the code, then verify the version or tell them why not.</p>
+{% include "admin/flash.html" %}
+{% if rows.is_empty() %}<section class="panel"><p>No open requests.</p></section>{% endif %}
+<div class="list">
+{% for r in rows %}
+<section class="panel">
+  <h2><a href="/addons/{{ r.slug }}">{{ r.name }}</a> {{ r.tag }}{% if r.flagged %} <span class="badge bad">Flagged</span>{% endif %}</h2>
+  <p class="muted">asked by {{ r.requested_by }}, {{ r.created }}</p>
+  <p><a href="{{ r.discord_url }}" rel="external noopener">Discord post</a> · <a href="/addons/{{ r.slug }}/versions/{{ r.tag }}">Version and findings</a> · <a href="/admin/addons/{{ r.slug }}">Manage the addon</a></p>
+  <form method="post" action="/admin/verification-requests/{{ r.id }}/approve" class="admin-actions">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="approve-{{ r.id }}">Note{% if r.flagged %} (required: why the findings are fine){% endif %}</label>
+    <input id="approve-{{ r.id }}" name="note"{% if r.flagged %} required{% endif %}>
+    <button type="submit">Approve and verify {{ r.tag }}</button>
+  </form>
+  <form method="post" action="/admin/verification-requests/{{ r.id }}/reject" class="admin-actions">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="reject-{{ r.id }}">Reason for the creator</label>
+    <input id="reject-{{ r.id }}" name="note" required>
+    <button type="submit" class="secondary">Reject</button>
+  </form>
+</section>
+{% endfor %}
+</div>
+{% endblock %}

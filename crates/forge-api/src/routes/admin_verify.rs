@@ -22,22 +22,35 @@ pub async fn verify(
     Path(version_id): Path<i64>,
     Json(body): Json<VerifyBody>,
 ) -> ApiResult<Json<Value>> {
+    let now = (state.clock)();
+    let mut tx = state.pool.begin().await?;
+    let sha256 = verify_version(&mut tx, admin.id, version_id, &body.note, now).await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "version_id": version_id, "sha256": sha256, "trust": "verified" })))
+}
+
+/// Verifies the file `version_id` has now, in `tx`, and records it in the audit log. Returns its hash.
+pub async fn verify_version(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    admin_id: i64,
+    version_id: i64,
+    note: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> ApiResult<String> {
     let version: Option<(Option<String>, String, String)> = sqlx::query_as(
         "SELECT v.sha256, v.scan_status, t.trust FROM versions v JOIN version_trust t ON t.version_id = v.id WHERE v.id = $1",
     )
     .bind(version_id)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&mut **tx)
     .await?;
     let (sha256, scan_status, trust) = version.ok_or_else(ApiError::not_found)?;
     let Some(sha256) = sha256.filter(|_| scan_status == "done") else {
         return Err(ApiError::new(StatusCode::CONFLICT, "not_scanned", "Only scanned versions can be verified"));
     };
-    let note = body.note.trim();
+    let note = note.trim();
     if trust == "flagged" && note.is_empty() {
         return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "note_required", "Explain why a flagged version is fine"));
     }
-    let now = (state.clock)();
-    let mut tx = state.pool.begin().await?;
     sqlx::query(
         "INSERT INTO verifications (version_id, sha256, admin_id, note, created_at) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (version_id) DO UPDATE SET sha256 = EXCLUDED.sha256, admin_id = EXCLUDED.admin_id,
@@ -45,22 +58,21 @@ pub async fn verify(
     )
     .bind(version_id)
     .bind(&sha256)
-    .bind(admin.id)
+    .bind(admin_id)
     .bind(note)
     .bind(now)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     let entry = Entry {
-        admin_id: admin.id,
+        admin_id,
         action: "verify",
         target_type: "version",
         target_id: version_id.to_string(),
         note,
         details: json!({ "sha256": sha256, "trust_before": trust }),
     };
-    audit::record(&mut tx, entry, now).await?;
-    tx.commit().await?;
-    Ok(Json(json!({ "version_id": version_id, "sha256": sha256, "trust": "verified" })))
+    audit::record(tx, entry, now).await?;
+    Ok(sha256)
 }
 
 pub async fn unverify(

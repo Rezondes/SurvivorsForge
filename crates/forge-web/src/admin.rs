@@ -93,6 +93,7 @@ pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
     let (user, token) = admin(&state, &jar).await?;
     let queue = state.api.get("/v1/admin/review-queue", Some(&token)).await?;
     let reports = state.api.get("/v1/admin/reports", Some(&token)).await?;
+    let verifications = state.api.get("/v1/admin/verification-requests", Some(&token)).await?;
     Ok(render(&AdminIndexPage {
         stats: user.can(Permission::ViewAdminStats),
         grafana: user.can(Permission::ViewGrafana),
@@ -100,7 +101,41 @@ pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         csrf: csrf.0,
         queue: queue.as_array().map(Vec::len).unwrap_or(0),
         reports: reports.as_array().map(Vec::len).unwrap_or(0),
+        verifications: verifications.as_array().map(Vec::len).unwrap_or(0),
     }))
+}
+
+/// The creators' requests to verify an addon by hand, with their Discord post.
+pub async fn verification_requests(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Query(flash): Query<Flash>) -> WebResult<Html<String>> {
+    let (user, token) = admin(&state, &jar).await?;
+    let list = state.api.get("/v1/admin/verification-requests", Some(&token)).await?;
+    let rows = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|r| crate::templates::VerificationRequestRow {
+            id: r["id"].as_i64().unwrap_or(0),
+            slug: s(&r["slug"]),
+            name: s(&r["name"]),
+            tag: s(&r["tag"]),
+            flagged: r["trust"] == "flagged",
+            discord_url: s(&r["discord_url"]),
+            requested_by: s(&r["requested_by"]),
+            created: s(&r["created_at"]).chars().take(16).collect(),
+        })
+        .collect();
+    Ok(render(&crate::templates::AdminVerificationRequestsPage { user: Some(user), csrf: csrf.0, rows, msg: flash.msg, error: flash.error }))
+}
+
+pub async fn decide_verification(State(state): State<AppState>, jar: PrivateCookieJar, Path((id, action)): Path<(i64, String)>, Form(form): Form<NoteForm>) -> WebResult<Response> {
+    let (_, token) = admin(&state, &jar).await?;
+    let done = match action.as_str() {
+        "approve" => "Approved: the version is verified.",
+        "reject" => "Rejected; the creator sees your reason.",
+        _ => return Err(WebError::NotFound),
+    };
+    let body = json!({ "note": form.note });
+    back("/admin/verification-requests", state.api.post(&format!("/v1/admin/verification-requests/{id}/{action}"), Some(&token), &body).await, done)
 }
 
 /// The review queue, oldest version first.

@@ -30,6 +30,12 @@ async fn as_admin() -> TestWeb {
         .with_priority(10)
         .mount(&web.api)
         .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/admin/verification-requests"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .with_priority(10)
+        .mount(&web.api)
+        .await;
     get_json(&web, "/v1/admin/reports", json!([
         { "id": 3, "target_type": "addon", "target_id": 1, "addon": "lucky", "reason": "malware", "text": "Deletes files", "reporter": "eve", "created_at": "2026-05-01T10:00:00Z" }
     ]))
@@ -395,6 +401,7 @@ async fn moderator_sees_admin_pages() {
     web.login_as("tok", me("mia", "moderator")).await;
     get_json(&web, "/v1/admin/reports", json!([])).await;
     get_json(&web, "/v1/admin/review-queue", json!([])).await;
+    get_json(&web, "/v1/admin/verification-requests", json!([])).await;
     get_json(&web, "/v1/admin/admins", json!([])).await;
     let home = web.get("/").await;
     assert!(home.body.contains(r#"<a href="/admin">Admin</a>"#), "the navigation links the admin pages");
@@ -463,6 +470,7 @@ async fn stats_page_needs_permission() {
     assert_eq!(web.get("/admin/stats").await.status, StatusCode::FORBIDDEN, "a moderator outside ADMIN_STATS_ROLES");
     get_json(&web, "/v1/admin/review-queue", json!([])).await;
     get_json(&web, "/v1/admin/reports", json!([])).await;
+    get_json(&web, "/v1/admin/verification-requests", json!([])).await;
     assert!(!web.get("/admin").await.body.contains("/admin/stats"), "no tile without the right");
 }
 
@@ -483,6 +491,7 @@ async fn stats_range_switch() {
     }
     get_json(&web, "/v1/admin/review-queue", json!([])).await;
     get_json(&web, "/v1/admin/reports", json!([])).await;
+    get_json(&web, "/v1/admin/verification-requests", json!([])).await;
     assert!(web.get("/admin").await.body.contains(r#"href="/admin/stats""#), "linked for moderators by default");
 }
 
@@ -631,4 +640,26 @@ async fn parts_are_pages_of_their_own() {
     assert!(page.contains(r#"<a href="/admin/stats/github?range=30d">30 days</a>"#), "the range stays on the part");
     assert!(!page.contains("Busiest routes") && !page.contains("Needs attention"), "only its own part");
     assert_eq!(web.get("/admin/stats/secrets").await.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn verification_requests_are_listed_and_decided() {
+    let mut web = as_admin().await;
+    let link = "https://discord.com/channels/1557821819032051852/1564402358094405744/1570000000000000000";
+    get_json(&web, "/v1/admin/verification-requests", json!([
+        { "id": 4, "slug": "lucky", "name": "Lucky", "version_id": 9, "tag": "v2", "trust": "flagged", "discord_url": link, "requested_by": "alice", "created_at": "2026-05-01T10:00:00Z" }
+    ]))
+    .await;
+    assert!(web.get("/admin").await.body.contains(r#"<a class="panel tile" href="/admin/verification-requests"><strong>1</strong> verification request"#));
+    let page = web.get("/admin/verification-requests").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    for text in ["Lucky", "v2", "alice", &format!(r#"href="{link}""#), r#"action="/admin/verification-requests/4/approve""#, r#"action="/admin/verification-requests/4/reject""#, "Flagged"] {
+        assert!(page.body.contains(text), "missing {text}: {}", page.body);
+    }
+    expect(&web, "POST", "/v1/admin/verification-requests/4/approve", json!({ "note": "looked at it" })).await;
+    let reply = web.post_form("/admin/verification-requests/4/approve", &[("note", "looked at it")]).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert!(reply.location().starts_with("/admin/verification-requests?msg="), "{}", reply.location());
+    expect(&web, "POST", "/v1/admin/verification-requests/4/reject", json!({ "note": "no post" })).await;
+    assert_eq!(web.post_form("/admin/verification-requests/4/reject", &[("note", "no post")]).await.status, StatusCode::SEE_OTHER);
 }

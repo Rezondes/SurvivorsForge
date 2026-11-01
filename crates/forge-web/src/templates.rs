@@ -491,6 +491,24 @@ pub struct MembersPage {
 }
 
 #[derive(Template)]
+#[template(path = "creator/verification.html")]
+pub struct VerificationPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub slug: String,
+    pub perms: Perms,
+    /// The newest request: "open", "approved" or "rejected"; empty without one.
+    pub status: String,
+    pub tag: String,
+    /// The admins' reason for a rejection.
+    pub note: String,
+    /// What the owner typed, kept when the API refused it.
+    pub discord_url: String,
+    pub error: Option<String>,
+    pub channel: &'static str,
+}
+
+#[derive(Template)]
 #[template(path = "creator/dependencies.html")]
 pub struct DepsPage {
     pub user: Option<Visitor>,
@@ -533,6 +551,7 @@ pub struct AdminIndexPage {
     pub csrf: String,
     pub queue: usize,
     pub reports: usize,
+    pub verifications: usize,
     /// The viewer may open `/admin/stats` (`ADMIN_STATS_ROLES`).
     pub stats: bool,
     /// The viewer may open Grafana (admins).
@@ -667,6 +686,27 @@ pub struct AdminReportsPage {
     pub user: Option<Visitor>,
     pub csrf: String,
     pub rows: Vec<ReportRow>,
+    pub msg: Option<String>,
+    pub error: Option<String>,
+}
+
+pub struct VerificationRequestRow {
+    pub id: i64,
+    pub slug: String,
+    pub name: String,
+    pub tag: String,
+    pub flagged: bool,
+    pub discord_url: String,
+    pub requested_by: String,
+    pub created: String,
+}
+
+#[derive(Template)]
+#[template(path = "admin/verification_requests.html")]
+pub struct AdminVerificationRequestsPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub rows: Vec<VerificationRequestRow>,
     pub msg: Option<String>,
     pub error: Option<String>,
 }

@@ -90,6 +90,9 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/reports", post(routes::reports::create))
         .route("/v1/admin/reports", get(routes::reports::queue))
+        .route("/v1/admin/verification-requests", get(routes::verification_requests::queue))
+        .route("/v1/admin/verification-requests/{id}/approve", post(routes::verification_requests::approve))
+        .route("/v1/admin/verification-requests/{id}/reject", post(routes::verification_requests::reject))
         .route("/v1/admin/reports/{id}/resolve", post(routes::reports::resolve))
         .route(
             "/v1/admin/addons/{slug}/block",
@@ -124,6 +127,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/github/{owner}/{repo}/releases/{tag}", get(routes::github_meta::release))
         .route("/v1/github/{owner}/{repo}/refs", get(routes::github_meta::refs))
         .route("/v1/addons/{slug}/members", get(routes::members::list).post(routes::members::add))
+        .route(
+            "/v1/addons/{slug}/verification-request",
+            get(routes::verification_requests::mine).post(routes::verification_requests::ask),
+        )
         .route(
             "/v1/addons/{slug}/members/{github_id}",
             axum::routing::patch(routes::members::update).delete(routes::members::remove),

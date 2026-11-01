@@ -5,7 +5,7 @@ use crate::app::{AppState, visitor};
 use crate::csrf::CsrfToken;
 use crate::error::{WebError, WebResult};
 use crate::templates::{
-    DeleteAddonPage, DepsPage, EditAddonPage, Errors, ImagesPage, MembersPage, MyAddonsPage, NewAddonPage, Perms, RepoField, RepoFieldFragment, RepoSuggestionsFragment, ScanPage, ScanResult, VersionEditPage,
+    DeleteAddonPage, DepsPage, EditAddonPage, Errors, ImagesPage, MembersPage, MyAddonsPage, NewAddonPage, Perms, RepoField, RepoFieldFragment, RepoSuggestionsFragment, ScanPage, ScanResult, VerificationPage, VersionEditPage,
     Visitor, render,
 };
 use axum::Extension;
@@ -786,6 +786,57 @@ async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String
         .collect();
     let perms = perms(state, slug, token).await?;
     Ok(render(&MembersPage { user: Some(user), csrf, slug: slug.into(), members, error, perms }))
+}
+
+/// The channel verified-addons on the Azeroth Survivors Discord, where creators post their addon.
+const VERIFIED_ADDONS_CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564402358094405744";
+
+/// The verification tab: where a request stands, or the form to ask for one.
+async fn verification_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, typed: String, error: Option<String>) -> WebResult<Html<String>> {
+    let latest = state.api.get(&format!("/v1/addons/{slug}/verification-request"), Some(token)).await?;
+    let perms = perms(state, slug, token).await?;
+    Ok(render(&VerificationPage {
+        user: Some(user),
+        csrf,
+        slug: slug.into(),
+        perms,
+        status: s(&latest["status"]),
+        tag: s(&latest["tag"]),
+        note: s(&latest["note"]),
+        discord_url: typed,
+        error,
+        channel: VERIFIED_ADDONS_CHANNEL,
+    }))
+}
+
+pub async fn verification(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Response> {
+    let (user, token) = me(&state, &jar).await?;
+    if !perms(&state, &slug, &token).await?.owner {
+        return Ok(forbidden());
+    }
+    Ok(verification_page(&state, user, &token, csrf.0, &slug, String::new(), None).await?.into_response())
+}
+
+#[derive(Deserialize)]
+pub struct VerificationForm {
+    #[serde(default)]
+    discord_url: String,
+}
+
+pub async fn ask_verification(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(slug): Path<String>,
+    Form(form): Form<VerificationForm>,
+) -> WebResult<Response> {
+    let (user, token) = me(&state, &jar).await?;
+    let typed = form.discord_url.trim().to_string();
+    match state.api.post(&format!("/v1/addons/{slug}/verification-request"), Some(&token), &json!({ "discord_url": typed })).await {
+        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/verification")).into_response()),
+        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(verification_page(&state, user, &token, csrf.0, &slug, typed, Some(message)).await?.into_response()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 pub async fn members(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Response> {

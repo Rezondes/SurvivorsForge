@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Verification - SurvivorsForge{% endblock %}
+{% block content %}
+<h1>Verification</h1>
+{% let section = "verification" %}{% include "creator/nav.html" %}
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+
+{% if status == "approved" %}
+<section class="panel">
+  <h2>Verified</h2>
+  <p>An admin verified {{ tag }} by hand. The addon shows the Verified badge.</p>
+</section>
+{% else if status == "open" %}
+<section class="panel">
+  <h2>Request sent</h2>
+  <p>Your request for {{ tag }} is waiting for the admins. They check the file by hand and then verify it or tell you what is missing.</p>
+</section>
+{% else %}
+{% if status == "rejected" %}
+<section class="panel">
+  <h2>Not verified yet</h2>
+  <p>The admins did not verify {{ tag }}:</p>
+  <blockquote>{{ note }}</blockquote>
+  <p>Fix what they asked for, then ask again.</p>
+</section>
+{% endif %}
+<form class="panel" method="post" action="/addons/{{ slug }}/verification">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2>Ask an admin to verify this addon</h2>
+  <p>Admins check the newest scanned version by hand. Verified addons get a badge on the website and in the launcher.</p>
+  <ol>
+    <li>Post your addon in <a href="{{ channel }}" rel="external noopener">#verified-addons on the Azeroth Survivors Discord</a>.</li>
+    <li>Copy the link to your post (right-click it, then Copy Message Link) and paste it here.</li>
+  </ol>
+  <label for="discord_url">Link to your Discord post</label>
+  <input id="discord_url" name="discord_url" type="url" required value="{{ discord_url }}" placeholder="{{ channel }}/...">
+  <p><button type="submit">Send request</button></p>
+</form>
+{% endif %}
+{% endblock %}
