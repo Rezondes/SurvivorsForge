@@ -514,6 +514,28 @@ pub fn matches(query: &str, name: &str, author: &str) -> bool {
     query.is_empty() || name.to_lowercase().contains(&query) || author.to_lowercase().contains(&query)
 }
 
+/// The updates to install on their own: of the addons switched on (`all`, or `picked` by entry
+/// id), only versions the platform checked and found nothing in (scanned or verified, with the
+/// hash it checked), and only those "Update all" would install without asking. A flagged
+/// version waits for the user; a newer one that is not flagged goes again.
+pub fn auto_update_ids(
+    statuses: &HashMap<String, UpdateStatus>,
+    registry: &Registry,
+    state: &State,
+    all: bool,
+    picked: &[String],
+    game: Option<&str>,
+    games: &[GameVersion],
+) -> Vec<String> {
+    let checked = |id: &String| {
+        let Some(Source::Verified { registry_id }) = state.get(id).map(|e| &e.source) else { return false };
+        let clean = registry.get(registry_id).and_then(|a| a.latest.as_ref()).is_some_and(|l| matches!(l.trust, Trust::Scanned | Trust::Verified));
+        clean && matches!(statuses.get(id), Some(UpdateStatus::UpdateAvailable(remote)) if remote.sha256.is_some())
+    };
+    let ids = update_all_ids(statuses).into_iter().filter(|id| all || picked.contains(id)).filter(checked).collect();
+    split_confirmations(ids, registry, state, game, games).0
+}
+
 pub fn update_all_ids(statuses: &HashMap<String, UpdateStatus>) -> Vec<String> {
     let mut ids: Vec<String> = statuses
         .iter()
@@ -712,6 +734,53 @@ mod tests {
 
     fn zip_source() -> Source {
         Source::Zip { file_name: "a.zip".into() }
+    }
+
+    /// An installed platform addon with an update to the platform's newest version, checked as `trust`.
+    fn auto_case(trust: Trust) -> (Registry, State, HashMap<String, UpdateStatus>, String) {
+        let mut registry = platform_registry(trust);
+        registry.addons[0].verified_author = Some(false);
+        registry.addons[0].latest.as_mut().unwrap().sha256 = Some("ab".repeat(32));
+        let id = registry.addons[0].id.clone();
+        let mut state = State::default();
+        state.upsert(entry(&id, "Lucky", Source::Verified { registry_id: id.clone() }));
+        state.upsert(entry("gh:o/r", "R", Source::GitHub { repo: "o/r".into(), spec: crate::registry::SourceSpec::Tag }));
+        let mut statuses = HashMap::new();
+        let remote = |sha256: Option<String>| UpdateStatus::UpdateAvailable(RemoteVersion { id: "v2".into(), label: "v2".into(), download: String::new(), sha256 });
+        statuses.insert(id.clone(), remote(Some("ab".repeat(32))));
+        statuses.insert("gh:o/r".to_string(), remote(None));
+        (registry, state, statuses, id)
+    }
+
+    #[test]
+    fn auto_updates_follow_the_setting() {
+        let (registry, state, statuses, id) = auto_case(Trust::Scanned);
+        let chosen = |all: bool, picked: &[String]| auto_update_ids(&statuses, &registry, &state, all, picked, None, &[]);
+        assert!(chosen(false, &[]).is_empty(), "off by default");
+        assert_eq!(chosen(false, std::slice::from_ref(&id)), [id.clone()], "one addon switched on");
+        assert_eq!(chosen(true, &[]), [id.clone()], "all switched on");
+    }
+
+    #[test]
+    fn auto_updates_skip_flagged_and_unchecked_versions() {
+        for trust in [Trust::Flagged, Trust::Unscanned, Trust::Blocked, Trust::SourceChanged] {
+            let (registry, state, statuses, _) = auto_case(trust);
+            assert!(auto_update_ids(&statuses, &registry, &state, true, &[], None, &[]).is_empty(), "{trust:?}");
+        }
+        let (registry, state, statuses, id) = auto_case(Trust::Verified);
+        assert_eq!(auto_update_ids(&statuses, &registry, &state, true, &[], None, &[]), [id.clone()], "verified goes");
+        // Found on GitHub while the server was away: not checked, so the user decides.
+        let mut statuses = statuses;
+        statuses.insert(id.clone(), UpdateStatus::UpdateAvailable(RemoteVersion { id: "v3".into(), label: "v3".into(), download: String::new(), sha256: None }));
+        assert!(auto_update_ids(&statuses, &registry, &state, true, &[], None, &[]).is_empty());
+    }
+
+    #[test]
+    fn auto_updates_leave_updates_that_ask_first() {
+        let (mut registry, state, statuses, _) = auto_case(Trust::Scanned);
+        registry.addons[0].latest.as_mut().unwrap().game_max = Some("0.68".into());
+        let games = [GameVersion { name: "0.68".into(), sort_key: 1 }, GameVersion { name: "0.69".into(), sort_key: 2 }];
+        assert!(auto_update_ids(&statuses, &registry, &state, true, &[], Some("0.69"), &games).is_empty(), "a compatibility warning needs the user");
     }
 
     #[test]

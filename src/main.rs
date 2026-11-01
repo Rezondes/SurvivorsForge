@@ -368,6 +368,9 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         shots: ModelRc::new(VecModel::from(shots)),
         about_loading,
         on_website: entry.is_some(),
+        can_auto_update: !*browse && matches!(core.state.get(id).map(|e| &e.source), Some(Source::Verified { .. })),
+        auto_update: core.config.auto_updates(id),
+        auto_update_all: core.config.auto_update_all,
     })
 }
 
@@ -1046,8 +1049,8 @@ fn on_update_game(ui: &AppWindow, shared: &Shared) {
 }
 
 fn on_update_all(ui: &AppWindow, shared: &Shared) {
-    let jobs = {
-        let mut core = lock(shared);
+    let (ids, skipped) = {
+        let core = lock(shared);
         let ids: Vec<String> =
             controller::update_all_ids(&core.statuses).into_iter().filter(|id| !core.busy.contains(id)).collect();
         // Updates that need a confirmation are left for the user to install one by one.
@@ -1056,6 +1059,15 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
         let (ids, unchecked): (Vec<String>, Vec<String>) = ids.into_iter().partition(|id| controller::unchecked_update(&core.state, &core.statuses, id).is_none());
         skipped.extend(unchecked);
         let skipped_names: Vec<String> = skipped.iter().map(|id| core.state.get(id).map(|e| e.name.clone()).unwrap_or(id.clone())).collect();
+        (ids, skipped_names)
+    };
+    install_updates(ui, shared, ids, skipped);
+}
+
+/// Installs the updates `ids` one after the other; `skipped` names the ones left for the user.
+fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: Vec<String>) {
+    let jobs = {
+        let mut core = lock(shared);
         let jobs: Vec<_> = ids
             .into_iter()
             .filter_map(|id| match remote_job(&core, &id) {
@@ -1069,9 +1081,8 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
             core.progress.insert(id.clone(), controller::Progress::Waiting);
         }
         core.set_status(format!("Updating {} addons...", jobs.len()), false);
-        (jobs, skipped_names)
+        jobs
     };
-    let (jobs, skipped) = jobs;
     refresh(ui, shared);
     let weak = ui.as_weak();
     run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
@@ -1116,7 +1127,8 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         core.set_status("Checking for updates...".into(), false);
     }
     refresh(ui, shared);
-    run_bg(ui.as_weak(), shared.clone(), None, |shared| {
+    let weak = ui.as_weak();
+    run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
         let (client, github, mut state, cache, api) = {
             let core = lock(shared);
             (core.client(), core.github(), core.state.clone(), core.data_dir.join("cache"), core.api_url())
@@ -1195,6 +1207,17 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             return Err(Error::NotInstallable(format!(
                 "The SurvivorsForge server cannot be reached: showing {age}, updates come straight from GitHub.{note}"
             )));
+        }
+
+        // Switched on in the settings or the detail view: checked, clean updates install right away.
+        let picked: Vec<String> = core.state.entries.iter().map(|e| e.id.clone()).filter(|id| core.config.auto_updates(id)).collect();
+        let auto: Vec<String> = controller::auto_update_ids(&core.statuses, &core.registry, &core.state, false, &picked, core.config.game_version.as_deref(), &core.game_versions)
+            .into_iter()
+            .filter(|id| !core.busy.contains(id))
+            .collect();
+        if !auto.is_empty() {
+            let s = shared.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| install_updates(&ui, &s, auto, Vec::new()));
         }
 
         let updates = controller::update_all_ids(&core.statuses).len();
@@ -1472,7 +1495,8 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         let platform_changed = api_url != core.config.api_url;
         let telemetry = ui.get_settings_telemetry();
         let send_install_id = ui.get_settings_send_install_id();
-        let config = Config { addons_dir: path, game_version, api_url, web_url, telemetry, send_install_id, ..core.config.clone() };
+        let auto_update_all = ui.get_settings_auto_update();
+        let config = Config { addons_dir: path, game_version, api_url, web_url, telemetry, send_install_id, auto_update_all, ..core.config.clone() };
         // Another platform: its list, versions and categories replace the old ones.
         let recheck = config.addons_dir != core.config.addons_dir || platform_changed;
         let saved = config.save(&core.data_dir);
@@ -1541,6 +1565,7 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_web_default(registry::web_url(None).into());
     ui.set_settings_telemetry(core.config.telemetry);
     ui.set_settings_send_install_id(core.config.send_install_id);
+    ui.set_settings_auto_update(core.config.auto_update_all);
     ui.set_installed_tiles(core.config.tiles("installed"));
     ui.set_browse_tiles(core.config.tiles("browse"));
     fill_game_versions(ui, &core);
@@ -1855,6 +1880,19 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     on!(on_detail_scan, |ui, shared| on_detail_scan(&ui, shared));
+    on!(on_detail_auto_update, |ui, shared| {
+        {
+            let mut core = lock(shared);
+            let Some((id, _)) = core.detail.clone() else { return };
+            let on = !core.config.auto_update.contains(&id);
+            core.config.auto_update.retain(|a| a != &id);
+            if on {
+                core.config.auto_update.push(id);
+            }
+            let _ = core.config.save(&core.data_dir);
+        }
+        refresh(&ui, shared);
+    });
     on!(on_settings_browse, |ui, _shared| {
         if let Some(p) = pick_folder(&ui.get_settings_path()) {
             ui.set_settings_path(p.into());

@@ -170,6 +170,8 @@ component SettingsView inherits VerticalLayout {
     // Anonymous counts for the platform's statistics; the ID only while they are on.
     in-out property <bool> telemetry;
     in-out property <bool> send-install-id;
+    // Install checked updates of every addon on their own.
+    in-out property <bool> auto-update;
     callback browse();
     callback save();
 
@@ -249,6 +251,32 @@ component SettingsView inherits VerticalLayout {
                     color: root.telemetry ? Theme.text : Theme.text-muted;
                     vertical-alignment: center;
                 }
+            }
+        }
+    }
+    SettingRow {
+        label: "Updates";
+        VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 10px;
+                PickBox {
+                    label: "Update all addons automatically";
+                    checked: root.auto-update;
+                    toggled => { root.auto-update = !root.auto-update; }
+                }
+                Text {
+                    text: "Update all addons automatically";
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: "Only versions the platform checked and found nothing in. Flagged ones wait for you. Single addons can be switched on in their details.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
             }
         }
     }
@@ -378,6 +406,7 @@ export component AppWindow inherits Window {
     callback detail-website();
     callback detail-report();
     callback detail-scan();
+    callback detail-auto-update();
     property <bool> showing-detail: root.detail-page == root.page;
 
     in property <string> status-text;
@@ -395,6 +424,7 @@ export component AppWindow inherits Window {
     in property <string> settings-web-default;
     in-out property <bool> settings-telemetry;
     in-out property <bool> settings-send-install-id;
+    in-out property <bool> settings-auto-update;
     callback settings-browse();
     callback settings-save();
 
@@ -635,6 +665,7 @@ export component AppWindow inherits Window {
                     website => { root.detail-website(); }
                     report => { root.detail-report(); }
                     scan => { root.detail-scan(); }
+                    auto-update => { root.detail-auto-update(); }
                     enlarge-shot(i) => {
                         root.zoom-shots = root.detail.shots;
                         root.zoom-index = i;
@@ -744,6 +775,7 @@ export component AppWindow inherits Window {
                     web-default: root.settings-web-default;
                     telemetry <=> root.settings-telemetry;
                     send-install-id <=> root.settings-send-install-id;
+                    auto-update <=> root.settings-auto-update;
                     message-error: root.settings-message-error;
                     version: root.app-version;
                     file-dialog: root.file-dialog;

@@ -180,6 +180,8 @@ For platform addons the platform already knows the newest version it scanned, so
 
 The launcher also asks first when a version has no checked file (no SHA-256) or does not support the chosen game version. "Update all" skips the updates that ask first; they install one by one.
 
+Auto-update installs checked updates on its own after each update check, for every addon (*Settings > Update all addons automatically*) or for single platform addons (the box in their details). It only takes versions the platform scanned or verified and found nothing in; a flagged version waits for the user, and a later version that is not flagged installs again.
+
 Required dependencies of a platform addon are installed before it, in dependency order; a failing dependency stops before the addon. Optional ones that are not installed are named in the confirmation.
 
 Addons found on disk that match an entry of the addon list are adopted on startup with version `toc:<Version>`. The first update check replaces that with the release tag when both match (ignoring a leading `v`).

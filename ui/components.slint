@@ -70,6 +70,12 @@ export struct AddonDetail {
     about-loading: bool,
     // The addon has a page on the platform website.
     on-website: bool,
+    // An installed platform addon: it may update on its own.
+    can-auto-update: bool,
+    // It does: switched on for it, or for all addons in the settings.
+    auto-update: bool,
+    // Switched on for all addons in the settings; the box here cannot turn it off.
+    auto-update-all: bool,
 }
 
 // Outlined gold button; `primary` is the deep red one with the gold rim.
@@ -948,6 +954,8 @@ export component DetailView inherits VerticalLayout {
     callback report();
     // Scan the installed folders with forge-scan on this computer.
     callback scan();
+    // Switch updating on its own on or off for this addon.
+    callback auto-update();
     // Screenshot `index` was clicked, or a picture of the description: show it large.
     callback enlarge-shot(int);
     callback enlarge(image, string);
@@ -1049,6 +1057,23 @@ export component DetailView inherits VerticalLayout {
         if root.detail.row.can-remove && !root.detail.row.busy : RemoveButton {
             label: "Remove " + root.detail.row.name;
             clicked => { root.remove(); }
+        }
+    }
+
+    if root.detail.can-auto-update : HorizontalLayout {
+        alignment: start;
+        spacing: 10px;
+        PickBox {
+            label: "Update automatically";
+            enabled: !root.detail.auto-update-all;
+            checked: root.detail.auto-update;
+            toggled => { root.auto-update(); }
+        }
+        Text {
+            text: root.detail.auto-update-all ? "Updates automatically (switched on for all addons in the settings)" : "Update automatically when the platform found nothing in a new version";
+            font-size: Theme.body;
+            color: root.detail.auto-update-all ? Theme.text-muted : Theme.text;
+            vertical-alignment: center;
         }
     }
 

@@ -27,6 +27,12 @@ pub struct Config {
     /// The lists shown as tiles instead of rows (`installed`, `browse`), each chosen on its page.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tile_pages: Vec<String>,
+    /// Install checked updates of every addon on their own (`controller::auto_update_ids`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_update_all: bool,
+    /// Entry ids that update on their own while `auto_update_all` is off.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auto_update: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -48,6 +54,8 @@ impl Default for Config {
             send_install_id: true,
             install_id: new_install_id(),
             tile_pages: Vec::new(),
+            auto_update_all: false,
+            auto_update: Vec::new(),
         }
     }
 }
@@ -87,6 +95,11 @@ impl Config {
         if on {
             self.tile_pages.push(page.to_string());
         }
+    }
+
+    /// Whether the installed addon `id` updates on its own.
+    pub fn auto_updates(&self, id: &str) -> bool {
+        self.auto_update_all || self.auto_update.iter().any(|a| a == id)
     }
 
     /// The saved settings. A file from before `install_id` gets one now and keeps it.
