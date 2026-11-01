@@ -3,6 +3,7 @@
 pub mod archive;
 pub mod compat;
 pub mod deps;
+pub mod folder;
 pub mod github_web;
 pub mod markdown;
 pub mod pack;

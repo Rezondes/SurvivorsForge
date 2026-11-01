@@ -119,6 +119,28 @@ fn refuses_folder_owned_by_other_addon() {
 }
 
 #[test]
+fn trailing_dot_alias_of_an_owned_folder_is_refused() {
+    // Windows opens "Shared." as the folder "Shared" of the first addon.
+    let e = env();
+    let mut state = State::default();
+    let a = make_zip(&e.zips, "a.zip", &[("Shared/Shared.toc", "")]);
+    install_zip(&e.addons, &mut state, request(&a, "first")).unwrap();
+    assert_eq!(state.owner_of("shared.").map(|o| o.id.as_str()), Some("first"));
+    let b = make_zip(&e.zips, "b.zip", &[("Shared./Shared..toc", "other")]);
+    assert!(install_zip(&e.addons, &mut state, request(&b, "second")).is_err());
+    assert_eq!(std::fs::read_to_string(e.addons.join("Shared/Shared.toc")).unwrap(), "");
+}
+
+#[test]
+fn windows_unsafe_folder_is_not_installed() {
+    let e = env();
+    let mut state = State::default();
+    let zip = make_zip(&e.zips, "a.zip", &[("NUL/NUL.toc", "")]);
+    assert!(matches!(install_zip(&e.addons, &mut state, request(&zip, "nul")), Err(Error::NotInstallable(_))));
+    assert!(state.get("nul").is_none());
+}
+
+#[test]
 fn uninstall_removes_folders_and_entry() {
     let e = env();
     let mut state = State::default();

@@ -112,6 +112,19 @@ async fn folder_owned_by_other_addon_is_rejected_case_insensitive(pool: PgPool) 
 }
 
 #[sqlx::test]
+async fn folder_that_windows_reads_as_another_is_rejected(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let token = creator(&app, 1, "alice", 10, "alice/lucky").await;
+    // Windows drops the trailing dot: "Bagnon." would be the folder of the addon Bagnon.
+    for folder in ["Bagnon.", "NUL", "com1.lua", "a:b"] {
+        let reply = app.post("/v1/addons", Some(&token), addon("lucky", "alice/lucky", &[folder])).await;
+        assert_eq!(reply.error(), "invalid_folder", "{folder}");
+    }
+    let reply = app.post("/v1/addons", Some(&token), addon("lucky", "alice/lucky", &["Bagnon", "bagnon"])).await;
+    assert_eq!(reply.error(), "invalid_folder");
+}
+
+#[sqlx::test]
 async fn reserved_and_invalid_input_is_rejected(pool: PgPool) {
     let app = TestApp::new(pool);
     let token = creator(&app, 1, "alice", 10, "alice/lucky").await;

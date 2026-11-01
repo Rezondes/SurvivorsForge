@@ -133,6 +133,15 @@ fn toc_bomb_is_not_read_again_after_the_size_limit() {
 }
 
 #[test]
+fn trailing_dot_folder_is_critical_and_foreign() {
+    // Windows reads "Bagnon." as the folder of the addon Bagnon and would overwrite it.
+    let addon = zip(&[("Bagnon./Bagnon..toc", b"## Interface: 11200\n"), ("Bagnon./x.lua", b"x = 1\n")]);
+    let report = scan(&addon, &folders(&["Bagnon."]), &folders(&["Bagnon"]));
+    let hit = |rule: &str| report.findings.iter().any(|f| f.rule == rule && f.severity == Severity::Critical);
+    assert!(hit("zip.invalid_folder") && hit("zip.foreign_folder"), "{:#?}", report.findings);
+}
+
+#[test]
 fn too_many_entries_is_critical() {
     let names: Vec<String> = (0..5001).map(|i| format!("Lucky/f{i}.txt")).collect();
     let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b"x"[..])).collect();

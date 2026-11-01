@@ -2,6 +2,7 @@
 
 use crate::finding::{Report, Severity};
 use forge_core::archive::{MAX_TOC_BYTES, analyze_reader, safe_components};
+use forge_core::folder::{folder_key, windows_safe_folder};
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 
@@ -256,11 +257,16 @@ fn check_folders(zip: &[u8], expected: &[String], foreign: &[String], texts: &[T
         }
         Err(_) => Vec::new(),
     };
+    // Folders compare the way Windows opens them: "Bagnon." is the folder Bagnon.
     for addon in &detected {
-        if foreign.iter().any(|f| f.eq_ignore_ascii_case(&addon.name)) {
+        if !windows_safe_folder(&addon.name) {
+            report.add("zip.invalid_folder", Severity::Critical, &addon.prefix, None,
+                format!("The folder name {} is read differently on Windows and could stand in for another folder", addon.name));
+        }
+        if foreign.iter().any(|f| folder_key(f) == folder_key(&addon.name)) {
             report.add("zip.foreign_folder", Severity::Critical, &addon.prefix, None,
                 format!("The folder {} belongs to another addon and would overwrite it", addon.name));
-        } else if !expected.iter().any(|e| e.eq_ignore_ascii_case(&addon.name)) {
+        } else if !expected.iter().any(|e| folder_key(e) == folder_key(&addon.name)) {
             report.add("zip.undeclared_folder", Severity::Critical, &addon.prefix, None,
                 format!("The folder {} is not registered for this addon", addon.name));
         }
@@ -271,7 +277,7 @@ fn check_folders(zip: &[u8], expected: &[String], foreign: &[String], texts: &[T
         check_toc_files(addon, texts, report);
     }
     for folder in expected {
-        if !detected.iter().any(|a| a.name.eq_ignore_ascii_case(folder)) {
+        if !detected.iter().any(|a| folder_key(&a.name) == folder_key(folder)) {
             report.add("zip.missing_folder", Severity::Warn, "", None, format!("The registered folder {folder} is not in the zip"));
         }
     }

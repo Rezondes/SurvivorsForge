@@ -48,6 +48,10 @@ pub fn install_zip_with(addons_dir: &Path, state: &mut State, request: Request, 
         }
     }
     let detected = archive::analyze(request.zip)?;
+    // A name Windows reads as another folder ("Shared.", "NUL") could replace or hide one.
+    if let Some(bad) = detected.iter().find(|a| !forge_core::folder::windows_safe_folder(&a.name)) {
+        return Err(Error::NotInstallable(format!("The folder name \"{}\" is not allowed on Windows", bad.name)));
+    }
     for addon in &detected {
         if let Some(owner) = state.owner_of(&addon.name).filter(|o| o.id != request.id) {
             return Err(Error::FolderOwnedBy(owner.name.clone()));
@@ -136,7 +140,7 @@ fn existing_folder(addons_dir: &Path, name: &str) -> Option<String> {
         .ok()?
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .find(|n| n.eq_ignore_ascii_case(name))
+        .find(|n| forge_core::folder::folder_key(n) == forge_core::folder::folder_key(name))
 }
 
 pub fn uninstall(addons_dir: &Path, state: &mut State, id: &str, delete: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {

@@ -84,7 +84,9 @@ impl State {
     }
 
     pub fn owner_of(&self, folder: &str) -> Option<&Entry> {
-        self.entries.iter().find(|e| e.folders.iter().any(|f| f.eq_ignore_ascii_case(folder)))
+        // As Windows opens folders: "Shared." is the folder "Shared".
+        let key = forge_core::folder::folder_key(folder);
+        self.entries.iter().find(|e| e.folders.iter().any(|f| forge_core::folder::folder_key(f) == key))
     }
 
     /// Inserts or replaces the entry with the same id.

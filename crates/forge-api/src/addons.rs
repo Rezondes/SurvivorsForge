@@ -72,7 +72,9 @@ pub fn validate_folder(folder: &str) -> Result<(), ApiError> {
         || folder.contains(['/', '\\'])
         || folder.contains("..")
         || folder.trim() != folder
-        || folder.chars().any(char::is_control);
+        || folder.chars().any(char::is_control)
+        // Windows reads "Bagnon." as "Bagnon": one folder must not stand in for another.
+        || !forge_core::folder::windows_safe_folder(folder);
     if bad {
         return Err(invalid("invalid_folder", format!("\"{}\" is not a valid folder name", folder.escape_default())));
     }
@@ -90,7 +92,7 @@ pub fn validate_folders(folders: &[String]) -> Result<(), ApiError> {
     }
     for (i, folder) in folders.iter().enumerate() {
         validate_folder(folder)?;
-        if folders[..i].iter().any(|f| f.eq_ignore_ascii_case(folder)) {
+        if folders[..i].iter().any(|f| forge_core::folder::folder_key(f) == forge_core::folder::folder_key(folder)) {
             return Err(invalid("invalid_folder", format!("\"{folder}\" is listed twice")));
         }
     }
