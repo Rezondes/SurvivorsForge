@@ -88,6 +88,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api-docs", get(api_docs))
         .route("/api-docs/playground", get(api_playground))
         .route("/creator-guide", get(creator_guide))
+        .route("/addon-api", get(addon_api))
         .route("/addons", get(crate::public::addons))
         .route("/addons/{slug}", get(crate::public::addon))
         .route("/addons/{slug}/versions", get(crate::public::versions))
@@ -239,6 +240,11 @@ async fn api_docs(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
 /// From the repo to one-button releases, from the same file as `docs/creator-guide.md` on GitHub.
 async fn creator_guide(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
     docs_page(&state, &jar, csrf, "Guide for addon creators", false, include_str!("../../../docs/creator-guide.md")).await
+}
+
+/// The game's own addon API, as its author published it in the Discord: `docs/addon-api.md`.
+async fn addon_api(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
+    docs_page(&state, &jar, csrf, "Addon API of the game", false, include_str!("../../../docs/addon-api.md")).await
 }
 
 async fn docs_page(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, title: &'static str, playground: bool, md: &str) -> WebResult<Html<String>> {

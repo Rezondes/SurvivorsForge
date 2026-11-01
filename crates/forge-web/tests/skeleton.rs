@@ -236,6 +236,19 @@ async fn creator_guide_shows_the_markdown_with_working_step_links() {
 }
 
 #[tokio::test]
+async fn addon_api_shows_the_game_docs_with_their_date_and_the_discord_channel() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/addon-api").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("<title>Addon API of the game - SurvivorsForge</title>"));
+    assert!(page.body.contains("27 October 2026 at"), "the version it is, for later updates");
+    assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564599899469914203""#), "{}", page.body);
+    assert!(page.body.contains(r#"<h4 id="azs-getruntime-seconds-or-nil">"#), "{}", page.body);
+    assert!(web.get("/").await.body.contains(r#"href="/addon-api""#), "linked in the footer");
+    assert!(web.get("/creator-guide").await.body.contains(r#"href="https://forge.rezondes.net/addon-api""#), "linked from the guide");
+}
+
+#[tokio::test]
 async fn playground_shows_the_answer_and_reaches_only_public_endpoints() {
     let mut web = TestWeb::new().await;
     Mock::given(method("GET"))
