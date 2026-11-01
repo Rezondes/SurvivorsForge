@@ -71,6 +71,10 @@ pub fn is_api(name: &str) -> bool {
 const URL_MARKERS: &[&str] = &["http://", "https://", "www.", "discord.gg"];
 
 pub const MAX_LINE: usize = 2000;
+/// Deeper code is not parsed (see `nesting_depth`). With `SCAN_STACK_BYTES` of stack full_moon
+/// was measured to survive at least twice as deep for every construct; Lua 5.0 refuses code
+/// nested more than 200 levels, so no addon that runs comes near.
+pub const MAX_NESTING: usize = 1000;
 pub const MIN_CHAR_ARGS: usize = 8;
 pub const MIN_ESCAPE_RUN: usize = 8;
 pub const ENTROPY_MIN_LEN: usize = 200;
@@ -468,6 +472,39 @@ fn escape_run(raw: &str) -> usize {
     best
 }
 
+/// The deepest recursion parsing `toks` takes, counted without recursing: every open bracket and
+/// block is a level, and every operator in a row (unary, or binary in one chain) one more, the
+/// way full_moon descends. Commas, `=`, `;` and statement keywords end a chain.
+fn nesting_depth(toks: &[(Tok, usize, usize)]) -> usize {
+    use Symbol::*;
+    // Per open level, the operators of its current chain; `chained` is their sum.
+    let (mut levels, mut chained, mut deepest) = (vec![0usize], 0usize, 0usize);
+    for (tok, _, _) in toks {
+        let Tok::Sym(symbol) = tok else { continue };
+        match symbol {
+            LeftParen | LeftBrace | LeftBracket | Function | Do | Then | Repeat => levels.push(0),
+            RightParen | RightBrace | RightBracket | End | Until => {
+                if levels.len() > 1 {
+                    chained -= levels.pop().unwrap_or(0);
+                }
+            }
+            Else | ElseIf | Comma | Semicolon | Equal | Local | Return | If | While | For | In | Break => {
+                let level = levels.last_mut().unwrap();
+                chained -= *level;
+                *level = 0;
+            }
+            Plus | Minus | Star | Slash | Caret | Percent | TwoDots | And | Or | Not | Hash | TwoEqual | TildeEqual
+            | LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => {
+                *levels.last_mut().unwrap() += 1;
+                chained += 1;
+            }
+            _ => continue,
+        }
+        deepest = deepest.max(levels.len() - 1 + chained);
+    }
+    deepest
+}
+
 /// The tokens with their line and byte offset.
 fn tokens(source: &str) -> Vec<(Tok, usize, usize)> {
     let tokens = match Lexer::new(source, LuaVersion::lua51()).collect() {
@@ -520,6 +557,9 @@ fn prepare(path: &str, source: &[u8], report: &mut Report) -> Option<(String, St
 /// The code for the rules across files; `None` when it cannot be parsed.
 pub(crate) fn unit(path: &str, source: &[u8], line_offset: u32) -> Option<lua_flow::Unit> {
     let (original, text) = prepare(path, source, &mut Report::default())?;
+    if nesting_depth(&tokens(&text)) > MAX_NESTING {
+        return None;
+    }
     let parsed = full_moon::parse_fallible(&text, LuaVersion::lua51());
     parsed.errors().is_empty().then(|| lua_flow::Unit::new(path, line_offset, &original, parsed.into_ast()))
 }
@@ -529,13 +569,23 @@ fn check_nested(path: &str, source: &[u8], line_offset: u32, nested: usize, repo
     if let Some((n, _)) = text.lines().enumerate().find(|(_, l)| l.chars().count() > MAX_LINE) {
         report.add("lua.long_line", Severity::Notice, path, Some(n as u32 + 1 + line_offset), format!("A line longer than {MAX_LINE} characters"));
     }
-    let parsed = full_moon::parse_fallible(&text, LuaVersion::lua51());
-    if let Some(error) = parsed.errors().first() {
-        report.add("lua.parse_error", Severity::Warn, path, None, format!("The code cannot be analysed: {error}"));
-    }
-    // Code that does not parse gets no locals and no rules across statements: every name counts as
-    // a global, and names of forbidden functions in strings stay critical.
-    let unit = parsed.errors().is_empty().then(|| lua_flow::Unit::new(path, line_offset, &original, parsed.into_ast()));
+    let all = tokens(&text);
+    // full_moon parses recursively: code nested this deep would overflow the stack and end the
+    // process. It is reported and not parsed; the token rules below still run.
+    let depth = nesting_depth(&all);
+    let unit = if depth > MAX_NESTING {
+        let message = format!("Code nested {depth} levels deep, more than {MAX_NESTING}: the game cannot run it, the scanner does not parse it");
+        report.add("lua.too_deep", Severity::Critical, path, None, message);
+        None
+    } else {
+        let parsed = full_moon::parse_fallible(&text, LuaVersion::lua51());
+        if let Some(error) = parsed.errors().first() {
+            report.add("lua.parse_error", Severity::Warn, path, None, format!("The code cannot be analysed: {error}"));
+        }
+        // Code that does not parse gets no locals and no rules across statements: every name
+        // counts as a global, and names of forbidden functions in strings stay critical.
+        parsed.errors().is_empty().then(|| lua_flow::Unit::new(path, line_offset, &original, parsed.into_ast()))
+    };
     let no_locals = scope::Locals::default();
     let facts = match &unit {
         Some(unit) => lua_flow::check(std::slice::from_ref(unit), report).remove(0),
@@ -543,7 +593,7 @@ fn check_nested(path: &str, source: &[u8], line_offset: u32, nested: usize, repo
     };
     let scope = unit.as_ref().map_or(&no_locals, |u| u.locals());
     let (mut toks, mut locals, mut typed) = (Vec::new(), Vec::new(), Vec::new());
-    for (tok, line, byte) in tokens(&text) {
+    for (tok, line, byte) in all {
         locals.push(matches!(&tok, Tok::Ident(name) if scope.is_local(name, byte)));
         typed.push(facts.typed.contains(&byte));
         toks.push((tok, line));

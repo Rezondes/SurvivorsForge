@@ -23,6 +23,7 @@ pub fn hint(rule: &str, snippet: &str) -> Option<&'static str> {
         "lua.obfuscation_entropy" => "Ship data as a readable Lua table, not as an encoded string.",
         "lua.binary" => "Ship the .lua source code, not compiled bytecode.",
         "lua.encoding" => "Save the file as UTF-8.",
+        "lua.too_deep" => "Ship the code as written: no addon nests code this deep, and the game refuses it.",
         "lua.long_line" => "Ship the code as written, not minified, and break up long lines.",
         "lua.parse_error" | "xml.parse_error" => "Fix the syntax error; code the scanner cannot read is not checked.",
         "lua.url" => "Remove the address unless the addon shows it to the player on purpose.",

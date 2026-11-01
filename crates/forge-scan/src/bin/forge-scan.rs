@@ -32,7 +32,14 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let report = forge_scan::scan(&bytes, &list(folders), &list(foreign));
+    // The scan parses recursively and needs more stack than the main thread has.
+    let (folders, foreign) = (list(folders), list(foreign));
+    let report = std::thread::Builder::new()
+        .stack_size(forge_scan::SCAN_STACK_BYTES)
+        .spawn(move || forge_scan::scan(&bytes, &folders, &foreign))
+        .expect("start the scan thread")
+        .join()
+        .expect("the scan crashed");
     println!("{}", serde_json::to_string_pretty(&report).expect("report serializes"));
     if report.flagged() { ExitCode::from(1) } else { ExitCode::SUCCESS }
 }

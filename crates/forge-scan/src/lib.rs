@@ -15,6 +15,10 @@ pub mod zip_rules;
 pub use finding::{Finding, Report, Severity};
 pub use hint::hint;
 
+/// The stack a scan needs: full_moon parses recursively, up to `lua_rules::MAX_NESTING` levels
+/// deep. Run `scan` on a thread with this much stack.
+pub const SCAN_STACK_BYTES: usize = 64 * 1024 * 1024;
+
 /// The version of the rules. A new version lets the platform rescan everything.
 pub const SCANNER_VERSION: &str = env!("CARGO_PKG_VERSION");
 

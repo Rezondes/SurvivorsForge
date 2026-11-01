@@ -1,5 +1,6 @@
-//! Runs the scanner on a thread of its own. A panic in it, say from a zip nobody thought of, ends
-//! that thread and comes back as an error: the API and the worker go on.
+//! Runs the scanner on a thread of its own, with the stack it needs (`SCAN_STACK_BYTES`). A panic
+//! in it, say from a zip nobody thought of, ends that thread and comes back as an error: the API
+//! and the worker go on.
 
 use forge_scan::Report;
 
@@ -7,6 +8,7 @@ use forge_scan::Report;
 pub fn isolated<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
     std::thread::Builder::new()
         .name("forge-scan".into())
+        .stack_size(forge_scan::SCAN_STACK_BYTES)
         .spawn(work)
         .map_err(|e| format!("cannot start the scanner: {e}"))?
         .join()
