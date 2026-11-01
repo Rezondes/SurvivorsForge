@@ -93,6 +93,8 @@ main:has(> .list) > .bottom { padding: 8px 16px; }
   background: var(--bg); color: var(--gold); font-size: 17px; text-decoration: none;
 }
 .top nav > a:not(.button):hover { border-color: var(--outline-hover); background: var(--control); }
+/* The section the page belongs to, red like the launcher's current tab. */
+.top nav > a[aria-current="page"] { border-color: var(--outline-active); background: var(--crimson); color: var(--gold-bright); }
 .brand {
   font-family: var(--font-display); font-size: 44px; line-height: 1.1; text-decoration: none;
   background: var(--gold-heading); -webkit-background-clip: text; background-clip: text; color: transparent;

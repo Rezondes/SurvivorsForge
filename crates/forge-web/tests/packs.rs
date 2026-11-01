@@ -165,7 +165,7 @@ async fn the_public_pack_list() {
     for text in ["href=\"/packs/AbCdE12345\"", "My UI", "by alice", "Lucky, Odds", "href=\"/packs/new\""] {
         assert!(page.body.contains(text), "missing {text}");
     }
-    assert!(page.body.contains("<a href=\"/packs\">Packs</a>"), "in the top navigation");
+    assert!(page.body.contains("<a href=\"/packs\" aria-current=\"page\">Packs</a>"), "in the top navigation, marked as the current section");
 }
 
 #[tokio::test]

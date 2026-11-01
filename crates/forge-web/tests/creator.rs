@@ -357,7 +357,9 @@ async fn the_toolbar_marks_the_current_page() {
     for (page, link, marked) in [("/addons/lucky/images", "images", 2), ("/addons/lucky/edit", "edit", 1), ("/addons/lucky/members", "members", 1)] {
         let body = web.get(page).await.body;
         assert!(body.contains(&format!(r#"<a href="/addons/lucky/{link}" aria-current="page">"#)), "{page}: {body}");
-        assert_eq!(body.matches(r#"aria-current="page""#).count(), marked, "{page}");
+        // Below the site's nav, which marks Addons on every one of these pages.
+        let content = body.split("</header>").nth(1).unwrap();
+        assert_eq!(content.matches(r#"aria-current="page""#).count(), marked, "{page}");
     }
 }
 

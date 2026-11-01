@@ -185,6 +185,7 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
         .layer(middleware::from_fn_with_state(limiter, crate::rate_limit::middleware))
         .layer(middleware::from_fn(crate::metrics::middleware))
+        .layer(middleware::from_fn(remember_path))
         // Pages may show a logged-in visitor's data: no browser or proxy keeps them.
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
         .layer(SetResponseHeaderLayer::if_not_present(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP)))
@@ -205,6 +206,22 @@ const HTMX_JS: &str = include_str!("../static/htmx.min.js");
 const APP_CSS: &str = include_str!("../static/app.css");
 const VIEW_JS: &str = include_str!("../static/view.js");
 const API_DOCS_JS: &str = include_str!("../static/api-docs.js");
+
+tokio::task_local! {
+    /// The path of the request being answered, for the nav of `base.html`.
+    static REQUEST_PATH: String;
+}
+
+/// Puts the request's path where `current` finds it while the page renders.
+async fn remember_path(request: axum::extract::Request, next: middleware::Next) -> Response {
+    let path = request.uri().path().to_string();
+    REQUEST_PATH.scope(path, next.run(request)).await
+}
+
+/// Whether the page belongs to the nav section `section`: the section itself or a page below it.
+pub fn in_section(section: &str) -> bool {
+    REQUEST_PATH.try_with(|p| p == section || p.strip_prefix(section).is_some_and(|rest| rest.starts_with('/'))).unwrap_or(false)
+}
 
 /// Goes into the links to the stylesheet and scripts (`?v=`) and changes with their content, so a
 /// deploy reaches browsers that still cache the old files.

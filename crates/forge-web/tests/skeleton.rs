@@ -298,3 +298,22 @@ async fn old_docs_paths_redirect_to_their_new_place() {
         assert_eq!(page.headers["location"], new, "{old}");
     }
 }
+
+#[tokio::test]
+async fn the_nav_link_of_the_current_section_is_marked() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", common::me("alice", "admin")).await;
+    for (route, body) in [("/v1/me/addons", json!([])), ("/v1/admin/review-queue", json!([])), ("/v1/admin/reports", json!([]))] {
+        Mock::given(method("GET")).and(path(route)).respond_with(ResponseTemplate::new(200).set_body_json(body)).mount(&web.api).await;
+    }
+    // Pages whose API call fails still show the nav of their section.
+    for (page, link) in [("/addons", "/addons"), ("/addons/lucky", "/addons"), ("/addons/lucky/versions", "/addons"), ("/packs", "/packs"), ("/packs/new", "/packs"), ("/me/addons", "/me/addons"), ("/admin", "/admin")] {
+        let body = web.get(page).await.body;
+        assert!(body.contains(&format!(r#"<a href="{link}" aria-current="page">"#)), "{page}: {body}");
+        let top = body.split("</header>").next().unwrap();
+        assert_eq!(top.matches("aria-current").count(), 1, "{page}: only one nav link is current: {top}");
+    }
+    let top = web.get("/docs").await.body;
+    let top = top.split("</header>").next().unwrap();
+    assert!(!top.contains("aria-current"), "no section is current on other pages: {top}");
+}
