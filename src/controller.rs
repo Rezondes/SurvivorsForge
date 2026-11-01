@@ -757,8 +757,8 @@ mod tests {
         let (registry, state, statuses, id) = auto_case(Trust::Scanned);
         let chosen = |all: bool, picked: &[String]| auto_update_ids(&statuses, &registry, &state, all, picked, None, &[]);
         assert!(chosen(false, &[]).is_empty(), "off by default");
-        assert_eq!(chosen(false, std::slice::from_ref(&id)), [id.clone()], "one addon switched on");
-        assert_eq!(chosen(true, &[]), [id.clone()], "all switched on");
+        assert_eq!(chosen(false, std::slice::from_ref(&id)), [id.as_str()], "one addon switched on");
+        assert_eq!(chosen(true, &[]), [id.as_str()], "all switched on");
     }
 
     #[test]
@@ -768,7 +768,7 @@ mod tests {
             assert!(auto_update_ids(&statuses, &registry, &state, true, &[], None, &[]).is_empty(), "{trust:?}");
         }
         let (registry, state, statuses, id) = auto_case(Trust::Verified);
-        assert_eq!(auto_update_ids(&statuses, &registry, &state, true, &[], None, &[]), [id.clone()], "verified goes");
+        assert_eq!(auto_update_ids(&statuses, &registry, &state, true, &[], None, &[]), [id.as_str()], "verified goes");
         // Found on GitHub while the server was away: not checked, so the user decides.
         let mut statuses = statuses;
         statuses.insert(id.clone(), UpdateStatus::UpdateAvailable(RemoteVersion { id: "v3".into(), label: "v3".into(), download: String::new(), sha256: None }));
