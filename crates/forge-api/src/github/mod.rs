@@ -103,8 +103,7 @@ pub struct GitHubClient {
     key: EncodingKey,
     clock: Clock,
     tokens: Mutex<HashMap<i64, InstallationToken>>,
-    /// URL -> (ETag, body) of the last `200`, for conditional requests.
-    etags: Mutex<HashMap<String, (String, String)>>,
+    etags: Mutex<EtagCache>,
     oauth: Option<OAuthApp>,
     /// Sent with requests outside an installation: 5000 instead of 60 requests per hour.
     read_token: Option<String>,
@@ -119,6 +118,41 @@ pub struct OAuthApp {
 
 /// Installation tokens are renewed this long before they expire.
 const TOKEN_MARGIN: Duration = Duration::minutes(5);
+
+/// The bytes of URLs, ETags and bodies the ETag cache holds at most. Callers put user input into
+/// the URLs, so without a bound every new URL would stay in memory for good.
+const ETAG_CACHE_BYTES: usize = 32 * 1024 * 1024;
+
+/// URL -> (ETag, body) of the last `200`, for conditional requests.
+// ponytail: starts over when full; evict single entries if the polled working set outgrows the budget.
+#[derive(Default)]
+struct EtagCache {
+    entries: HashMap<String, (String, String)>,
+    bytes: usize,
+}
+
+impl EtagCache {
+    fn get(&self, url: &str) -> Option<(String, String)> {
+        self.entries.get(url).cloned()
+    }
+
+    /// A body that alone exceeds `ETAG_CACHE_BYTES` is not kept.
+    fn put(&mut self, url: String, etag: String, body: String) {
+        if let Some((old_etag, old_body)) = self.entries.remove(&url) {
+            self.bytes -= url.len() + old_etag.len() + old_body.len();
+        }
+        let size = url.len() + etag.len() + body.len();
+        if size > ETAG_CACHE_BYTES {
+            return;
+        }
+        if self.bytes + size > ETAG_CACHE_BYTES {
+            self.entries.clear();
+            self.bytes = 0;
+        }
+        self.bytes += size;
+        self.entries.insert(url, (etag, body));
+    }
+}
 
 impl GitHubClient {
     pub fn new(api_url: &str, app_id: &str, key: EncodingKey, clock: Clock) -> GitHubClient {
@@ -135,7 +169,7 @@ impl GitHubClient {
             key,
             clock,
             tokens: Mutex::new(HashMap::new()),
-            etags: Mutex::new(HashMap::new()),
+            etags: Mutex::new(EtagCache::default()),
             oauth: None,
             read_token: None,
         }
@@ -215,7 +249,7 @@ impl GitHubClient {
                 }
             }
         };
-        let cached = self.etags.lock().unwrap().get(&url).cloned();
+        let cached = self.etags.lock().unwrap().get(&url);
         if let Some((etag, _)) = &cached {
             builder = builder.header(IF_NONE_MATCH, etag);
         }
@@ -224,18 +258,19 @@ impl GitHubClient {
             Some(installation) => self.count(&format!("installation:{installation}"), &response),
             None => self.count(self.public_quota(), &response),
         }
-        let body = if let Some((_, body)) = cached.filter(|_| response.status() == StatusCode::NOT_MODIFIED) {
-            body
+        let (body, etag) = if let Some((_, body)) = cached.filter(|_| response.status() == StatusCode::NOT_MODIFIED) {
+            (body, None)
         } else {
             let response = check(response).await?;
             let etag = response.headers().get(ETAG).and_then(|v| v.to_str().ok()).map(str::to_string);
-            let body = response.text().await.map_err(network)?;
-            if let Some(etag) = etag {
-                self.etags.lock().unwrap().insert(url, (etag, body.clone()));
-            }
-            body
+            (response.text().await.map_err(network)?, etag)
         };
-        serde_json::from_str(&body).map_err(|e| GitHubError::Parse(e.to_string()))
+        let value = serde_json::from_str(&body).map_err(|e| GitHubError::Parse(e.to_string()))?;
+        // Only bodies that are what the caller asked for are kept.
+        if let Some(etag) = etag {
+            self.etags.lock().unwrap().put(url, etag, body);
+        }
+        Ok(value)
     }
 }
 
@@ -424,5 +459,28 @@ impl GitHubApi for GitHubClient {
             bytes.extend_from_slice(&chunk);
         }
         Ok(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn etag_cache_stays_within_its_budget() {
+        let mut cache = EtagCache::default();
+        let half = "x".repeat(ETAG_CACHE_BYTES / 2);
+        cache.put("a".into(), "1".into(), half.clone());
+        cache.put("a".into(), "2".into(), half.clone());
+        assert_eq!(cache.get("a").unwrap().0, "2", "a new ETag replaces the old one");
+        cache.put("b".into(), "1".into(), half.clone());
+        assert!(cache.get("a").is_none() && cache.get("b").is_some(), "a full cache starts over");
+        cache.put("c".into(), "1".into(), "x".repeat(ETAG_CACHE_BYTES));
+        assert!(cache.get("c").is_none() && cache.get("b").is_some(), "too large alone, not kept");
+        for n in 0..2_000 {
+            cache.put(format!("/repos/o/r?n={n}"), "1".into(), "x".repeat(64 * 1024));
+        }
+        let held: usize = cache.entries.iter().map(|(url, (etag, body))| url.len() + etag.len() + body.len()).sum();
+        assert!(held == cache.bytes && cache.bytes <= ETAG_CACHE_BYTES);
     }
 }
