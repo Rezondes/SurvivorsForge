@@ -298,7 +298,7 @@ main:has(> .browse) > .bottom { padding: 8px 16px; }
 .result-tools select { width: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; }
 .result-tools .view-toggle button { min-height: 32px; }
 .browse-results { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 4px; }
-.browse-results .pager { margin-bottom: 24px; }
+#pager .pager { margin-top: 12px; }
 
 /* Addon cards: the icon large, name, author, summary, then a meta line. Tiles stand the icon on
    top; the list lays it left of the text. Without an icon the first letter stands in. */

@@ -965,10 +965,12 @@ async fn long_lists_get_numbered_pages_that_keep_the_filters() {
 }
 
 #[tokio::test]
-async fn one_page_of_addons_shows_no_page_numbers() {
+async fn one_page_of_addons_still_shows_the_pager() {
     let mut web = TestWeb::new().await;
     mock(&web, "/v1/categories", categories()).await;
     mock(&web, "/v1/addons", json!({ "total": 3, "page": 1, "per_page": 20, "addons": [] })).await;
     let body = web.get("/addons").await.body;
-    assert!(!body.contains(r#"<nav class="pager""#), "{body}");
+    let pager = body.split(r#"<nav class="pager""#).nth(1).expect("a pager").split("</nav>").next().unwrap();
+    assert!(pager.contains("1–3 of 3 addons") && pager.contains(r#"aria-current="page">1<"#), "{pager}");
+    assert!(!pager.contains(r#"rel="prev""#) && !pager.contains(r#"rel="next""#), "{pager}");
 }

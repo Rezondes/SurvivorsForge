@@ -1089,10 +1089,11 @@ pub struct PageItem {
 
 impl Pager {
     /// First and last page and the pages next to `page`; skipped stretches become one gap. A gap
-    /// of a single page shows that page instead, so "…" always stands for two or more.
+    /// of a single page shows that page instead, so "…" always stands for two or more. Shown even
+    /// for a single page; only an empty list has none.
     pub fn new(page: i64, per_page: i64, total: i64, noun: &str, link: impl Fn(i64) -> String) -> Option<Pager> {
         let pages = (total + per_page - 1) / per_page;
-        if pages <= 1 {
+        if pages < 1 {
             return None;
         }
         let page = page.clamp(1, pages);
@@ -1108,7 +1109,7 @@ impl Pager {
         let first = (page - 1) * per_page + 1;
         let last = (page * per_page).min(total);
         Some(Pager {
-            summary: format!("{first}–{last} of {} {noun}", crate::public::grouped(total)),
+            summary: format!("{first}–{last} of {} {}", crate::public::grouped(total), if total == 1 { noun.trim_end_matches('s') } else { noun }),
             prev: (page > 1).then(|| link(page - 1)),
             next: (page < pages).then(|| link(page + 1)),
             items,
@@ -1126,7 +1127,8 @@ mod pager_tests {
 
     #[test]
     fn gaps_stand_for_two_or_more_pages() {
-        assert_eq!(numbers(1, 20), Vec::<i64>::new(), "one page: no pager");
+        assert_eq!(numbers(1, 0), Vec::<i64>::new(), "nothing found: no pager");
+        assert_eq!(numbers(1, 20), vec![1], "one page: still a pager");
         assert_eq!(numbers(1, 200), vec![1, 2, 0, 10]);
         assert_eq!(numbers(5, 200), vec![1, 0, 4, 5, 6, 0, 10]);
         assert_eq!(numbers(4, 200), vec![1, 2, 3, 4, 5, 0, 10], "page 2 instead of a gap of one");
@@ -1139,5 +1141,6 @@ mod pager_tests {
         let pager = Pager::new(10, 20, 195, "addons", |n| n.to_string()).unwrap();
         assert_eq!(pager.summary, "181–195 of 195 addons");
         assert!(pager.next.is_none() && pager.prev.is_some());
+        assert_eq!(Pager::new(1, 20, 1, "addons", |n| n.to_string()).unwrap().summary, "1–1 of 1 addon");
     }
 }
