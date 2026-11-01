@@ -341,13 +341,23 @@ configs:
           header X-Content-Type-Options nosniff
           file_server
         }
-        # Built addon packs; the name is the SHA-256 of the pack's versions, so the file never changes.
+        # Built addon packs; the name is the SHA-256 of the pack's versions, so anyone can work it
+        # out. Before every request Caddy asks the API whether each addon in the zip is still
+        # available, so a block ends the download at once; no shared cache may keep the zip, and a
+        # browser asks again before it reuses one.
         handle_path /packs-files/* {
           root * /srv/packs
-          header Cache-Control "public, max-age=86400"
-          header X-Content-Type-Options nosniff
-          header Content-Disposition "attachment; filename=\"SurvivorsForge-pack.zip\""
-          file_server
+          # In this order: the API's refusal must not go out with the zip's headers.
+          route {
+            forward_auth api:8080 {
+              uri /v1/pack-files{path}
+              header_up X-Forwarded-For {client_ip}
+            }
+            header Cache-Control "private, no-cache"
+            header X-Content-Type-Options nosniff
+            header Content-Disposition "attachment; filename=\"SurvivorsForge-pack.zip\""
+            file_server
+          }
         }
         # Grafana (`--profile monitoring`). Its static files are public anyway; everything else
         # needs a Forge login with the right to see Grafana, checked by the website on each

@@ -178,6 +178,25 @@ async fn failed_builds_and_blocked_addons(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn built_zip_goes_out_only_while_its_addons_are_available(pool: PgPool) {
+    let (app, _dir) = app_with_packs(pool).await;
+    let token = app.publish(1, "alice", "lucky").await;
+    checked_version(&app, "lucky", "clean").await;
+    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await.json()["id"].as_str().unwrap().to_string();
+    let key: String = sqlx::query_scalar("SELECT content_key FROM packs WHERE public_id = $1").bind(&id).fetch_one(&app.pool).await.unwrap();
+
+    assert_eq!(app.get(&format!("/v1/pack-files/{key}.zip"), None).await.status, StatusCode::NO_CONTENT);
+    for other in [format!("{key}.zip.part"), key.clone(), format!("{}.zip", "0".repeat(64))] {
+        assert_eq!(app.get(&format!("/v1/pack-files/{other}"), None).await.status, StatusCode::NOT_FOUND, "{other}");
+    }
+
+    // Blocked after the build: the zip on disk no longer goes out.
+    sqlx::query("UPDATE addons SET blocked_at = now() WHERE slug = 'lucky'").execute(&app.pool).await.unwrap();
+    let blocked = app.get(&format!("/v1/pack-files/{key}.zip"), None).await;
+    assert_eq!((blocked.status, blocked.error()), (StatusCode::CONFLICT, "pack_unavailable".to_string()));
+}
+
+#[sqlx::test]
 async fn prune_drops_stale_and_over_budget_zips(pool: PgPool) {
     let (app, dir) = app_with_packs(pool).await;
     let token = app.publish(1, "alice", "lucky").await;

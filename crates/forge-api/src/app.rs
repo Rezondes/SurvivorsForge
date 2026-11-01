@@ -119,6 +119,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/packs", get(routes::packs::list).post(routes::packs::create))
         .route("/v1/packs/{id}", get(routes::packs::show).patch(routes::packs::update))
         .route("/v1/packs/{id}/download", get(routes::packs::download))
+        .route("/v1/pack-files/{file}", get(routes::packs::file_allowed))
         .route("/v1/github/{owner}/{repo}/releases/latest", get(routes::github_meta::latest_release))
         .route("/v1/github/{owner}/{repo}/releases/{tag}", get(routes::github_meta::release))
         .route("/v1/github/{owner}/{repo}/refs", get(routes::github_meta::refs))

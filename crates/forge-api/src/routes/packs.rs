@@ -405,9 +405,7 @@ const RETRY_FAILED_AFTER: Duration = Duration::hours(1);
 /// worker builds it (the client asks again).
 pub async fn download(State(state): State<AppState>, crate::rate_limit::VisitorIp(ip): crate::rate_limit::VisitorIp, Path(public_id): Path<String>) -> ApiResult<Response> {
     let pack = load(&state, &public_id).await?;
-    if !entries(&state, pack.id).await?.iter().all(|a| a.available) {
-        return Err(ApiError::new(StatusCode::CONFLICT, "pack_unavailable", "An addon of this pack is no longer available"));
-    }
+    ensure_available(&state, pack.id).await?;
     let key = &pack.content_key;
     let now = (state.clock)();
     match file(&state, key).await? {
@@ -434,4 +432,28 @@ pub async fn download(State(state): State<AppState>, crate::rate_limit::VisitorI
         }
     }
     Ok((StatusCode::ACCEPTED, Json(json!({ "status": "building" }))).into_response())
+}
+
+/// `409` when an addon of `pack` is no longer available, so its zip must not go out.
+async fn ensure_available(state: &AppState, pack: i64) -> ApiResult<()> {
+    if !entries(state, pack).await?.iter().all(|a| a.available) {
+        return Err(ApiError::new(StatusCode::CONFLICT, "pack_unavailable", "An addon of this pack is no longer available"));
+    }
+    Ok(())
+}
+
+/// `GET /v1/pack-files/{file}`, asked by Caddy's `forward_auth` before every request for a built
+/// zip under `/packs-files/`: `204` while every addon in it is still available, `409` once one is
+/// blocked, flagged or changed, `404` for any other name. A zip built before a block thus stops
+/// going out at once, not only when the hourly prune deletes it.
+pub async fn file_allowed(State(state): State<AppState>, Path(file): Path<String>) -> ApiResult<StatusCode> {
+    let key = file.strip_suffix(".zip").ok_or_else(ApiError::not_found)?;
+    // Packs with the same content key have the same versions; any one of them tells.
+    let pack: i64 = sqlx::query_scalar("SELECT id FROM packs WHERE content_key = $1 ORDER BY id LIMIT 1")
+        .bind(key)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    ensure_available(&state, pack).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

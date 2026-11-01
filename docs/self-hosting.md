@@ -244,7 +244,9 @@ The worker builds a pack's zip on its first download: it fetches each version fr
 checks its SHA-256 against the scanned one and puts every addon folder at the root of one zip.
 Packs with the same versions share the file. Builds run one after the other; the limits above
 bound their size and number. An hourly job deletes zips that nobody downloaded for
-`PACK_RETENTION_DAYS` and, above `PACK_STORAGE_MB`, the least recently downloaded ones. The
+`PACK_RETENTION_DAYS` and, above `PACK_STORAGE_MB`, the least recently downloaded ones. Caddy
+asks the API before it hands out a zip, so one with a since blocked or flagged addon stops going
+out at once; the zips are not cached by a CDN for that reason. The
 launcher's *Save as zip* builds the same zip on the player's computer and needs no server space.
 
 ## 8. Monitoring
