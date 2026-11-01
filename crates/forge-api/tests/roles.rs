@@ -62,6 +62,13 @@ async fn moderator_cannot_ban_staff(pool: PgPool) {
     assert_eq!(reply.status, StatusCode::NO_CONTENT, "a plain user");
     let reply = app.post("/v1/admin/users/8/ban", Some(&admin), json!({ "note": "abuse" })).await;
     assert_eq!(reply.status, StatusCode::NO_CONTENT, "an admin can");
+
+    let reply = app.call("DELETE", "/v1/admin/users/8/ban", Some(&moderator), Some(json!({ "note": "friend" }))).await;
+    assert_eq!((reply.status, reply.error().as_str()), (StatusCode::FORBIDDEN, "cannot_unban_staff"));
+    let reply = app.call("DELETE", "/v1/admin/users/1/ban", Some(&moderator), Some(json!({ "note": "appeal" }))).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "a plain user");
+    let reply = app.call("DELETE", "/v1/admin/users/8/ban", Some(&admin), Some(json!({ "note": "second chance" }))).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "an admin can");
 }
 
 #[sqlx::test]

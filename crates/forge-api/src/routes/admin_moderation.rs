@@ -171,13 +171,20 @@ pub async fn unban(State(state): State<AppState>, StaffUser(admin): StaffUser, P
     let note = note_of(body);
     let note = note_required(&note)?;
     let mut tx = state.pool.begin().await?;
-    let user_id: Option<i64> = sqlx::query_scalar(
-        "UPDATE users SET banned_at = NULL, ban_reason = NULL WHERE github_id = $1 AND banned_at IS NOT NULL RETURNING id",
+    // The row stays locked until the commit, so a ban that lands meanwhile is checked, not lifted.
+    let target: Option<(i64, bool)> = sqlx::query_as(
+        "SELECT id, role <> 'user' OR granted_role IS NOT NULL OR github_id = ANY($2) FROM users
+         WHERE github_id = $1 AND banned_at IS NOT NULL FOR UPDATE",
     )
     .bind(github_id)
+    .bind(&state.config.admin_github_ids)
     .fetch_optional(&mut *tx)
     .await?;
-    let user_id = user_id.ok_or_else(ApiError::not_found)?;
+    let (user_id, staff) = target.ok_or_else(ApiError::not_found)?;
+    if staff && !admin.can(Permission::ManageRoles, &state.config) {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "cannot_unban_staff", "Only an admin can unban a moderator"));
+    }
+    sqlx::query("UPDATE users SET banned_at = NULL, ban_reason = NULL WHERE id = $1").bind(user_id).execute(&mut *tx).await?;
     sqlx::query("UPDATE addons SET blocked_at = NULL, block_reason = NULL, blocked_by_ban = false WHERE owner_id = $1 AND blocked_by_ban")
         .bind(user_id)
         .execute(&mut *tx)
