@@ -4,6 +4,7 @@ pub mod deep_link;
 pub mod game_update;
 pub mod github;
 pub mod install;
+pub mod local_scan;
 pub mod pictures;
 pub mod registry;
 pub mod repo_detect;

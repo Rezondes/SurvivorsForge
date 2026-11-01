@@ -12,6 +12,7 @@ use survivorsforge::deep_link;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
 use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, WebGitHub};
 use survivorsforge::install::{self, Request};
+use survivorsforge::local_scan;
 use survivorsforge::registry::{self, Origin, Registry, SourceSpec};
 use survivorsforge::repo_detect;
 use survivorsforge::scan::{scan_addons, InstalledAddon};
@@ -606,6 +607,8 @@ fn run_bg(
 thread_local! {
     /// The action behind the open confirmation dialog. Lives on the UI thread only.
     static PENDING: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
+    /// The action behind its third button, when it has one.
+    static PENDING_EXTRA: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
 }
 
 fn ask(ui: &AppWindow, title: &str, text: &str, ok: &str, danger: bool, action: impl FnOnce() + 'static) {
@@ -613,8 +616,96 @@ fn ask(ui: &AppWindow, title: &str, text: &str, ok: &str, danger: bool, action: 
     ui.set_confirm_text(text.into());
     ui.set_confirm_ok(ok.into());
     ui.set_confirm_danger(danger);
+    ui.set_confirm_extra(SharedString::new());
+    ui.set_confirm_info(false);
     ui.set_confirm_open(true);
     PENDING.with(|p| *p.borrow_mut() = Some(Box::new(action)));
+    PENDING_EXTRA.with(|p| p.borrow_mut().take());
+}
+
+/// Like `ask`, with "Scan locally" next to OK: `scan` checks the addon on this computer first.
+fn ask_or_scan(ui: &AppWindow, title: &str, text: &str, ok: &str, danger: bool, scan: impl FnOnce() + 'static, action: impl FnOnce() + 'static) {
+    ask(ui, title, text, ok, danger, action);
+    ui.set_confirm_extra("Scan locally".into());
+    PENDING_EXTRA.with(|p| *p.borrow_mut() = Some(Box::new(scan)));
+}
+
+/// Shows a result with only an OK button.
+fn tell(ui: &AppWindow, title: &str, text: &str) {
+    ask(ui, title, text, "OK", false, || {});
+    ui.set_confirm_info(true);
+}
+
+/// Runs the local scan `job` off the UI thread, then hands its report to `then` on the UI thread.
+fn scan_then<T: Send + 'static>(
+    ui: &AppWindow,
+    shared: &Shared,
+    name: &str,
+    job: impl FnOnce(&Shared) -> survivorsforge::Result<T> + Send + 'static,
+    then: impl FnOnce(&AppWindow, &Shared, T) + Send + 'static,
+) {
+    lock(shared).set_status(format!("Scanning {name} locally..."), false);
+    refresh(ui, shared);
+    let (weak, shared, name) = (ui.as_weak(), shared.clone(), name.to_string());
+    std::thread::spawn(move || {
+        let result = job(&shared);
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            match result {
+                Ok(report) => {
+                    lock(&shared).set_status(format!("{name} scanned locally"), false);
+                    then(&ui, &shared, report);
+                }
+                Err(e) => lock(&shared).set_status(format!("Could not scan {name}: {e}"), true),
+            }
+            refresh(&ui, &shared);
+        });
+    });
+}
+
+/// The confirmation text after a local scan: what was found, then what the dialog said before.
+fn scanned_text(report: &forge_scan::Report, before: &str) -> String {
+    let found = local_scan::summary(report);
+    if before.is_empty() { found } else { format!("{found}\n\n{before}") }
+}
+
+/// Downloads the file `id` would install, scans it here, then offers to install exactly that file.
+fn scan_remote(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>, title: String) {
+    let job_id = id.clone();
+    let name = lock(shared).state.get(&id).map(|e| e.name.clone()).unwrap_or_else(|| id.clone());
+    scan_then(
+        ui,
+        shared,
+        &name,
+        move |shared| {
+            let (job, client, github, downloads) = {
+                let core = lock(shared);
+                (remote_job(&core, &job_id), core.client(), core.github(), core.downloads())
+            };
+            let (_, repo, spec, _, remote) = job.ok_or(Error::NotFound)??;
+            let mut remote = match remote {
+                Some(remote) => remote,
+                None => updates::resolve_remote(&*github, &repo, &spec)?,
+            };
+            let zip = downloads.join(format!("{}.zip", unique_name()));
+            client.download(&remote.download, &zip)?;
+            let scanned = (|| {
+                let folders: Vec<String> = archive::analyze(&zip).map_err(Error::from)?.into_iter().map(|a| a.name).collect();
+                remote.sha256 = Some(install::sha256_of(&zip)?);
+                local_scan::scan_zip(&zip, &folders)
+            })();
+            let _ = std::fs::remove_file(&zip);
+            Ok((scanned?, remote))
+        },
+        move |ui, shared, (report, pinned)| {
+            let text = scanned_text(&report, "Install installs exactly the file that was scanned.");
+            let (weak, shared) = (ui.as_weak(), shared.clone());
+            ask(ui, &title, &text, "Install", local_scan::flagged(&report), move || {
+                if let Some(ui) = weak.upgrade() {
+                    start_install(&ui, &shared, id, deps, Some(pinned));
+                }
+            });
+        },
+    );
 }
 
 /// Downloads `remote` (or the latest version of `repo`) and installs it as entry `id`, and counts
@@ -761,29 +852,47 @@ fn on_row_action(ui: &AppWindow, shared: &Shared, id: String) {
                             , addon.repo
                         ));
                     }
+                    let unchecked = controller::unchecked_update(&core.state, &core.statuses, &id).is_some();
                     let asks = !plan.install.is_empty() || warned;
-                    Ok(asks.then(|| (format!("Install {}?", addon.name), lines.join("\n\n"), danger, plan.install)))
+                    Ok(asks.then(|| (format!("Install {}?", addon.name), lines.join("\n\n"), danger, plan.install, unchecked)))
                 }
             }
         }
     };
     match decision {
         Err(()) => refresh(ui, shared),
-        Ok(None) => start_install(ui, shared, id, Vec::new()),
-        Ok(Some((title, text, danger, deps))) => {
+        Ok(None) => start_install(ui, shared, id, Vec::new(), None),
+        Ok(Some((title, text, danger, deps, unchecked))) => {
             let weak = ui.as_weak();
             let shared = shared.clone();
-            ask(ui, &title, &text, if danger { "Install anyway" } else { "Install" }, danger, move || {
-                if let Some(ui) = weak.upgrade() {
-                    start_install(&ui, &shared, id, deps);
+            let ok = if danger { "Install anyway" } else { "Install" };
+            let install = {
+                let (weak, shared, id, deps) = (weak.clone(), shared.clone(), id.clone(), deps.clone());
+                move || {
+                    if let Some(ui) = weak.upgrade() {
+                        start_install(&ui, &shared, id, deps, None);
+                    }
                 }
-            });
+            };
+            if unchecked {
+                // The server cannot check it: the user may check the very file here before installing it.
+                let asked = title.clone();
+                let scan = move || {
+                    if let Some(ui) = weak.upgrade() {
+                        scan_remote(&ui, &shared, id, deps, asked);
+                    }
+                };
+                ask_or_scan(ui, &title, &text, ok, danger, scan, install);
+            } else {
+                ask(ui, &title, &text, ok, danger, install);
+            }
         }
     }
 }
 
 /// Installs the dependencies `deps` in order, then `id`. A failing dependency stops before `id`.
-fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>) {
+/// `pinned` replaces the version to install, for example the file a local scan checked.
+fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>, pinned: Option<RemoteVersion>) {
     let job = {
         let mut core = lock(shared);
         if id.starts_with(UNMANAGED_PREFIX) || core.busy.contains(&id) {
@@ -805,6 +914,7 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>)
     };
     refresh(ui, shared);
     let Some((name, repo, spec, source, remote)) = job else { return };
+    let remote = pinned.or(remote);
     run_bg(ui.as_weak(), shared.clone(), Some(id.clone()), move |shared| {
         for dep in &deps {
             let job = remote_job(&lock(shared), dep);
@@ -1101,6 +1211,24 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
     });
 }
 
+/// Scans the installed folders of the open detail page on this computer and shows what was found.
+fn on_detail_scan(ui: &AppWindow, shared: &Shared) {
+    let (name, folders, addons) = {
+        let core = lock(shared);
+        let Some((id, _)) = core.detail.clone() else { return };
+        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+        let Some(row) = rows.into_iter().find(|r| r.id == id) else { return };
+        (row.name, row.folders, core.addons_dir().to_path_buf())
+    };
+    if folders.is_empty() {
+        return;
+    }
+    let title = format!("Local scan of {name}");
+    scan_then(ui, shared, &name, move |_| local_scan::scan_folders(&addons, &folders), move |ui, _shared, report| {
+        tell(ui, &title, &local_scan::summary(&report));
+    });
+}
+
 fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
     let (name, folders) = {
         let core = lock(shared);
@@ -1158,8 +1286,28 @@ fn on_install_zip(ui: &AppWindow, shared: &Shared) {
     let file_name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let title = if plan.is_update { "Update from zip" } else { "Install from zip" };
     let ok = if plan.is_update { "Update" } else { "Install" };
-    let (weak, shared) = (ui.as_weak(), shared.clone());
-    ask(ui, title, &plan.describe(), ok, false, move || {
+    let text = plan.describe();
+    let install = {
+        let (weak, shared, plan, file, file_name) = (ui.as_weak(), shared.clone(), plan.clone(), file.clone(), file_name.clone());
+        move || install_zip_file(weak, shared, plan, file, file_name)
+    };
+    let weak = ui.as_weak();
+    let shared = shared.clone();
+    let scan = move || {
+        let Some(ui) = weak.upgrade() else { return };
+        let (zip, folders, name) = (file.clone(), plan.addons.clone(), plan.name.clone());
+        scan_then(&ui, &shared, &name, move |_| local_scan::scan_zip(&zip, &folders), move |ui, shared, report| {
+            let text = scanned_text(&report, &plan.describe());
+            let (weak, shared) = (ui.as_weak(), shared.clone());
+            ask(ui, title, &text, ok, local_scan::flagged(&report), move || install_zip_file(weak, shared, plan, file, file_name));
+        });
+    };
+    ask_or_scan(ui, title, &text, ok, false, scan, install);
+}
+
+/// Installs the picked zip as `plan` says.
+fn install_zip_file(weak: slint::Weak<AppWindow>, shared: Shared, plan: controller::ZipPlan, file: PathBuf, file_name: String) {
+    {
         lock(&shared).busy.insert(plan.id.clone());
         run_bg(weak, shared, Some(plan.id.clone()), move |shared| {
             let mut core = lock(shared);
@@ -1187,7 +1335,7 @@ fn on_install_zip(ui: &AppWindow, shared: &Shared) {
             core.rescan();
             Ok(format!("{} installed from {file_name}", plan.name))
         });
-    });
+    }
 }
 
 fn on_repo_submit(ui: &AppWindow, shared: &Shared) {
@@ -1244,8 +1392,27 @@ fn show_detection(ui: &AppWindow, shared: &Shared, detection: repo_detect::Detec
         text += &format!("\n\nExisting folders get replaced: {}.", existing.join(", "));
     }
     let title = format!("Add {}?", detection.repo);
-    let (weak, shared) = (ui.as_weak(), shared.clone());
-    ask(ui, &title, &text, "Install", false, move || {
+    let install = {
+        let (weak, shared, detection) = (ui.as_weak(), shared.clone(), detection.clone());
+        move || install_detection(weak, shared, detection)
+    };
+    let (weak, shared, asked, before) = (ui.as_weak(), shared.clone(), title.clone(), text.clone());
+    let scan = move || {
+        let Some(ui) = weak.upgrade() else { return };
+        let zip = detection.zip.clone();
+        let folders: Vec<String> = detection.addons.iter().map(|a| a.name.clone()).collect();
+        scan_then(&ui, &shared, &detection.name(), move |_| local_scan::scan_zip(&zip, &folders), move |ui, shared, report| {
+            let text = scanned_text(&report, &before);
+            let (weak, shared) = (ui.as_weak(), shared.clone());
+            ask(ui, &asked, &text, "Install", local_scan::flagged(&report), move || install_detection(weak, shared, detection));
+        });
+    };
+    ask_or_scan(ui, &title, &text, "Install", false, scan, install);
+}
+
+/// Installs what `show_detection` found in a repo.
+fn install_detection(weak: slint::Weak<AppWindow>, shared: Shared, detection: repo_detect::Detection) {
+    {
         let id = detection.entry_id();
         lock(&shared).busy.insert(id.clone());
         run_bg(weak, shared, Some(id.clone()), move |shared| {
@@ -1268,7 +1435,7 @@ fn show_detection(ui: &AppWindow, shared: &Shared, detection: repo_detect::Detec
             core.rescan();
             Ok(format!("{name} added from {}", detection.repo))
         });
-    });
+    }
 }
 
 /// The path the user typed, with `~` resolved. Shown back in the field so they see what is used.
@@ -1678,7 +1845,16 @@ fn main() -> Result<(), slint::PlatformError> {
     on!(on_confirm_cancel, |ui, _shared| {
         ui.set_confirm_open(false);
         PENDING.with(|p| p.borrow_mut().take());
+        PENDING_EXTRA.with(|p| p.borrow_mut().take());
     });
+    on!(on_confirm_extra_accept, |ui, _shared| {
+        ui.set_confirm_open(false);
+        PENDING.with(|p| p.borrow_mut().take());
+        if let Some(action) = PENDING_EXTRA.with(|p| p.borrow_mut().take()) {
+            action();
+        }
+    });
+    on!(on_detail_scan, |ui, shared| on_detail_scan(&ui, shared));
     on!(on_settings_browse, |ui, _shared| {
         if let Some(p) = pick_folder(&ui.get_settings_path()) {
             ui.set_settings_path(p.into());

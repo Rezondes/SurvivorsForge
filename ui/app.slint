@@ -377,6 +377,7 @@ export component AppWindow inherits Window {
     callback row-details(string);
     callback detail-website();
     callback detail-report();
+    callback detail-scan();
     property <bool> showing-detail: root.detail-page == root.page;
 
     in property <string> status-text;
@@ -403,8 +404,13 @@ export component AppWindow inherits Window {
     in property <string> confirm-text;
     in property <string> confirm-ok;
     in property <bool> confirm-danger;
+    // A third button between Cancel and OK (for example "Scan locally"); hidden when empty.
+    in property <string> confirm-extra;
+    // Only an OK button: the dialog shows a result and has nothing to cancel.
+    in property <bool> confirm-info;
     callback confirm-accept();
     callback confirm-cancel();
+    callback confirm-extra-accept();
 
     // Add-repo dialog
     in-out property <bool> repo-open;
@@ -628,6 +634,7 @@ export component AppWindow inherits Window {
                     open => { root.row-open(root.detail.row.id); }
                     website => { root.detail-website(); }
                     report => { root.detail-report(); }
+                    scan => { root.detail-scan(); }
                     enlarge-shot(i) => {
                         root.zoom-shots = root.detail.shots;
                         root.zoom-index = i;
@@ -834,9 +841,13 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: end;
                 spacing: Theme.gap-tight;
-                ActionButton {
+                if !root.confirm-info : ActionButton {
                     text: "Cancel";
                     clicked => { root.confirm-cancel(); }
+                }
+                if root.confirm-extra != "" : ActionButton {
+                    text: root.confirm-extra;
+                    clicked => { root.confirm-extra-accept(); }
                 }
                 ActionButton {
                     text: root.confirm-ok;

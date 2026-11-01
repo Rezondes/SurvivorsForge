@@ -6501,6 +6501,7 @@ dependencies = [
  "directories",
  "flate2",
  "forge-core",
+ "forge-scan",
  "image",
  "open",
  "rfd",

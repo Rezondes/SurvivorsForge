@@ -946,6 +946,8 @@ export component DetailView inherits VerticalLayout {
     callback open();
     callback website();
     callback report();
+    // Scan the installed folders with forge-scan on this computer.
+    callback scan();
     // Screenshot `index` was clicked, or a picture of the description: show it large.
     callback enlarge-shot(int);
     callback enlarge(image, string);
@@ -1039,6 +1041,10 @@ export component DetailView inherits VerticalLayout {
         if root.detail.on-website : ActionButton {
             text: "Report";
             clicked => { root.report(); }
+        }
+        if root.detail.row.can-remove && !root.detail.row.busy : ActionButton {
+            text: "Scan locally";
+            clicked => { root.scan(); }
         }
         if root.detail.row.can-remove && !root.detail.row.busy : RemoveButton {
             label: "Remove " + root.detail.row.name;
