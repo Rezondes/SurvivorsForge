@@ -942,3 +942,33 @@ async fn every_version_shows_its_downloads() {
     let page = web.get("/addons/lucky/versions").await;
     assert!(page.body.contains("not counted"), "GitHub counts no source zips: {}", page.body);
 }
+
+#[tokio::test]
+async fn long_lists_get_numbered_pages_that_keep_the_filters() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/categories", categories()).await;
+    let addons: Vec<Value> = (0..20).map(|i| json!({ "slug": format!("a{i}"), "name": format!("A{i}"), "summary": "", "category": "Combat", "trust": "scanned", "icon_url": null, "owner": null, "author": "bob", "verified_author": false, "downloads": 1, "updated_at": "2026-05-01" })).collect();
+    mock(&web, "/v1/addons", json!({ "total": 200, "page": 5, "per_page": 20, "addons": addons })).await;
+    let body = web.get("/addons?q=ui&sort=name&page=5").await.body;
+    let pager = body.split(r#"<nav class="pager""#).nth(1).expect("a pager").split("</nav>").next().unwrap();
+    assert!(pager.contains("81–100 of 200 addons"), "{pager}");
+    // First, last and the pages around the current one; the gaps in between as an ellipsis.
+    for n in [1, 4, 6, 10] {
+        assert!(pager.contains(&format!(r#"href="/addons?q=ui&#38;sort=name&#38;page={n}""#)), "page {n}: {pager}");
+    }
+    assert!(pager.contains(r#"aria-current="page">5<"#), "{pager}");
+    for n in [2, 3, 7, 8, 9] {
+        assert!(!pager.contains(&format!("page={n}\"")), "page {n} is in a gap: {pager}");
+    }
+    assert_eq!(pager.matches("…").count(), 2, "{pager}");
+    assert!(pager.contains(r#"aria-label="Previous page""#) && pager.contains(r#"aria-label="Next page""#), "{pager}");
+}
+
+#[tokio::test]
+async fn one_page_of_addons_shows_no_page_numbers() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/categories", categories()).await;
+    mock(&web, "/v1/addons", json!({ "total": 3, "page": 1, "per_page": 20, "addons": [] })).await;
+    let body = web.get("/addons").await.body;
+    assert!(!body.contains(r#"<nav class="pager""#), "{body}");
+}

@@ -439,7 +439,26 @@ pre code { color: var(--text); word-break: normal; }
   .docs-layout { grid-template-columns: minmax(0, 1fr); }
   .toc { position: static; max-height: none; }
 }
-.pager { display: flex; justify-content: space-between; margin-top: 16px; }
+/* Page numbers: square outlined buttons like the subnav, the current page in the launcher's red. */
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
+.pager-summary { margin: 0; color: var(--muted); font-size: var(--meta); }
+.pager-pages { display: flex; align-items: center; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.pager-pages a, .pager-pages span, .pager-gap {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; padding: 0 10px;
+  border: 1px solid var(--outline); border-radius: var(--radius); text-decoration: none; font-variant-numeric: tabular-nums;
+}
+.pager-pages a:hover { border-color: var(--outline-hover); background: var(--control); color: var(--gold-bright); }
+.pager-pages a:focus-visible { outline: 2px solid var(--outline-active); outline-offset: 2px; }
+.pager-pages a[aria-current="page"] { border-color: var(--outline-active); background: var(--crimson); color: var(--gold-bright); }
+.pager-pages span.pager-step { color: var(--disabled); border-color: var(--line); }
+.pager-gap { border-color: transparent; color: var(--muted); min-width: 20px; padding: 0; }
+.pager-step { font-size: 1.2rem; }
+@media (max-width: 560px) {
+  /* Narrow screens: arrows, first, current and last page only, so the row never scrolls. */
+  .pager { justify-content: center; }
+  .pager-pages .pager-far:not(:nth-child(2)):not(:nth-last-child(2)) { display: none; }
+  .pager-pages a, .pager-pages span { min-width: 44px; height: 44px; }
+}
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .actions > small { align-self: center; }
 

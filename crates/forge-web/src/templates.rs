@@ -159,8 +159,8 @@ pub struct AddonsPage {
     /// Top-level categories with their subcategories, for the grouped filter.
     pub categories: Vec<(CategoryOption, Vec<CategoryOption>)>,
     pub cards: Vec<Card>,
-    pub prev: Option<String>,
-    pub next: Option<String>,
+    /// The page navigation; `None` when everything fits on one page.
+    pub pager: Option<Pager>,
 }
 
 impl AddonsPage {
@@ -1029,4 +1029,75 @@ pub struct ReportDonePage {
     pub csrf: String,
     pub slug: String,
     pub name: String,
+}
+
+/// The page navigation of a long list.
+pub struct Pager {
+    /// "21–40 of 87 addons".
+    pub summary: String,
+    pub prev: Option<String>,
+    pub next: Option<String>,
+    pub items: Vec<PageItem>,
+}
+
+/// A page number of the pager, or a gap between them (`number` 0).
+pub struct PageItem {
+    pub number: i64,
+    pub href: String,
+    pub current: bool,
+}
+
+impl Pager {
+    /// First and last page and the pages next to `page`; skipped stretches become one gap. A gap
+    /// of a single page shows that page instead, so "…" always stands for two or more.
+    pub fn new(page: i64, per_page: i64, total: i64, noun: &str, link: impl Fn(i64) -> String) -> Option<Pager> {
+        let pages = (total + per_page - 1) / per_page;
+        if pages <= 1 {
+            return None;
+        }
+        let page = page.clamp(1, pages);
+        let shown = |n: i64| n == 1 || n == pages || (n - page).abs() <= 1 || (n == 2 && page == 4) || (n == pages - 1 && page == pages - 3);
+        let mut items: Vec<PageItem> = Vec::new();
+        for n in 1..=pages {
+            if shown(n) {
+                items.push(PageItem { number: n, href: link(n), current: n == page });
+            } else if items.last().is_some_and(|i| i.number != 0) {
+                items.push(PageItem { number: 0, href: String::new(), current: false });
+            }
+        }
+        let first = (page - 1) * per_page + 1;
+        let last = (page * per_page).min(total);
+        Some(Pager {
+            summary: format!("{first}–{last} of {} {noun}", crate::public::grouped(total)),
+            prev: (page > 1).then(|| link(page - 1)),
+            next: (page < pages).then(|| link(page + 1)),
+            items,
+        })
+    }
+}
+
+#[cfg(test)]
+mod pager_tests {
+    use super::Pager;
+
+    fn numbers(page: i64, total: i64) -> Vec<i64> {
+        Pager::new(page, 20, total, "addons", |n| n.to_string()).map(|p| p.items.iter().map(|i| i.number).collect()).unwrap_or_default()
+    }
+
+    #[test]
+    fn gaps_stand_for_two_or_more_pages() {
+        assert_eq!(numbers(1, 20), Vec::<i64>::new(), "one page: no pager");
+        assert_eq!(numbers(1, 200), vec![1, 2, 0, 10]);
+        assert_eq!(numbers(5, 200), vec![1, 0, 4, 5, 6, 0, 10]);
+        assert_eq!(numbers(4, 200), vec![1, 2, 3, 4, 5, 0, 10], "page 2 instead of a gap of one");
+        assert_eq!(numbers(10, 200), vec![1, 0, 9, 10]);
+        assert_eq!(numbers(2, 60), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn the_summary_counts_what_the_page_shows() {
+        let pager = Pager::new(10, 20, 195, "addons", |n| n.to_string()).unwrap();
+        assert_eq!(pager.summary, "181–195 of 195 addons");
+        assert!(pager.next.is_none() && pager.prev.is_some());
+    }
 }

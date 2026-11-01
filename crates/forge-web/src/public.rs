@@ -158,8 +158,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         total,
         categories: crate::templates::CategoryOption::groups(crate::app::categories(&state).await?),
         cards,
-        prev: (page > 1).then(|| link(page - 1)),
-        next: (page * per_page < total).then(|| link(page + 1)),
+        pager: crate::templates::Pager::new(page, per_page, total, "addons", link),
     }))
 }
 
