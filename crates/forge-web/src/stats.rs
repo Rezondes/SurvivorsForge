@@ -128,7 +128,7 @@ pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         stat(n(&a["installs_30d"]), "installs in the last 30 days"),
         stat(n(&a["updates_30d"]), "updates in the last 30 days"),
         stat(grouped(active), "launchers active in the last 30 days (those that send an installation ID)"),
-        stat(if active == 0 { "-".into() } else { format!("{}%", on_current * 100 / active) }, "of them on the newest launcher"),
+        stat(if active == 0 { "-".into() } else { format!("{}%", on_current * 100 / active) }, &if current.is_empty() { "of them on the newest launcher".into() } else { format!("of them on {current}, the newest launcher") }),
     ];
     let platform = vec![
         stat(n(&p["addons"]), "addons"),

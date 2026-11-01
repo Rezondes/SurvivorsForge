@@ -708,7 +708,7 @@ async fn stats_page_renders_groups_and_privacy() {
     mock(&web, "/v1/stats", stats_body()).await;
     let page = web.get("/stats").await;
     assert_eq!(page.status, StatusCode::OK);
-    for text in ["12,345", "345", "visits in the last 30 days (each visitor once a day)", "without cookies", "downloads of v0.4.3, the newest version", "75%", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", r#"<span class="failed">last run <time datetime="2026-10-31T00:15:00+00:00">"#, "failed</span>, last success"] {
+    for text in ["12,345", "345", "visits in the last 30 days (each visitor once a day)", "without cookies", "downloads of v0.4.3, the newest version", "75%", "of them on v0.4.3, the newest launcher", "Lucky Odds", "versions scanned", r#"id="privacy""#, "never an error text", r#"<span class="failed">last run <time datetime="2026-10-31T00:15:00+00:00">"#, "failed</span>, last success"] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     assert!(web.get("/").await.body.contains(r#"<a href="/stats">Statistics</a>"#), "linked in the footer");
