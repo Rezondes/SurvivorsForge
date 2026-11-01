@@ -43,11 +43,12 @@ pub async fn scan(State(state): State<AppState>, user: CurrentUser, mut form: Mu
     .await?;
     let (folders, report) = tokio::task::spawn_blocking(move || {
         let folders: Vec<String> = analyze_reader(Cursor::new(&file[..])).unwrap_or_default().into_iter().map(|a| a.name).collect();
-        let own: Vec<String> = folders.iter().filter(|f| !foreign.iter().any(|g| g.eq_ignore_ascii_case(f))).cloned().collect();
-        let report = forge_scan::scan(&file, &own, &foreign);
-        (folders, report)
+        let key = forge_core::folder::folder_key;
+        let own: Vec<String> = folders.iter().filter(|f| !foreign.iter().any(|g| key(g) == key(f))).cloned().collect();
+        crate::scan_run::run_scan(file, own, foreign).map(|report| (folders, report))
     })
     .await
+    .map_err(|_| ApiError::internal())?
     .map_err(|_| ApiError::internal())?;
     Ok(Json(json!({
         "scanner_version": forge_scan::SCANNER_VERSION,

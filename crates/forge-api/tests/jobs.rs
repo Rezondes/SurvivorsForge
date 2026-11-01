@@ -36,6 +36,23 @@ async fn concurrent_claims_never_share_a_job(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn job_that_keeps_killing_the_worker_is_given_up(pool: PgPool) {
+    // A job whose run ends the process never reaches fail(): only its attempts grow.
+    let now = Utc::now();
+    let id = enqueue(&pool, "test", json!({}), now, None).await.unwrap().unwrap();
+    sqlx::query("UPDATE jobs SET max_attempts = 2 WHERE id = $1").bind(id).execute(&pool).await.unwrap();
+    assert!(claim_next(&pool, now).await.unwrap().is_some());
+    let later = now + LOCK_FOR + Duration::seconds(1);
+    assert!(claim_next(&pool, later).await.unwrap().is_some());
+    let much_later = later + LOCK_FOR + Duration::seconds(1);
+    assert!(claim_next(&pool, much_later).await.unwrap().is_none(), "not claimed a third time");
+    let (failed, error): (bool, Option<String>) =
+        sqlx::query_as("SELECT failed_at IS NOT NULL, last_error FROM jobs WHERE id = $1").bind(id).fetch_one(&pool).await.unwrap();
+    assert!(failed);
+    assert!(error.unwrap_or_default().contains("gave up"));
+}
+
+#[sqlx::test]
 async fn failed_job_backs_off_then_gives_up(pool: PgPool) {
     let now = Utc::now();
     let id = enqueue(&pool, "test", json!({}), now, None).await.unwrap().unwrap();

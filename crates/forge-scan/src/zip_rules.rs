@@ -318,11 +318,10 @@ pub fn loaded_files(zip: &[u8], texts: &[TextFile]) -> Option<HashSet<String>> {
 /// Every file the `.toc` loads exists in the addon folder.
 fn check_toc_files(addon: &forge_core::archive::DetectedAddon, texts: &[TextFile], report: &mut Report) {
     let dir = if addon.prefix.is_empty() { String::new() } else { format!("{}/", addon.prefix) };
-    let toc = texts.iter().find(|t| {
-        t.path.len() > dir.len()
-            && t.path[..dir.len()].eq_ignore_ascii_case(&dir)
-            && t.path[dir.len()..].eq_ignore_ascii_case(&format!("{}.toc", addon.name))
-    });
+    // Whole paths compared, never cut at a byte count: a name from the zip may have a multibyte
+    // character exactly there.
+    let wanted = format!("{dir}{}.toc", addon.name);
+    let toc = texts.iter().find(|t| t.path.eq_ignore_ascii_case(&wanted));
     let Some(toc) = toc else { return };
     let all: Vec<String> = texts.iter().map(|t| t.path.to_ascii_lowercase()).collect();
     for (n, line) in String::from_utf8_lossy(&toc.bytes).lines().enumerate() {

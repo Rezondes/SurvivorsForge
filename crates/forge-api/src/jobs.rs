@@ -55,7 +55,20 @@ pub async fn enqueue_periodic(pool: &PgPool, kind: &str, every: Duration, now: D
 }
 
 /// Takes the oldest runnable job and locks it for `LOCK_FOR`. Counts the attempt.
+///
+/// A job whose run ends the process (a crash, an abort) never reaches `fail`: only its attempts
+/// grow. Once they reach `max_attempts` and the lock ran out, it is given up here instead of being
+/// claimed again and again.
 pub async fn claim_next(pool: &PgPool, now: DateTime<Utc>) -> sqlx::Result<Option<Job>> {
+    sqlx::query(
+        "UPDATE jobs SET failed_at = $1, locked_until = NULL,
+                last_error = 'gave up after ' || attempts || ' attempts that did not finish'
+         WHERE done_at IS NULL AND failed_at IS NULL AND attempts >= max_attempts
+           AND (locked_until IS NULL OR locked_until < $1)",
+    )
+    .bind(now)
+    .execute(pool)
+    .await?;
     sqlx::query_as(
         "UPDATE jobs SET locked_until = $2, attempts = attempts + 1
          WHERE id = (

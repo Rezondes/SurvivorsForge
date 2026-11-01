@@ -73,7 +73,17 @@ pub async fn scan_version(state: &AppState, version_id: i64) -> Result<(), Strin
     }
 
     let (expected, foreign) = folders(state, target.addon_id).await.map_err(|e| e.to_string())?;
-    let report = forge_scan::scan(&bytes, &expected, &foreign);
+    // A crash of the scanner fails this version for good instead of taking the worker down.
+    let scanned = tokio::task::spawn_blocking(move || crate::scan_run::run_scan(bytes, expected, foreign))
+        .await
+        .map_err(|e| e.to_string())?;
+    let report = match scanned {
+        Ok(report) => report,
+        Err(e) => {
+            let report = Report { findings: vec![finding("scan.crashed", &e)] };
+            return store(state, version_id, Some(&sha256), "error", &report, started, "failed").await;
+        }
+    };
     let result = if report.flagged() { "flagged" } else { "clean" };
     store(state, version_id, Some(&sha256), result, &report, started, "done").await
 }

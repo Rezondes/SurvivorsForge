@@ -2,6 +2,9 @@
 //! full_moon: `[[` nests, and there is no `[=[`, so `--[=[` is only a line comment. This rewrites
 //! the brackets into 5.1 form with the same meaning and the same lines, so the scanner reads the
 //! code the client runs.
+//!
+//! The source is cut only at bytes of ASCII brackets, dashes and quotes, never inside a
+//! character, so names in any script are safe.
 
 pub fn to_lua51(source: &str) -> String {
     // A string continued with `\` at the end of a line saved with CRLF: full_moon takes only `\` and LF.
