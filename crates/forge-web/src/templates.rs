@@ -960,6 +960,13 @@ pub struct PackBuildingPage {
 }
 
 #[derive(Template)]
+#[template(path = "docs_index.html")]
+pub struct DocsIndexPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+}
+
+#[derive(Template)]
 #[template(path = "docs.html")]
 pub struct DocsPage {
     pub user: Option<Visitor>,

@@ -3,8 +3,8 @@
 {% block content %}
 <section class="panel">
   <h1>API playground</h1>
-  <p>Try the <a href="/api-docs">public API for launchers</a>. Requests here count against the same limit as your own.</p>
-  <form class="playground" method="get" action="/api-docs/playground">
+  <p>Try the <a href="/docs/api-docs">public API for launchers</a>. Requests here count against the same limit as your own.</p>
+  <form class="playground" method="get" action="/docs/api-docs/playground">
     <label for="endpoint">Endpoint</label>
     <select id="endpoint" name="endpoint">
       <option value="registry" {% if endpoint == "registry" %}selected{% endif %}>GET /v1/registry</option>

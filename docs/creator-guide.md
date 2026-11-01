@@ -68,7 +68,7 @@ A few words that come up:
 
    `## Interface: 11200` is the game version WoW 1.12 expects. What the game offers addons
    beyond the 1.12 API (the run's clock, bosses, meters, hiding the HUD) is in the
-   [addon API of the game](https://forge.rezondes.net/addon-api).
+   [addon API of the game](https://forge.rezondes.net/docs/addon-api).
 
 One repo holds one addon. Keep files the game does not need (screenshots, design files, `.exe`
 tools) out of the repo or in a folder that does not go into the zip (see step 5).

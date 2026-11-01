@@ -207,7 +207,7 @@ async fn the_launcher_icon_is_the_favicon() {
 #[tokio::test]
 async fn api_docs_show_the_public_api_markdown() {
     let mut web = TestWeb::new().await;
-    let page = web.get("/api-docs").await;
+    let page = web.get("/docs/api-docs").await;
     assert_eq!(page.status, StatusCode::OK);
     assert_eq!(page.body.matches("<h1>").count(), 1, "the page's own title only");
     assert!(page.body.contains("<code>GET /v1/registry</code>"), "{}", page.body);
@@ -217,35 +217,35 @@ async fn api_docs_show_the_public_api_markdown() {
     assert!(page.body.contains(r##"<li class="sub"><a href="#python-standard-library">"##), "{}", page.body);
     assert!(page.body.contains(r#"<code class="language-rust">"#));
     assert!(web.get("/static/api-docs.js").await.body.contains("tok-keyword"));
-    assert!(web.get("/").await.body.contains(r#"href="/api-docs""#), "linked in the footer");
+    assert!(web.get("/docs").await.body.contains(r#"href="/docs/api-docs""#), "linked from the docs page");
 }
 
 #[tokio::test]
 async fn creator_guide_shows_the_markdown_with_working_step_links() {
     let mut web = TestWeb::new().await;
-    let page = web.get("/creator-guide").await;
+    let page = web.get("/docs/creator-guide").await;
     assert_eq!(page.status, StatusCode::OK);
     assert_eq!(page.body.matches("<h1>").count(), 1, "the page's own title only");
     assert!(page.body.contains("<title>Guide for addon creators - SurvivorsForge</title>"));
-    assert!(!page.body.contains("/api-docs/playground"), "no playground button here");
+    assert!(!page.body.contains("/docs/api-docs/playground"), "no playground button here");
     // The step list at the top links to the headings by the same ids GitHub gives them.
     assert!(page.body.contains(r#"<h3 id="5-add-the-release-workflow">"#), "{}", page.body);
     assert!(page.body.contains(r##"href="#5-add-the-release-workflow""##), "{}", page.body);
     assert!(page.body.contains("name: Release\n\n# Adds a \"Run workflow\""), "the workflow stays a code block, its comment no heading");
-    assert!(web.get("/").await.body.contains(r#"href="/creator-guide""#), "linked in the footer");
+    assert!(web.get("/docs").await.body.contains(r#"href="/docs/creator-guide""#), "linked from the docs page");
 }
 
 #[tokio::test]
 async fn addon_api_shows_the_game_docs_with_their_date_and_the_discord_channel() {
     let mut web = TestWeb::new().await;
-    let page = web.get("/addon-api").await;
+    let page = web.get("/docs/addon-api").await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("<title>Addon API of the game - SurvivorsForge</title>"));
     assert!(page.body.contains("27 October 2026 at"), "the version it is, for later updates");
     assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564599899469914203""#), "{}", page.body);
     assert!(page.body.contains(r#"<h4 id="azs-getruntime-seconds-or-nil">"#), "{}", page.body);
-    assert!(web.get("/").await.body.contains(r#"href="/addon-api""#), "linked in the footer");
-    assert!(web.get("/creator-guide").await.body.contains(r#"href="https://forge.rezondes.net/addon-api""#), "linked from the guide");
+    assert!(web.get("/docs").await.body.contains(r#"href="/docs/addon-api""#), "linked from the docs page");
+    assert!(web.get("/docs/creator-guide").await.body.contains(r#"href="https://forge.rezondes.net/docs/addon-api""#), "linked from the guide");
 }
 
 #[tokio::test]
@@ -256,14 +256,45 @@ async fn playground_shows_the_answer_and_reaches_only_public_endpoints() {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "tag": "v2.3.0" }])))
         .mount(&web.api)
         .await;
-    let page = web.get("/api-docs/playground?endpoint=versions&slug=aetherhud").await;
+    let page = web.get("/docs/api-docs/playground?endpoint=versions&slug=aetherhud").await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("GET /v1/addons/aetherhud/versions"), "{}", page.body);
     assert!(page.body.contains("&#34;tag&#34;: &#34;v2.3.0&#34;") || page.body.contains("&quot;tag&quot;: &quot;v2.3.0&quot;"), "{}", page.body);
 
-    let page = web.get("/api-docs/playground?endpoint=addon&slug=..%2Fme").await;
+    let page = web.get("/docs/api-docs/playground?endpoint=addon&slug=..%2Fme").await;
     assert!(page.body.contains("Enter an addon id"), "{}", page.body);
-    let page = web.get("/api-docs/playground?endpoint=findings&slug=aetherhud&tag=v1%3Fx%3D1").await;
+    let page = web.get("/docs/api-docs/playground?endpoint=findings&slug=aetherhud&tag=v1%3Fx%3D1").await;
     assert!(page.body.contains("Enter a version tag"), "{}", page.body);
-    assert!(web.get("/api-docs").await.body.contains(r#"href="/api-docs/playground""#));
+    assert!(web.get("/docs/api-docs").await.body.contains(r#"href="/docs/api-docs/playground""#));
+}
+
+#[tokio::test]
+async fn docs_page_explains_each_document_before_it_is_opened() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/docs").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("<title>Documentation - SurvivorsForge</title>"), "{}", page.body);
+    for (href, title) in [("/docs/api-docs", "API for launchers"), ("/docs/creator-guide", "Guide for addon creators"), ("/docs/addon-api", "Addon API of the game")] {
+        assert!(page.body.contains(&format!(r#"href="{href}""#)), "{href}: {}", page.body);
+        assert!(page.body.contains(title), "{title}: {}", page.body);
+    }
+    assert!(page.body.contains("Lua functions the game adds"), "says what the addon API is: {}", page.body);
+    let footer = web.get("/").await.body;
+    assert!(footer.contains(r#"<a href="/docs">Documentation</a>"#), "{footer}");
+    assert!(!footer.contains(r#"href="/docs/api-docs""#) && !footer.contains(r#"href="/api-docs""#), "one footer link only");
+}
+
+#[tokio::test]
+async fn old_docs_paths_redirect_to_their_new_place() {
+    let mut web = TestWeb::new().await;
+    for (old, new) in [
+        ("/api-docs", "/docs/api-docs"),
+        ("/api-docs/playground?endpoint=versions&slug=x", "/docs/api-docs/playground?endpoint=versions&slug=x"),
+        ("/creator-guide", "/docs/creator-guide"),
+        ("/addon-api", "/docs/addon-api"),
+    ] {
+        let page = web.get(old).await;
+        assert_eq!(page.status, StatusCode::PERMANENT_REDIRECT, "{old}");
+        assert_eq!(page.headers["location"], new, "{old}");
+    }
 }

@@ -5,8 +5,8 @@ use crate::config::Config;
 use crate::csrf::{self, CsrfToken};
 use crate::error::{WebError, WebResult, error_page};
 use crate::session::{self, SESSION_COOKIE};
-use crate::templates::{ApiPlaygroundPage, DocsPage, IndexPage, LoginPage, TocEntry, Visitor, render};
-use axum::extract::{FromRef, Query, State};
+use crate::templates::{ApiPlaygroundPage, DocsIndexPage, DocsPage, IndexPage, LoginPage, TocEntry, Visitor, render};
+use axum::extract::{FromRef, OriginalUri, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
@@ -85,10 +85,16 @@ pub fn router(state: AppState) -> Router {
     let _ = PUBLIC_URL.set(state.config.public_web_url.clone());
     let pages = Router::new()
         .route("/", get(index))
-        .route("/api-docs", get(api_docs))
-        .route("/api-docs/playground", get(api_playground))
-        .route("/creator-guide", get(creator_guide))
-        .route("/addon-api", get(addon_api))
+        .route("/docs", get(docs_index))
+        .route("/docs/api-docs", get(api_docs))
+        .route("/docs/api-docs/playground", get(api_playground))
+        .route("/docs/creator-guide", get(creator_guide))
+        .route("/docs/addon-api", get(addon_api))
+        // Their old places, still linked from outside.
+        .route("/api-docs", get(moved_doc))
+        .route("/api-docs/playground", get(moved_doc))
+        .route("/creator-guide", get(moved_doc))
+        .route("/addon-api", get(moved_doc))
         .route("/addons", get(crate::public::addons))
         .route("/addons/{slug}", get(crate::public::addon))
         .route("/addons/{slug}/versions", get(crate::public::versions))
@@ -230,6 +236,18 @@ async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extension(c
         Err(_) => Vec::new(),
     };
     Ok(render(&IndexPage { user, csrf: csrf.0, popular }))
+}
+
+/// What each document is, before it is opened.
+async fn docs_index(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
+    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    Ok(render(&DocsIndexPage { user, csrf: csrf.0 }))
+}
+
+/// The documents moved under `/docs`; the query (the playground's request) comes along.
+async fn moved_doc(OriginalUri(uri): OriginalUri) -> Redirect {
+    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    Redirect::permanent(&format!("/docs{}{query}", uri.path()))
 }
 
 /// The public API for other launchers, from the same file as `docs/public-api.md` on GitHub.

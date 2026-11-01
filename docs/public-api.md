@@ -260,7 +260,7 @@ Errors are JSON with a stable code and a readable message:
 
 ## Response types
 
-Types: `string`, `integer`, `boolean`, `T[]` (array) and `object`. "nullable" means the value can be `null`; "optional" means the field can be missing. Dates are a `string` in RFC 3339. The [playground](https://forge.rezondes.net/api-docs/playground) shows real answers.
+Types: `string`, `integer`, `boolean`, `T[]` (array) and `object`. "nullable" means the value can be `null`; "optional" means the field can be missing. Dates are a `string` in RFC 3339. The [playground](https://forge.rezondes.net/docs/api-docs/playground) shows real answers.
 
 ## `GET /v1/registry`
 

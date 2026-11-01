@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Documentation - SurvivorsForge{% endblock %}
+{% block head %}<meta name="description" content="The documents of SurvivorsForge: the public API for launchers, the guide for addon creators and the addon API of Azeroth Survivors.">{% endblock %}
+{% block content %}
+<h1>Documentation</h1>
+<p class="lead">Three documents, each for a different reader. Pick the one you need.</p>
+<ul class="doc-list">
+  <li class="panel">
+    <h2><a href="/docs/creator-guide">Guide for addon creators</a></h2>
+    <p>For people who made an addon. Step by step from an empty GitHub repo to a release that SurvivorsForge picks up on its own, with a workflow that builds the zip at the push of a button.</p>
+  </li>
+  <li class="panel">
+    <h2><a href="/docs/addon-api">Addon API of the game</a></h2>
+    <p>For addon authors writing Lua. The Lua functions the game adds to WoW 1.12, as its author published them on the Azeroth Survivors Discord.</p>
+  </li>
+  <li class="panel">
+    <h2><a href="/docs/api-docs">API for launchers</a></h2>
+    <p>For developers of other launchers and tools. The public HTTP API of the platform: the addon index, versions and scan results, with code examples and a playground to try it.</p>
+  </li>
+</ul>
+{% endblock %}
