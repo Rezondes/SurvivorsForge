@@ -34,7 +34,7 @@ pub fn scan(zip: &[u8], expected_folders: &[String], foreign_folders: &[String])
     let paths: Vec<String> = texts.iter().map(|t| t.path.clone()).collect();
     // After a bomb the raw zip is not read again; everything counts as loaded.
     let bomb = report.findings.iter().any(|f| f.rule == "zip.bomb" && f.severity == Severity::Critical);
-    let loaded = if bomb { None } else { zip_rules::loaded_files(zip, &texts) };
+    let loaded = if bomb { None } else { zip_rules::loaded_files(&texts) };
     let mut units = Vec::new();
     for text in &texts {
         let mut found = Report::default();

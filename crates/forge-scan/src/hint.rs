@@ -38,6 +38,7 @@ pub fn hint(rule: &str, snippet: &str) -> Option<&'static str> {
         "zip.foreign_folder" => "Remove the folder of the other addon from the zip.",
         "zip.undeclared_folder" => "Register the folder for this addon, or remove it from the zip. Put libraries inside your addon folder, like MyAddon/Libs/, so they cannot overwrite the copy of another addon.",
         "zip.missing_folder" => "Add the folder to the zip, or remove it from the registered folders.",
+        "zip.unresolved_path" => "Load files of your own addon folder with paths relative to it; list another addon you need under ## Dependencies.",
         "zip.toc_missing_file" => "Add the file to the zip or remove its line from the .toc.",
         _ => return None,
     })

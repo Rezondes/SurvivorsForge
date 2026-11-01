@@ -303,6 +303,117 @@ fn game_files_and_paths_from_the_game_folder() {
     assert!(report.findings.iter().any(|f| f.file == "Lucky/Sub/A.lua" && f.severity == Severity::Critical), "{:#?}", report.findings);
 }
 
+/// Critical findings of `file` in `report`.
+fn critical_in(report: &Report, file: &str) -> usize {
+    report.findings.iter().filter(|f| f.file == file && f.severity == Severity::Critical).count()
+}
+
+#[test]
+fn path_that_climbs_out_and_back_in_is_loaded() {
+    // The client resolves from Interface\AddOns\MyAddon\: this is MyAddon\Evil.lua.
+    let addon = zip(&[
+        ("MyAddon/MyAddon.toc", b"## Interface: 11200\nMain.lua\n..\\..\\AddOns\\MyAddon\\Evil.lua\n"),
+        ("MyAddon/Main.lua", b"x = 1\n"),
+        ("MyAddon/Evil.lua", b"loadstring(arg1)()\n"),
+    ]);
+    let report = scan(&addon, &folders(&["MyAddon"]), &[]);
+    assert!(critical_in(&report, "MyAddon/Evil.lua") > 0, "{:#?}", report.findings);
+    assert!(report.findings.iter().all(|f| !f.message.contains("does not load")), "{:#?}", report.findings);
+}
+
+#[test]
+fn same_through_xml_script_and_include() {
+    let addon = zip(&[
+        ("MyAddon/MyAddon.toc", b"## Interface: 11200\nFrames.xml\n"),
+        ("MyAddon/Frames.xml", b"<Ui><Script file=\"..\\..\\AddOns\\MyAddon\\Evil.lua\"/><Include file=\"..\\MyAddon\\More.xml\"/></Ui>"),
+        ("MyAddon/More.xml", b"<Ui><Script file=\"Two.lua\"/></Ui>"),
+        ("MyAddon/Evil.lua", b"loadstring(arg1)()\n"),
+        ("MyAddon/Two.lua", b"os.exit()\n"),
+    ]);
+    let report = scan(&addon, &folders(&["MyAddon"]), &[]);
+    assert!(critical_in(&report, "MyAddon/Evil.lua") > 0 && critical_in(&report, "MyAddon/Two.lua") > 0, "{:#?}", report.findings);
+    assert!(report.findings.iter().all(|f| !f.rule.contains("missing")), "{:#?}", report.findings);
+}
+
+#[test]
+fn same_when_the_addon_sits_at_the_zip_root() {
+    let addon = zip(&[
+        ("MyAddon.toc", b"## Interface: 11200\nMain.lua\n..\\MyAddon\\Evil.lua\n"),
+        ("Main.lua", b"x = 1\n"),
+        ("Evil.lua", b"loadstring(arg1)()\n"),
+    ]);
+    let report = scan(&addon, &folders(&["MyAddon"]), &[]);
+    assert!(critical_in(&report, "Evil.lua") > 0, "{:#?}", report.findings);
+}
+
+#[test]
+fn file_of_another_addon_is_noted() {
+    // Titan plugins load ..\Titan\..., Auctioneer ..\Blizzard_AuctionUI\...: that addon is scanned
+    // on its own, and Blizzard_ folders belong to the game.
+    let toc = b"## Interface: 11200\nMain.lua\n..\\OtherAddon\\x.lua\n..\\Blizzard_AuctionUI\\T.xml\n";
+    let addon = zip(&[("MyAddon/MyAddon.toc", toc), ("MyAddon/Main.lua", b"x = 1\n")]);
+    let report = scan(&addon, &folders(&["MyAddon"]), &[]);
+    let hits: Vec<_> = report.findings.iter().filter(|f| f.rule == "zip.unresolved_path").map(|f| (f.severity, f.snippet.clone())).collect();
+    assert_eq!(hits, [(Severity::Notice, Some("..\\OtherAddon\\x.lua".into()))]);
+    assert!(!report.flagged(), "{:#?}", report.findings);
+}
+
+#[test]
+fn unmappable_path_keeps_everything_loaded() {
+    // A path above the game folder: the scanner cannot say what loads, so every file counts.
+    let addon = zip(&[
+        ("MyAddon/MyAddon.toc", b"## Interface: 11200\nMain.lua\n..\\..\\..\\..\\x.lua\n"),
+        ("MyAddon/Main.lua", b"x = 1\n"),
+        ("MyAddon/Hidden.lua", b"os.exit()\n"),
+    ]);
+    let report = scan(&addon, &folders(&["MyAddon"]), &[]);
+    assert!(critical_in(&report, "MyAddon/Hidden.lua") > 0, "{:#?}", report.findings);
+    assert_eq!(finding(&report, "zip.unresolved_path").severity, Severity::Warn);
+}
+
+#[test]
+fn toc_of_an_embedded_library_loads_nothing() {
+    // The client reads only the .toc of a top-level folder; a library's own .toc is ignored.
+    let addon = zip(&[
+        ("Big/Big.toc", b"## Interface: 11200\nBig.lua\n"),
+        ("Big/Big.lua", b"x = 1\n"),
+        ("Big/libs/Lib/Lib.toc", b"## Interface: 11200\nLib.lua\nLib.xml\n"),
+        ("Big/libs/Lib/Lib.lua", b"os.exit()\n"),
+        ("Big/libs/Lib/Lib.xml", b"<Ui><Script file=\"Inner.lua\"/></Ui>"),
+        ("Big/libs/Lib/Inner.lua", b"x = 1\n"),
+    ]);
+    let report = scan(&addon, &folders(&["Big"]), &[]);
+    assert_eq!(critical_in(&report, "Big/libs/Lib/Lib.lua"), 0, "{:#?}", report.findings);
+    assert!(report.findings.iter().all(|f| !f.rule.contains("missing") && f.rule != "zip.unresolved_path"), "{:#?}", report.findings);
+}
+
+#[test]
+fn toc_variants_for_other_clients_load_nothing() {
+    // The 1.12 client reads V/V.toc; V_TBC.toc is for another client.
+    let addon = zip(&[
+        ("V/V.toc", b"## Interface: 11200\na.lua\n"),
+        ("V/V_TBC.toc", b"## Interface: 20400\nb.lua\n"),
+        ("V/a.lua", b"x = 1\n"),
+        ("V/b.lua", b"os.exit()\n"),
+    ]);
+    let report = scan(&addon, &folders(&["V"]), &[]);
+    assert_eq!(critical_in(&report, "V/b.lua"), 0, "{:#?}", report.findings);
+}
+
+#[test]
+fn github_source_zip_layout() {
+    // GitHub's source zip puts the addon in Repo-main/; it installs as MyAddon.
+    let addon = zip(&[
+        ("Repo-main/MyAddon.toc", b"## Interface: 11200\nSub\\a.lua\n"),
+        ("Repo-main/Sub/a.lua", b"os.exit()\n"),
+        ("Repo-main/tests/t.lua", b"io.open('x')\n"),
+    ]);
+    let report = scan(&addon, &folders(&["MyAddon"]), &[]);
+    assert!(critical_in(&report, "Repo-main/Sub/a.lua") > 0, "{:#?}", report.findings);
+    assert_eq!(critical_in(&report, "Repo-main/tests/t.lua"), 0, "{:#?}", report.findings);
+    assert!(report.findings.iter().all(|f| f.rule != "zip.toc_missing_file"), "{:#?}", report.findings);
+}
+
 #[test]
 fn without_a_toc_everything_counts() {
     let report = scan(&zip(&[("Loose/Loose.lua", b"os.execute('x')

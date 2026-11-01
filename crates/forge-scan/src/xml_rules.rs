@@ -3,7 +3,7 @@
 
 use crate::finding::{Report, Severity};
 use crate::lua_rules;
-use crate::zip_rules::{normal_path, resolve};
+use crate::zip_rules::{Layout, Resolved, normal_path};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
@@ -17,9 +17,8 @@ fn is_script_element(name: &[u8], in_scripts: bool) -> bool {
     name.eq_ignore_ascii_case(b"Script") || (in_scripts && name.len() > 2 && name[..2].eq_ignore_ascii_case(b"On"))
 }
 
-/// The lowercase zip paths `path` loads through `<Script file>` and `<Include file>`.
-pub fn referenced_files(path: &str, source: &[u8]) -> Vec<String> {
-    let dir = path.rsplit_once('/').map(|(d, _)| format!("{d}/")).unwrap_or_default();
+/// The paths an XML file loads through `<Script file>` and `<Include file>`, as written.
+pub fn referenced_files(source: &[u8]) -> Vec<String> {
     let mut reader = Reader::from_reader(source);
     let mut buf = Vec::new();
     let mut files = Vec::new();
@@ -29,7 +28,7 @@ pub fn referenced_files(path: &str, source: &[u8]) -> Vec<String> {
                 if e.local_name().as_ref().eq_ignore_ascii_case(b"Script") || e.local_name().as_ref().eq_ignore_ascii_case(b"Include") =>
             {
                 if let Some(file) = e.try_get_attribute("file").ok().flatten() {
-                    files.extend(resolve(&dir, &String::from_utf8_lossy(&file.value)));
+                    files.push(String::from_utf8_lossy(&file.value).into_owned());
                 }
             }
             Ok(Event::Eof) | Err(_) => break,
@@ -45,7 +44,8 @@ pub fn referenced_files(path: &str, source: &[u8]) -> Vec<String> {
 pub fn check(path: &str, source: &[u8], zip_files: &[String], report: &mut Report) -> Vec<(String, u32)> {
     let mut scripts = Vec::new();
     let mut reader = Reader::from_reader(source);
-    let dir = path.rsplit_once('/').map(|(d, _)| format!("{d}/")).unwrap_or_default();
+    let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
+    let layout = Layout::from_paths(zip_files.iter().map(String::as_str));
     let mut in_scripts = 0usize;
     // (element, offset of its text) while inside a script element.
     let mut script: Option<(Vec<u8>, usize, String)> = None;
@@ -69,11 +69,21 @@ pub fn check(path: &str, source: &[u8], zip_files: &[String], report: &mut Repor
                 let name = e.local_name().as_ref().to_vec();
                 if let Some(file) = e.try_get_attribute("file").ok().flatten().filter(|_| name.eq_ignore_ascii_case(b"Script")) {
                     let file = String::from_utf8_lossy(&file.value).replace('\\', "/");
-                    if let Some(wanted) = resolve(&dir, &file)
-                        && !zip_files.iter().any(|f| normal_path(f) == wanted)
-                    {
-                        report.add_with_snippet("xml.missing_script_file", Severity::Warn, path, Some(line_at(source, before)),
-                            "<Script file> points at a file that is not in the zip", &file);
+                    let line = Some(line_at(source, before));
+                    match layout.resolve(dir, &file) {
+                        Resolved::InZip(wanted) if !zip_files.iter().any(|f| normal_path(f) == wanted) => {
+                            report.add_with_snippet("xml.missing_script_file", Severity::Warn, path, line,
+                                "<Script file> points at a file that is not in the zip", &file);
+                        }
+                        Resolved::InZip(_) | Resolved::GameFile => {}
+                        Resolved::OtherAddon(folder) => {
+                            let message = format!("<Script file> loads a file of the addon folder {folder}");
+                            report.add_with_snippet("zip.unresolved_path", Severity::Notice, path, line, message, &file);
+                        }
+                        Resolved::Unmappable => {
+                            report.add_with_snippet("zip.unresolved_path", Severity::Warn, path, line,
+                                "<Script file> loads a path outside the game's addon folders", &file);
+                        }
                     }
                 }
                 if empty {
