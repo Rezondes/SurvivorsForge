@@ -26,8 +26,16 @@ fn inline_script_line_numbers() {
 #[test]
 fn script_element_and_entities() {
     let report = check("<Ui><Script>if a &lt; b then loadstring(c)() end</Script></Ui>", &[]);
-    assert!(report.findings.iter().any(|f| f.rule == "lua.dynamic_code" && f.severity == Severity::Critical), "{:#?}", report.findings);
+    assert!(report.findings.iter().any(|f| f.rule == "lua.dynamic_code" && f.severity == Severity::Warn), "{:#?}", report.findings);
     assert!(report.findings.iter().all(|f| f.rule != "lua.parse_error"), "entities resolved before parsing");
+}
+
+#[test]
+fn inline_code_next_to_a_file_and_any_case_is_scanned() {
+    let report = check("<Ui><Script file=\"Lucky.lua\">os.exit()</Script></Ui>", &["Lucky/Lucky.lua"]);
+    assert!(report.findings.iter().any(|f| f.rule == "lua.forbidden_global"), "{:#?}", report.findings);
+    let report = check("<Ui><Frame name=\"F\"><scripts><onevent>os.exit()</onevent></scripts></Frame>\n<script>io.open('x')</script></Ui>", &[]);
+    assert_eq!(report.findings.iter().filter(|f| f.rule == "lua.forbidden_global").count(), 2, "{:#?}", report.findings);
 }
 
 #[test]

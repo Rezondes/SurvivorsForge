@@ -45,6 +45,56 @@ fn forbidden_global_negative() {
 }
 
 #[test]
+fn locals_shadow_forbidden_globals() {
+    for src in [
+        "local load = GetLoadout()\nif load and load.abilities then x = load.abilities[1] end",
+        "local function f(os, io) return os + io end",
+        "for load = 1, 3 do print(load) end",
+        "for _, load in ipairs(t) do print(load.name) end",
+        "local function load() end\nload()",
+        "local os\nos = 1",
+        "repeat local load = next() until load",
+        "do local io = 1 end\nlocal io = 2\nprint(io)",
+    ] {
+        lacks(src, "lua.forbidden_global");
+    }
+}
+
+#[test]
+fn globals_outside_a_local_scope_still_count() {
+    for src in [
+        // The value of `local x = x` is the global.
+        "local os = os",
+        "local load = 1, load",
+        // The local ends with its block.
+        "do local os = 1 end\nos.exit()",
+        "if a then local load = 1 else load('x') end",
+        "local function f(os) end\nos.exit()",
+        "for io = 1, 2 do end\nio.open('x')",
+        "local function f()\n  local load = 1\nend\nload('x')",
+        // A file that does not parse has no locals.
+        "local load = 1\nload('x') end end",
+    ] {
+        has(src, "lua.forbidden_global", Severity::Critical);
+    }
+}
+
+#[test]
+fn brackets_are_read_like_lua_5_0() {
+    // Lua 5.0 has no `[==[`: `--[==[` is a line comment and the code after it runs.
+    has("--[==[\nRunScript(arg1)\n--]==]", "lua.dynamic_code", Severity::Critical);
+    has("--[=[ x\nos.exit()", "lua.forbidden_global", Severity::Critical);
+    // Lua 5.0 nests `[[`: all of this is one string or comment.
+    for src in ["local s = [[ a [[ b ]] c ]]", "local s = [[ x [[ ]] os.execute() ]]", "--[[ a [[ b ]] os.exit() ]]"] {
+        assert!(rules(src).is_empty(), "{:?} for {src}", rules(src));
+    }
+    let found = rules("local s = [[\n[[\n]]\n]]\nos.exit()\n");
+    assert!(found.contains(&("lua.forbidden_global".into(), Severity::Critical, Some(5))), "{found:?}");
+    // Brackets inside strings are text.
+    assert!(rules("local s = \"[[\" local t = '--[=['").is_empty());
+}
+
+#[test]
 fn line_numbers_are_reported() {
     let found = rules("local a = 1\n\nos.exit()\n");
     assert!(found.contains(&("lua.forbidden_global".into(), Severity::Critical, Some(3))), "{found:?}");
@@ -52,9 +102,10 @@ fn line_numbers_are_reported() {
 
 #[test]
 fn forbidden_name_string_positive() {
-    has("local n = 'os'", "lua.forbidden_name_string", Severity::Critical);
-    has(r#"local n = "\108\111\097\100\115\116\114\105\110\103""#, "lua.forbidden_name_string", Severity::Critical);
-    has("local n = 'Run' .. 'Script'", "lua.forbidden_name_string", Severity::Critical);
+    // Critical next to a lookup of a global by a name the scanner cannot follow, else only noted.
+    has("local n = 'os'\nlocal v = _G[f(n)]", "lua.forbidden_name_string", Severity::Critical);
+    has("local n = \"\\108\\111\\097\\100\\115\\116\\114\\105\\110\\103\"\nlocal v = getglobal(f(n))", "lua.forbidden_name_string", Severity::Critical);
+    has("local n = 'Run' .. 'Script'", "lua.forbidden_name_string", Severity::Info);
 }
 
 #[test]
@@ -66,9 +117,19 @@ fn forbidden_name_string_negative() {
 #[test]
 fn dynamic_code_positive() {
     has("loadstring('return 1')()", "lua.dynamic_code", Severity::Warn);
-    has("loadstring(code)()", "lua.dynamic_code", Severity::Critical);
-    has("RunScript(a .. b)", "lua.dynamic_code", Severity::Critical);
-    has("local l = loadstring", "lua.dynamic_code", Severity::Critical);
+    // Code built at run time is common in 1.12 (macros, profiles, generated handlers): flagged
+    // for a look, not a strong sign of harm.
+    has("loadstring(code)()", "lua.dynamic_code", Severity::Warn);
+    has("RunScript(a .. b)", "lua.dynamic_code", Severity::Warn);
+    has("local l = loadstring", "lua.dynamic_code", Severity::Warn);
+}
+
+#[test]
+fn a_parameter_named_like_an_event_argument_is_no_chat() {
+    let found = check("function DM_ConsolePrint(arg1)\n  RunScript('DMPrint((' .. arg1 .. '))')\nend").findings;
+    let f = found.iter().find(|f| f.rule == "lua.dynamic_code").expect("found");
+    assert_eq!(f.severity, Severity::Warn);
+    assert!(f.message.contains("built at run time"), "{}", f.message);
 }
 
 #[test]
@@ -80,8 +141,8 @@ fn dynamic_code_negative() {
 #[test]
 fn folded_concat_and_dynamic_global() {
     let src = r#"local o = "o".."s"; _G[o].execute("x")"#;
-    has(src, "lua.forbidden_name_string", Severity::Critical);
-    has(src, "lua.dynamic_global", Severity::Notice);
+    has(src, "lua.forbidden_global", Severity::Critical);
+    has(src, "lua.dynamic_global", Severity::Info);
 }
 
 #[test]
@@ -93,7 +154,12 @@ fn dynamic_global_positive() {
     lacks("setfenv(1, env)", "lua.forbidden_global");
     lacks("if opts['debug'] then end", "lua.forbidden_name_string");
     has("setglobal(n, 1)", "lua.dynamic_global", Severity::Notice);
-    has("local v = _G[k]", "lua.dynamic_global", Severity::Notice);
+    // Reading by a computed name is everyday 1.12 code, as with getglobal; writing one is rarer.
+    has("local v = _G[k]", "lua.dynamic_global", Severity::Info);
+    has("_G[k] = v", "lua.dynamic_global", Severity::Notice);
+    // A frame's own name, like getglobal(this:GetName() .. "Text").
+    lacks("local s = _G[scroll:GetName() .. \"ScrollBar\"]", "lua.dynamic_global");
+    lacks("local s = _G[self.frame:GetName() .. \"Text\"]", "lua.dynamic_global");
 }
 
 #[test]
@@ -105,26 +171,41 @@ fn dynamic_global_negative() {
 
 #[test]
 fn global_metatable_positive() {
-    has("setmetatable(_G, { __index = f })", "lua.global_metatable", Severity::Critical);
-    has("rawset(_G, k, v)", "lua.global_metatable", Severity::Critical);
+    // __newindex sees every global any addon sets.
+    has("setmetatable(_G, { __newindex = f })", "lua.global_metatable", Severity::Critical);
+    has("local m = {}\nm[\"__new\" .. \"index\"] = f\nsetmetatable(_G, m)", "lua.global_metatable", Severity::Critical);
+    // __index only answers for globals that do not exist (SurvivorUI counts jumps this way).
+    has("setmetatable(_G, { __index = f })", "lua.global_metatable", Severity::Notice);
+    let jumps = "local globals = getfenv(0)\nlocal meta = getmetatable(globals) or {}\nmeta.__index = function(t, k) end\nsetmetatable(globals, meta)";
+    has(jumps, "lua.global_metatable", Severity::Notice);
+    assert!(!check(jumps).flagged(), "{:?}", rules(jumps));
 }
 
 #[test]
 fn global_metatable_negative() {
     lacks("setmetatable(t, mt)", "lua.global_metatable");
     lacks("rawset(_G, 'LuckyDB', {})", "lua.global_metatable");
+    // The same as `_G[k] = v` unless _G has a metatable, and setting that is Critical already.
+    lacks("rawset(_G, k, v)", "lua.global_metatable");
+    has("rawset(_G, k, v)", "lua.dynamic_global", Severity::Notice);
 }
 
 #[test]
 fn chat_send_positive() {
-    has("SendChatMessage('hi', 'GUILD')", "lua.chat_send", Severity::Warn);
-    has("GuildInvite(name)", "lua.chat_send", Severity::Warn);
+    // Announcing is what raid and boss addons are for: shown, but no flag.
+    has("SendChatMessage('hi', 'GUILD')", "lua.chat_send", Severity::Notice);
+    has("GuildInvite(name)", "lua.chat_send", Severity::Notice);
+    assert!(!check("SendChatMessage('Interrupted!', 'SAY')").flagged());
 }
 
 #[test]
 fn chat_send_negative() {
     lacks("DEFAULT_CHAT_FRAME:AddMessage('hi')", "lua.chat_send");
     lacks("frame.SendChatMessage = nil", "lua.chat_send");
+    // Saving or testing the function sends nothing.
+    for src in ["local Orig = SendChatMessage", "if SendChatMessage then end", "local has = GuildInvite ~= nil"] {
+        assert!(rules(src).iter().all(|(r, s, _)| r != "lua.chat_send" || *s == Severity::Info), "{:?} for {src}", rules(src));
+    }
 }
 
 #[test]
@@ -137,6 +218,109 @@ fn api_override_positive() {
 fn api_override_negative() {
     lacks("local SendChatMessage = SendChatMessage", "lua.api_override");
     lacks("if CreateFrame == nil then end", "lua.api_override");
+    // The usual hook: keep the original, call it from the replacement.
+    let hook = "local Orig = SendChatMessage\nSendChatMessage = function(m, a) Orig(m, a) end";
+    has(hook, "lua.api_override", Severity::Info);
+    assert!(!check(hook).flagged(), "{:?}", rules(hook));
+    // The original kept in a global or a field works the same.
+    let hook = "MyAddon_Orig = SendChatMessage\nSendChatMessage = MyAddon_Send";
+    has(hook, "lua.api_override", Severity::Info);
+}
+
+#[test]
+fn code_in_constant_strings_is_scanned() {
+    has("loadstring([[os.execute('x')]])()", "lua.forbidden_global", Severity::Critical);
+    has("RunScript(\"SendChatMessage('buy gold', 'SAY')\")", "lua.chat_send", Severity::Notice);
+    // The code keeps the line of the call.
+    let found = rules("local a = 1\nRunScript('RunScript(arg1)')");
+    assert!(found.contains(&("lua.dynamic_code".into(), Severity::Critical, Some(2))), "{found:?}");
+}
+
+#[test]
+fn chat_box_and_macros_run_code() {
+    has("ChatFrameEditBox:SetText('/script ' .. arg2)", "lua.dynamic_code", Severity::Warn);
+    has("local cmd = '/run Foo()'", "lua.dynamic_code", Severity::Warn);
+    has("ChatEdit_SendText(ChatFrameEditBox)", "lua.chat_send", Severity::Notice);
+    has("CreateMacro('x', 1, '/cast y', 1)", "lua.macro", Severity::Notice);
+    has("EditMacro(1, 'x', 1, body)", "lua.macro", Severity::Notice);
+    lacks("print('type /lucky to open the options')", "lua.dynamic_code");
+}
+
+#[test]
+fn chat_frame_hooks_are_noted() {
+    has("DEFAULT_CHAT_FRAME.AddMessage = function(self, m) end", "lua.api_override", Severity::Notice);
+    has("ChatFrame1.AddMessage = Lucky_AddMessage", "lua.api_override", Severity::Notice);
+    lacks("DEFAULT_CHAT_FRAME:AddMessage('hi')", "lua.api_override");
+}
+
+#[test]
+fn environment_metatable_is_critical() {
+    has("setmetatable(getfenv(0), { __newindex = f })", "lua.global_metatable", Severity::Critical);
+}
+
+#[test]
+fn the_games_addon_api_is_not_replaced() {
+    // The game fills the AZS_ globals for every addon; replacing one breaks the others.
+    has("AZS_GetPhase = function() return 'playing' end", "lua.api_override", Severity::Warn);
+    has("function AZS_GetMeter() end", "lua.api_override", Severity::Warn);
+    // The tables only hold data the game sends again; writing one is noted.
+    has("AZS_RUN = {}", "lua.api_override", Severity::Notice);
+    has("AZS_STATS = result", "lua.api_override", Severity::Notice);
+    assert!(message("AZS_UNITS = {}", "lua.api_override").contains("Writes AZS_UNITS of the game's addon API"));
+    has("setglobal('AZS_GetBosses', f)", "lua.api_override", Severity::Warn);
+    // Reading it, keeping a local of the same name, or hooking it is fine.
+    for src in ["local p = AZS_GetPhase()", "local AZS_GetPhase = AZS_GetPhase", "local orig = AZS_GetMeter\nAZS_GetMeter = function() return orig() end"] {
+        assert!(rules(src).iter().all(|(r, s, _)| r != "lua.api_override" || *s == Severity::Info), "{:?} for {src}", rules(src));
+    }
+}
+
+#[test]
+fn names_as_keys_of_other_tables_are_data() {
+    // A file with a lookup by computed name, where name strings would count.
+    let src = "local f = getglobal(pick())\nlocal o = q[\"os\"]\nt[\"os\"][i] = 1\nlocal u = { [\"load\"] = 1 }";
+    let found = rules(src);
+    assert!(found.iter().all(|(r, s, _)| r != "lua.forbidden_name_string" || *s == Severity::Info), "{found:?}");
+    // A slash command compared with its keyword names nothing.
+    let src = "local f = getglobal(pick())\nif msg == \"load\" or \"os\" ~= cmd then end";
+    let found = rules(src);
+    assert!(found.iter().all(|(r, s, _)| r != "lua.forbidden_name_string" || *s == Severity::Info), "{found:?}");
+}
+
+#[test]
+fn backslash_at_the_end_of_a_line_continues_the_string() {
+    let src = "local s = 'a\\\r\nb'\r\nos.exit()";
+    let found = rules(src);
+    assert!(found.iter().all(|(r, _, _)| r != "lua.parse_error"), "{found:?}");
+    assert!(found.contains(&("lua.forbidden_global".into(), Severity::Critical, Some(3))), "{found:?}");
+}
+
+#[test]
+fn table_keys_after_semicolons_are_keys() {
+    lacks("Foo_Defaults = { scale = 1; debug = false; load = true }", "lua.forbidden_global");
+}
+
+#[test]
+fn text_in_other_scripts_is_not_obfuscation() {
+    // Chinese has no spaces; a long number is no hex blob.
+    let zh = "这是一个很长的提示文字，用来说明插件的功能，以及如何在游戏中使用它。".repeat(8);
+    lacks(&format!("L[\"Tip\"] = \"{zh}\""), "lua.obfuscation_entropy");
+    lacks(&format!("local n = '{}'", "1234567890".repeat(21)), "lua.obfuscation_entropy");
+    // Escaped UTF-8 is text, not hidden ASCII code.
+    lacks(r#"L["Hello"] = "\208\159\209\128\208\184\208\178\208\181\209\130""#, "lua.obfuscation_escape");
+    lacks("local dots = string.char(194,183,32,194,183,32,194,183)", "lua.obfuscation_char");
+    // Control bytes are pattern data; `\\1` in a texture path is a backslash and a digit.
+    lacks(r#"local p = "\000\001\002\003\004\005\006\007""#, "lua.obfuscation_escape");
+    lacks(r#"local t = "Interface\\AddOns\\Foo\\1\\2\\3\\4\\5\\6\\7\\8""#, "lua.obfuscation_escape");
+}
+
+#[test]
+fn file_encodings() {
+    assert!(rules("\u{feff}local x = 1").is_empty(), "{:?}", rules("\u{feff}local x = 1"));
+    let utf16: Vec<u8> = [0xff, 0xfe].into_iter().chain("local x = 1".bytes().flat_map(|b| [b, 0])).collect();
+    let mut report = Report::default();
+    lua_rules::check("A/a.lua", &utf16, 0, &mut report);
+    let found: Vec<_> = report.findings.iter().map(|f| (f.rule.as_str(), f.severity)).collect();
+    assert_eq!(found, [("lua.encoding", Severity::Warn)]);
 }
 
 #[test]
@@ -283,12 +467,29 @@ fn dynamic_code_from_outside_stays_critical() {
           if event == "CHAT_MSG_ADDON" then loadstring(arg2)() end
         end"#;
     has(chat, "lua.dynamic_code", Severity::Critical);
-    assert!(message(chat, "lua.dynamic_code").contains("chat, addon messages or an input field"));
-    has("local t = box:GetText(); RunScript(t)", "lua.dynamic_code", Severity::Critical);
+    assert!(message(chat, "lua.dynamic_code").contains("chat or addon messages"), "{}", message(chat, "lua.dynamic_code"));
 }
 
 #[test]
-fn dynamic_code_that_cannot_be_proven_fixed_stays_critical() {
+fn code_the_player_types_is_only_noted() {
+    // The player could run it with /script as well.
+    for src in [
+        "local t = box:GetText(); RunScript(t)",
+        "SlashCmdList['MYRUN'] = function(msg) RunScript(msg) end",
+        "function Foo_Slash(msg) RunScript('print(' .. msg .. ')') end\nSlashCmdList.FOO = Foo_Slash",
+        "local function slash(msg) loadstring(msg)() end\nSlashCmdList[\"FOO\"] = slash",
+        // Ace2's /print.
+        "self:RegisterChatCommand({ '/print' }, function(text) RunScript('f(' .. text .. ')') end, 'PRINT')",
+    ] {
+        has(src, "lua.dynamic_code", Severity::Notice);
+        assert!(!check(src).flagged(), "{:?} for {src}", rules(src));
+    }
+    // A slash handler that also gets other text stays a warning.
+    has("SlashCmdList.FOO = function(msg) RunScript(msg .. GetSomething()) end", "lua.dynamic_code", Severity::Warn);
+}
+
+#[test]
+fn dynamic_code_that_cannot_be_proven_fixed_is_not_called_fixed() {
     for src in [
         // A parameter with the same name as an earlier fixed local.
         r#"local nm = "safe"
@@ -314,7 +515,9 @@ fn dynamic_code_that_cannot_be_proven_fixed_stays_critical() {
         // The value goes on in the next line.
         "local nm = \"x\"\n  .. arg1\nloadstring(nm)()",
     ] {
-        has(src, "lua.dynamic_code", Severity::Critical);
+        let found = check(src).findings;
+        let f = found.iter().find(|f| f.rule == "lua.dynamic_code").expect("found");
+        assert!(f.severity >= Severity::Warn && !f.message.contains("fixed text"), "{f:?} for {src}");
     }
 }
 

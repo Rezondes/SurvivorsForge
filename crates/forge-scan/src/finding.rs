@@ -51,6 +51,19 @@ impl Report {
         self.findings.iter().filter(|f| f.severity == severity).count()
     }
 
+    /// One finding per rule, file and line: the most severe.
+    pub(crate) fn dedupe(&mut self) {
+        let mut kept: Vec<Finding> = Vec::new();
+        for f in self.findings.drain(..) {
+            match kept.iter_mut().find(|k| k.rule == f.rule && k.file == f.file && k.line == f.line && k.line.is_some()) {
+                Some(k) if f.severity > k.severity => *k = f,
+                Some(_) => {}
+                None => kept.push(f),
+            }
+        }
+        self.findings = kept;
+    }
+
     pub(crate) fn add(&mut self, rule: &str, severity: Severity, file: &str, line: Option<u32>, message: impl Into<String>) {
         self.findings.push(Finding { rule: rule.into(), severity, file: file.into(), line, message: message.into(), snippet: None });
     }

@@ -81,10 +81,11 @@ fn nested_zip_is_critical() {
 }
 
 #[test]
-fn ratio_bomb_is_critical() {
+fn high_ratio_is_only_a_notice() {
+    // The size limits count the bytes that come out; a mostly empty texture compresses this well too.
     let zeros: &'static [u8] = Box::leak(vec![0u8; 2 * 1024 * 1024].into_boxed_slice());
     let report = lucky(&with(&[("Lucky/padding.txt", zeros)]));
-    assert_eq!(finding(&report, "zip.bomb").severity, Severity::Critical);
+    assert_eq!(finding(&report, "zip.bomb").severity, Severity::Notice);
     let small: &'static [u8] = Box::leak(vec![b' '; 100 * 1024].into_boxed_slice());
     assert!(lucky(&with(&[("Lucky/notes.txt", small)])).findings.iter().all(|f| f.rule != "zip.bomb"), "small files may compress well");
 }
@@ -120,6 +121,9 @@ fn unknown_extension_is_a_notice() {
     assert_eq!(hits, ["Lucky/tool.dll.bak", "Lucky/run.ps1"]);
     assert!(report.findings.iter().filter(|f| f.rule == "zip.extension").all(|f| f.severity == Severity::Notice));
     assert!(!lucky(&with(&[("Lucky/LICENSE", b"MIT"), ("Lucky/README.md", b"# x")])).flagged(), "license and readme are fine");
+    // The CurseForge packager file and a credits file are no strange types.
+    let report = lucky(&with(&[("Lucky/.pkgmeta", b"package-as: Lucky"), ("Lucky/CREDITS", b"thanks")]));
+    assert!(report.findings.iter().all(|f| f.rule != "zip.extension"), "{:#?}", report.findings);
 }
 
 #[test]
@@ -232,6 +236,36 @@ Frames.xml
     let report = lucky(&loaded);
     let critical: Vec<&str> = report.findings.iter().filter(|f| f.severity == Severity::Critical).map(|f| f.file.as_str()).collect();
     assert_eq!(critical, ["Lucky/Lucky.lua", "Lucky/UI/Inner.lua"], "reached through Include and Script file");
+}
+
+#[test]
+fn paths_with_dots_and_double_slashes_are_loaded() {
+    let loaded = zip(&[
+        ("Lucky/Lucky.toc", b"## Interface: 11200\n./A.lua\nSub//B.lua\nx/../C.lua\nFrames.xml\n"),
+        ("Lucky/A.lua", b"os.execute('a')\n"),
+        ("Lucky/Sub/B.lua", b"os.execute('b')\n"),
+        ("Lucky/C.lua", b"os.execute('c')\n"),
+        ("Lucky/Frames.xml", b"<Ui><Script file=\"./D.lua\"/><Script file=\"Sub/../E.lua\"/></Ui>"),
+        ("Lucky/D.lua", b"os.execute('d')\n"),
+        ("Lucky/E.lua", b"os.execute('e')\n"),
+    ]);
+    let report = lucky(&loaded);
+    let critical: Vec<&str> = report.findings.iter().filter(|f| f.severity == Severity::Critical).map(|f| f.file.as_str()).collect();
+    assert_eq!(critical.len(), 5, "{:#?}", report.findings);
+    assert!(report.findings.iter().all(|f| !f.rule.ends_with("missing_file") && !f.rule.ends_with("missing_script_file")), "{:#?}", report.findings);
+}
+
+#[test]
+fn game_files_and_paths_from_the_game_folder() {
+    let addon = zip(&[
+        ("Lucky/Lucky.toc", b"## Interface: 11200\n..\\..\\FrameXML\\Fonts.xml\nFrames.xml\n"),
+        ("Lucky/Frames.xml", b"<Ui><Script file=\"Interface\\AddOns\\Lucky\\Sub\\A.lua\"/></Ui>"),
+        ("Lucky/Sub/A.lua", b"os.execute('a')\n"),
+    ]);
+    let report = lucky(&addon);
+    // The client's own FrameXML is no file of the zip; a path from the game folder is.
+    assert!(report.findings.iter().all(|f| !f.rule.ends_with("missing_file") && !f.rule.ends_with("missing_script_file")), "{:#?}", report.findings);
+    assert!(report.findings.iter().any(|f| f.file == "Lucky/Sub/A.lua" && f.severity == Severity::Critical), "{:#?}", report.findings);
 }
 
 #[test]

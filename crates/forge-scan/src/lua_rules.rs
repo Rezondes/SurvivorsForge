@@ -3,6 +3,7 @@
 
 use crate::entropy::shannon;
 use crate::finding::{Report, Severity};
+use crate::{lua50, lua_flow, scope};
 use full_moon::LuaVersion;
 use full_moon::tokenizer::{Lexer, LexerResult, Symbol, TokenType};
 
@@ -13,11 +14,16 @@ use full_moon::tokenizer::{Lexer, LexerResult, Symbol, TokenType};
 pub const FORBIDDEN_GLOBALS: &[&str] = &["os", "io", "debug", "package", "require", "loadlib", "dofile", "loadfile", "load", "newproxy"];
 /// Strings that only make sense to reach a forbidden global by name. Not "debug": it is an
 /// everyday settings key and log level.
-const FORBIDDEN_NAME_STRINGS: &[&str] = &[
+pub(crate) const FORBIDDEN_NAME_STRINGS: &[&str] = &[
     "os", "io", "package", "require", "loadlib", "dofile", "loadfile", "load", "newproxy", "loadstring",
     "RunScript",
 ];
-pub const CHAT_SEND: &[&str] = &["SendChatMessage", "SendAddonMessage", "GuildInvite", "InviteByName"];
+/// `ChatEdit_SendText` sends what is in a chat box, slash commands like `/script` included.
+pub const CHAT_SEND: &[&str] = &["SendChatMessage", "SendAddonMessage", "GuildInvite", "InviteByName", "ChatEdit_SendText"];
+/// Slash commands that run Lua.
+const SCRIPT_COMMANDS: &[&str] = &["/script", "/run"];
+/// How deep code in constant strings, run by `loadstring` or `RunScript`, is scanned in turn.
+const MAX_NESTED_CODE: usize = 3;
 /// Game functions that 1.12 addons commonly hook by replacing them and calling the original;
 /// replacing them is only noted.
 pub const USUAL_HOOKS: &[&str] = &["ChatFrame_OnEvent"];
@@ -26,6 +32,42 @@ pub const API_OVERRIDE: &[&str] = &[
     "SendChatMessage", "SendAddonMessage", "ChatFrame_OnEvent", "ChatEdit_SendText", "GuildInvite", "InviteByName", "RunScript",
     "loadstring", "getglobal", "setglobal", "CreateFrame",
 ];
+/// The game's addon API: functions and tables it fills before any addon loads, for all of them.
+pub const GAME_API_PREFIX: &str = "AZS_";
+
+/// A global an addon should hook or read, not replace.
+/// How replacing or writing the game global `name` is reported. The AZS_ tables (all capitals)
+/// hold data the game sends again, so writing one is noted; a hook that keeps the original too.
+pub(crate) fn api_change(name: &str, kept: bool) -> (Severity, String) {
+    if name.strip_prefix(GAME_API_PREFIX).is_some_and(|rest| !rest.chars().any(|c| c.is_ascii_lowercase())) {
+        (Severity::Notice, format!("Writes {name} of the game's addon API; other addons read it too"))
+    } else if USUAL_HOOKS.contains(&name) || kept {
+        (Severity::Info, format!("Replaces the game function {name}"))
+    } else {
+        (Severity::Warn, format!("Replaces the game function {name}"))
+    }
+}
+
+/// The code names `__newindex`, which on the global table sees every global any addon sets. Only
+/// `__index` answers for globals that do not exist, like SurvivorUI's jump counter.
+// ponytail: a name built with string.char or escapes slips by; obfuscation_char and obfuscation_escape warn on those.
+pub(crate) fn mentions_newindex(text: &str) -> bool {
+    let text = text.to_ascii_lowercase();
+    text.contains("newindex") || text.contains("__new")
+}
+
+/// How a metatable on the global table is reported.
+pub(crate) fn env_metatable(newindex: bool) -> (Severity, &'static str) {
+    if newindex {
+        (Severity::Critical, "Changes how every global is looked up and set")
+    } else {
+        (Severity::Notice, "Changes how globals that do not exist are looked up")
+    }
+}
+
+pub fn is_api(name: &str) -> bool {
+    API_OVERRIDE.contains(&name) || name.starts_with(GAME_API_PREFIX)
+}
 const URL_MARKERS: &[&str] = &["http://", "https://", "www.", "discord.gg"];
 
 pub const MAX_LINE: usize = 2000;
@@ -42,18 +84,21 @@ pub const MAX_ENCODED_SPACES: f64 = 0.02;
 enum Origin {
     /// Only literals, provably: the addon's own text.
     Fixed,
-    /// Event arguments or typed text: what other players or the user control.
+    /// What the player types: an input field or a slash command. They could run it with /script.
+    Typed,
+    /// Event arguments: chat and addon messages of other players.
     Outside,
     /// Anything the scanner cannot follow.
     Unknown,
 }
 
 impl Origin {
-    /// Two parts together: outside wins, then unknown.
+    /// Two parts together: outside wins, then unknown, then typed.
     fn and(self, other: Origin) -> Origin {
         match (self, other) {
             (Origin::Outside, _) | (_, Origin::Outside) => Origin::Outside,
             (Origin::Unknown, _) | (_, Origin::Unknown) => Origin::Unknown,
+            (Origin::Typed, _) | (_, Origin::Typed) => Origin::Typed,
             _ => Origin::Fixed,
         }
     }
@@ -71,7 +116,8 @@ enum Tok {
     Ident(String),
     /// Raw text between the quotes, and the value with escapes resolved.
     Str(String, String),
-    Num,
+    /// The number as written.
+    Num(String),
     Sym(Symbol),
 }
 
@@ -80,6 +126,17 @@ struct Lua<'a> {
     lines: Vec<&'a str>,
     offset: u32,
     toks: Vec<(Tok, usize)>,
+    /// How many constant strings of code this code sits in.
+    nested: usize,
+    /// The code looks up a global by a name the scanner cannot follow.
+    computed: bool,
+    /// The file names `__newindex`.
+    newindex: bool,
+    /// Per token: it declares a parameter that holds what the player types, like the text of a
+    /// slash command.
+    typed: Vec<bool>,
+    /// Per token: a name that is a local there, not a global.
+    locals: Vec<bool>,
 }
 
 impl Lua<'_> {
@@ -99,14 +156,20 @@ impl Lua<'_> {
         matches!(self.tok(i), Some(Tok::Str(..)))
     }
 
+    fn is_local(&self, i: usize) -> bool {
+        self.locals.get(i).copied().unwrap_or(false)
+    }
+
     /// `x.name` or `x:name`: a field, not a global.
     fn is_member(&self, i: usize) -> bool {
         i > 0 && (self.is_sym(i - 1, Symbol::Dot) || self.is_sym(i - 1, Symbol::Colon))
     }
 
-    /// `{ name = ... }` or `{ a, name = ... }`.
+    /// `{ name = ... }`, `{ a, name = ... }` or `{ a; name = ... }`.
     fn is_table_key(&self, i: usize) -> bool {
-        i > 0 && (self.is_sym(i - 1, Symbol::LeftBrace) || self.is_sym(i - 1, Symbol::Comma)) && self.is_sym(i + 1, Symbol::Equal)
+        i > 0
+            && (self.is_sym(i - 1, Symbol::LeftBrace) || self.is_sym(i - 1, Symbol::Comma) || self.is_sym(i - 1, Symbol::Semicolon))
+            && self.is_sym(i + 1, Symbol::Equal)
     }
 
     /// `f(...)`, `f "..."` or `f {...}`.
@@ -164,10 +227,10 @@ impl Lua<'_> {
         let mut j = from;
         while j < to {
             let (part, next) = match self.tok(j) {
-                Some(Tok::Str(..) | Tok::Num) => (Origin::Fixed, j + 1),
-                // `x:GetText()`: what someone typed.
-                Some(Tok::Sym(Symbol::Colon)) if self.is_ident(j + 1, "GetText") => (Origin::Outside, to),
-                Some(Tok::Ident(name)) if OUTSIDE_VALUES.contains(&name.as_str()) => (Origin::Outside, j + 1),
+                Some(Tok::Str(..) | Tok::Num(_)) => (Origin::Fixed, j + 1),
+                // `box:GetText()` or `f.scroll.text:GetText()`: what the player typed.
+                Some(Tok::Ident(_)) if self.typed_text_end(j).is_some() => (Origin::Typed, self.typed_text_end(j).unwrap()),
+                Some(Tok::Ident(name)) if OUTSIDE_VALUES.contains(&name.as_str()) && !self.is_local(j) => (Origin::Outside, j + 1),
                 Some(Tok::Ident(name)) if self.is_sym(j + 1, Symbol::LeftBracket) => match self.closing(j + 1) {
                     Some(end) => (self.table_origin(name, j, depth), end + 1),
                     None => (Origin::Unknown, to),
@@ -183,7 +246,7 @@ impl Lua<'_> {
             // Whatever follows a part must be `..` and another part, or the end.
             if j < to {
                 if !self.is_sym(j, Symbol::TwoDots) {
-                    return origin.and(self.rest_origin(j, to));
+                    return origin.and(Origin::Unknown);
                 }
                 j += 1;
             }
@@ -191,10 +254,19 @@ impl Lua<'_> {
         origin
     }
 
-    /// Calls, fields or operators after a part: `Outside` if they read typed text, else `Unknown`.
-    fn rest_origin(&self, from: usize, to: usize) -> Origin {
-        let typed = (from..to).any(|k| self.is_sym(k, Symbol::Colon) && self.is_ident(k + 1, "GetText"));
-        if typed { Origin::Outside } else { Origin::Unknown }
+    /// The index after `a.b.c:GetText()` that starts at `j`.
+    fn typed_text_end(&self, j: usize) -> Option<usize> {
+        self.method_call_end(j, "GetText")
+    }
+
+    /// The index after `a.b.c:method()` that starts at `j`.
+    fn method_call_end(&self, j: usize, method: &str) -> Option<usize> {
+        let mut k = j;
+        while self.is_sym(k + 1, Symbol::Dot) && matches!(self.tok(k + 2), Some(Tok::Ident(_))) {
+            k += 2;
+        }
+        let call = self.is_sym(k + 1, Symbol::Colon) && self.is_ident(k + 2, method);
+        (call && self.is_sym(k + 3, Symbol::LeftParen) && self.is_sym(k + 4, Symbol::RightParen)).then_some(k + 5)
     }
 
     /// A local `name` read at `at`: fixed only when the declaration it reads, the nearest one before
@@ -215,6 +287,11 @@ impl Lua<'_> {
             if declares && j < at && self.in_scope(j, at) {
                 binding = Some((j, local && assigned && list.is_none()));
             }
+        }
+        if let Some((j, _)) = binding
+            && self.typed[j]
+        {
+            return Origin::Typed;
         }
         let Some((j, true)) = binding else { return Origin::Unknown };
         // The value runs to the end of the statement: the next line or `;`.
@@ -307,7 +384,7 @@ impl Lua<'_> {
         }
         let Some(open) = built else { return Origin::Unknown };
         let Some(close) = self.closing(open) else { return Origin::Unknown };
-        let literals = (open + 1..close).all(|k| matches!(self.tok(k), Some(Tok::Str(..) | Tok::Num | Tok::Sym(Symbol::Comma | Symbol::Semicolon))));
+        let literals = (open + 1..close).all(|k| matches!(self.tok(k), Some(Tok::Str(..) | Tok::Num(_) | Tok::Sym(Symbol::Comma | Symbol::Semicolon))));
         if literals && depth <= MAX_ORIGIN_DEPTH { Origin::Fixed } else { Origin::Unknown }
     }
 
@@ -323,7 +400,7 @@ impl Lua<'_> {
 }
 
 /// Resolves the escapes of a short Lua string.
-fn decode(raw: &str) -> String {
+pub(crate) fn decode(raw: &str) -> String {
     let mut out = String::new();
     let mut chars = raw.chars().peekable();
     while let Some(c) = chars.next() {
@@ -360,19 +437,29 @@ fn decode(raw: &str) -> String {
     out
 }
 
-/// The longest run of `\ddd` or `\xHH` escapes in a raw string.
+/// The longest run of `\ddd` or `\xHH` escapes of printable ASCII in a raw string: code to hide is
+/// printable. Escapes from 128 on are UTF-8 text, like Cyrillic written as `\208\159`, and control
+/// bytes are pattern data like `"[\000-\031]"`.
 fn escape_run(raw: &str) -> usize {
     let bytes = raw.as_bytes();
     let (mut best, mut run, mut i) = (0, 0, 0);
     while i < bytes.len() {
         if bytes[i] == b'\\' && i + 1 < bytes.len() && (bytes[i + 1].is_ascii_digit() || bytes[i + 1] == b'x') {
-            let mut j = i + 2;
-            while j < bytes.len() && j < i + 4 && bytes[j].is_ascii_alphanumeric() {
+            let hex = bytes[i + 1] == b'x';
+            let (from, max) = if hex { (i + 2, i + 4) } else { (i + 1, i + 4) };
+            let mut j = from;
+            while j < bytes.len() && j < max && if hex { bytes[j].is_ascii_hexdigit() } else { bytes[j].is_ascii_digit() } {
                 j += 1;
             }
-            run += 1;
+            let digits = std::str::from_utf8(&bytes[from..j]).unwrap_or_default();
+            let value = if hex { u32::from_str_radix(digits, 16).ok() } else { digits.parse().ok() }.unwrap_or(0);
+            run = if (32..127).contains(&value) { run + 1 } else { 0 };
             best = best.max(run);
-            i = j;
+            i = j.max(i + 2);
+        } else if bytes[i] == b'\\' {
+            // `\\1` in a texture path is a backslash and a digit, not an escape.
+            run = 0;
+            i += 2;
         } else {
             run = 0;
             i += 1;
@@ -381,7 +468,8 @@ fn escape_run(raw: &str) -> usize {
     best
 }
 
-fn tokens(source: &str) -> Vec<(Tok, usize)> {
+/// The tokens with their line and byte offset.
+fn tokens(source: &str) -> Vec<(Tok, usize, usize)> {
     let tokens = match Lexer::new(source, LuaVersion::lua51()).collect() {
         LexerResult::Ok(tokens) | LexerResult::Recovered(tokens, _) => tokens,
         LexerResult::Fatal(_) => return Vec::new(),
@@ -389,7 +477,7 @@ fn tokens(source: &str) -> Vec<(Tok, usize)> {
     tokens
         .into_iter()
         .filter_map(|t| {
-            let line = t.start_position().line();
+            let (line, byte) = (t.start_position().line(), t.start_position().bytes());
             let tok = match t.token_type() {
                 TokenType::Identifier { identifier } => Tok::Ident(identifier.to_string()),
                 TokenType::StringLiteral { literal, multi_line_depth, .. } => {
@@ -397,22 +485,47 @@ fn tokens(source: &str) -> Vec<(Tok, usize)> {
                     let value = if *multi_line_depth == 0 && !raw.contains('\n') { decode(&raw) } else { raw.clone() };
                     Tok::Str(raw, value)
                 }
-                TokenType::Number { .. } => Tok::Num,
+                TokenType::Number { text } => Tok::Num(text.to_string()),
                 TokenType::Symbol { symbol } => Tok::Sym(*symbol),
                 _ => return None,
             };
-            Some((tok, line))
+            Some((tok, line, byte))
         })
         .collect()
 }
 
 /// Checks Lua `source`. `line_offset` shifts line numbers, for Lua inside an XML file.
 pub fn check(path: &str, source: &[u8], line_offset: u32, report: &mut Report) {
+    check_nested(path, source, line_offset, 0, report);
+    report.dedupe();
+}
+
+/// UTF-16 and binary files are reported and get `None`; else the source as shipped, without a
+/// BOM, and its Lua 5.0 rewrite.
+fn prepare(path: &str, source: &[u8], report: &mut Report) -> Option<(String, String)> {
+    if source.starts_with(b"\xff\xfe") || source.starts_with(b"\xfe\xff") {
+        report.add("lua.encoding", Severity::Warn, path, None, "Saved as UTF-16; the game reads UTF-8, so the file cannot be checked or run");
+        return None;
+    }
+    let source = source.strip_prefix(b"\xef\xbb\xbf").unwrap_or(source);
     if source.starts_with(b"\x1bLua") || source.contains(&0) {
         report.add("lua.binary", Severity::Critical, path, None, "Compiled Lua or binary data instead of source code");
-        return;
+        return None;
     }
-    let text = String::from_utf8_lossy(source);
+    let original = String::from_utf8_lossy(source).into_owned();
+    let text = lua50::to_lua51(&original);
+    Some((original, text))
+}
+
+/// The code for the rules across files; `None` when it cannot be parsed.
+pub(crate) fn unit(path: &str, source: &[u8], line_offset: u32) -> Option<lua_flow::Unit> {
+    let (original, text) = prepare(path, source, &mut Report::default())?;
+    let parsed = full_moon::parse_fallible(&text, LuaVersion::lua51());
+    parsed.errors().is_empty().then(|| lua_flow::Unit::new(path, line_offset, &original, parsed.into_ast()))
+}
+
+fn check_nested(path: &str, source: &[u8], line_offset: u32, nested: usize, report: &mut Report) {
+    let Some((original, text)) = prepare(path, source, report) else { return };
     if let Some((n, _)) = text.lines().enumerate().find(|(_, l)| l.chars().count() > MAX_LINE) {
         report.add("lua.long_line", Severity::Notice, path, Some(n as u32 + 1 + line_offset), format!("A line longer than {MAX_LINE} characters"));
     }
@@ -420,7 +533,22 @@ pub fn check(path: &str, source: &[u8], line_offset: u32, report: &mut Report) {
     if let Some(error) = parsed.errors().first() {
         report.add("lua.parse_error", Severity::Warn, path, None, format!("The code cannot be analysed: {error}"));
     }
-    let lua = Lua { path, lines: text.lines().collect(), offset: line_offset, toks: tokens(&text) };
+    // Code that does not parse gets no locals and no rules across statements: every name counts as
+    // a global, and names of forbidden functions in strings stay critical.
+    let unit = parsed.errors().is_empty().then(|| lua_flow::Unit::new(path, line_offset, &original, parsed.into_ast()));
+    let no_locals = scope::Locals::default();
+    let facts = match &unit {
+        Some(unit) => lua_flow::check(std::slice::from_ref(unit), report).remove(0),
+        None => lua_flow::Facts { computed: true, ..Default::default() },
+    };
+    let scope = unit.as_ref().map_or(&no_locals, |u| u.locals());
+    let (mut toks, mut locals, mut typed) = (Vec::new(), Vec::new(), Vec::new());
+    for (tok, line, byte) in tokens(&text) {
+        locals.push(matches!(&tok, Tok::Ident(name) if scope.is_local(name, byte)));
+        typed.push(facts.typed.contains(&byte));
+        toks.push((tok, line));
+    }
+    let lua = Lua { path, lines: original.lines().collect(), offset: line_offset, toks, nested, computed: facts.computed, newindex: mentions_newindex(&original), typed, locals };
     for i in 0..lua.toks.len() {
         match lua.tok(i).unwrap() {
             Tok::Ident(name) => check_ident(&lua, i, name, report),
@@ -436,10 +564,13 @@ fn check_ident(lua: &Lua, i: usize, name: &str, report: &mut Report) {
             lua.add(report, "lua.forbidden_global", Severity::Critical, i, "string.dump turns functions into bytecode");
         }
         if lua.is_ident(i + 2, "char") && lua.is_sym(i + 3, Symbol::LeftParen) {
+            // Only ASCII codes can hide code; bytes from 128 on are UTF-8 text like `·`.
             let mut numbers = 0;
             let mut j = i + 4;
-            while matches!(lua.tok(j), Some(Tok::Num)) {
-                numbers += 1;
+            while let Some(Tok::Num(n)) = lua.tok(j) {
+                if n.parse::<f64>().is_ok_and(|n| n < 128.0) {
+                    numbers += 1;
+                }
                 if !lua.is_sym(j + 1, Symbol::Comma) {
                     break;
                 }
@@ -450,7 +581,10 @@ fn check_ident(lua: &Lua, i: usize, name: &str, report: &mut Report) {
             }
         }
     }
-    if lua.is_member(i) || lua.is_table_key(i) {
+    if name == "AddMessage" && lua.is_member(i) && lua.is_sym(i - 1, Symbol::Dot) && lua.is_sym(i + 1, Symbol::Equal) {
+        lua.add(report, "lua.api_override", Severity::Notice, i, "Replaces AddMessage of a chat frame, which can hide messages");
+    }
+    if lua.is_member(i) || lua.is_table_key(i) || lua.is_local(i) {
         return;
     }
     if FORBIDDEN_GLOBALS.contains(&name) {
@@ -463,13 +597,18 @@ fn check_ident(lua: &Lua, i: usize, name: &str, report: &mut Report) {
         "loadstring" | "RunScript" => {
             if lua.is_call(i) && lua.constant_string_arg(i) {
                 lua.add(report, "lua.dynamic_code", Severity::Warn, i, format!("{name} runs code from a string"));
+                // The code in the string runs too: scan it, on the line of the string.
+                let at = if lua.is_str(i + 1) { i + 1 } else { i + 2 };
+                if let (Some(Tok::Str(_, code)), true) = (lua.tok(at), lua.nested < MAX_NESTED_CODE) {
+                    check_nested(lua.path, code.as_bytes(), lua.offset + lua.line(at) as u32 - 1, lua.nested + 1, report);
+                }
             } else {
                 match lua.call_arg_origin(i) {
                     Origin::Fixed => lua.add(report, "lua.dynamic_code", Severity::Warn, i, format!("{name} runs code put together from fixed text")),
-                    Origin::Outside => {
-                        lua.add(report, "lua.dynamic_code", Severity::Critical, i, format!("{name} runs code from chat, addon messages or an input field"));
-                    }
-                    Origin::Unknown => lua.add(report, "lua.dynamic_code", Severity::Critical, i, format!("{name} runs code that is built at run time")),
+                    Origin::Typed => lua.add(report, "lua.dynamic_code", Severity::Notice, i, format!("{name} runs code the player types, as /script does")),
+                    Origin::Outside => lua.add(report, "lua.dynamic_code", Severity::Critical, i, format!("{name} runs code from chat or addon messages of other players")),
+                    // Macros, profiles and generated handlers do this all the time: a look, not alarm.
+                    Origin::Unknown => lua.add(report, "lua.dynamic_code", Severity::Warn, i, format!("{name} runs code that is built at run time")),
                 }
             }
         }
@@ -484,27 +623,43 @@ fn check_ident(lua: &Lua, i: usize, name: &str, report: &mut Report) {
         "getfenv" | "setfenv" if !lua.is_member(i) => {
             lua.add(report, "lua.environment", Severity::Info, i, format!("{name} works with function environments"));
         }
-        "_G" if lua.is_sym(i + 1, Symbol::LeftBracket) && !(lua.is_str(i + 2) && lua.is_sym(i + 3, Symbol::RightBracket)) => {
-            lua.add(report, "lua.dynamic_global", Severity::Notice, i, "_G with a computed name");
+        // `_G[this:GetName() .. "Text"]` is a frame's own name, as with getglobal.
+        "_G" if lua.is_sym(i + 1, Symbol::LeftBracket)
+            && !(lua.is_str(i + 2) && lua.is_sym(i + 3, Symbol::RightBracket))
+            && lua.method_call_end(i + 2, "GetName").is_none() =>
+        {
+            let written = lua.closing(i + 1).is_some_and(|end| lua.is_sym(end + 1, Symbol::Equal));
+            let severity = if written { Severity::Notice } else { Severity::Info };
+            lua.add(report, "lua.dynamic_global", severity, i, "_G with a computed name");
         }
-        "setmetatable" if lua.is_sym(i + 1, Symbol::LeftParen) && lua.is_ident(i + 2, "_G") => {
-            lua.add(report, "lua.global_metatable", Severity::Critical, i, "Changes how every global is looked up");
+        "setmetatable" if lua.is_sym(i + 1, Symbol::LeftParen) && (lua.is_ident(i + 2, "_G") || lua.is_ident(i + 2, "getfenv")) => {
+            let (severity, message) = env_metatable(lua.newindex);
+            lua.add(report, "lua.global_metatable", severity, i, message);
         }
         "rawset" if lua.is_sym(i + 1, Symbol::LeftParen) && lua.is_ident(i + 2, "_G") && !(lua.is_sym(i + 3, Symbol::Comma) && lua.is_str(i + 4)) => {
-            lua.add(report, "lua.global_metatable", Severity::Critical, i, "rawset on _G with a computed name");
+            lua.add(report, "lua.dynamic_global", Severity::Notice, i, "rawset on _G with a computed name");
+        }
+        "CreateMacro" | "EditMacro" if lua.is_call(i) => {
+            lua.add(report, "lua.macro", Severity::Notice, i, format!("{name} writes a macro the player may later run"));
         }
         _ => {}
     }
     if CHAT_SEND.contains(&name) {
-        // Addon messages stay between addons and are how groups share data; the rest reaches people.
-        let severity = if name == "SendAddonMessage" { Severity::Notice } else { Severity::Warn };
+        // Saving or testing the function (`local Orig = SendChatMessage`) sends nothing. A call is
+        // what raid and boss addons are for; lua_flow warns when it passes on chat of other players
+        // or hides behind another name.
+        let declared = i > 0 && lua.is_sym(i - 1, Symbol::Function);
+        let severity = if !lua.is_call(i) || declared { Severity::Info } else { Severity::Notice };
         lua.add(report, "lua.chat_send", severity, i, format!("{name} sends messages or invites in the player's name"));
     }
     let assigned = lua.is_sym(i + 1, Symbol::Equal) && !(i > 0 && lua.is_sym(i - 1, Symbol::Local));
     let declared = i > 0 && lua.is_sym(i - 1, Symbol::Function) && lua.is_sym(i + 1, Symbol::LeftParen);
-    if API_OVERRIDE.contains(&name) && (assigned || declared) {
-        let severity = if USUAL_HOOKS.contains(&name) { Severity::Info } else { Severity::Warn };
-        lua.add(report, "lua.api_override", severity, i, format!("Replaces the game function {name}"));
+    if is_api(name) && (assigned || declared) {
+        // `local Orig = name` or `MyAddon_Orig = name` before: the usual hook that keeps the original.
+        let kept = (1..lua.toks.len())
+            .any(|j| lua.is_ident(j, name) && !lua.is_local(j) && lua.is_sym(j - 1, Symbol::Equal) && !lua.is_call(j) && !lua.is_sym(j + 1, Symbol::Dot));
+        let (severity, message) = api_change(name, kept);
+        lua.add(report, "lua.api_override", severity, i, message);
     }
 }
 
@@ -523,10 +678,20 @@ fn check_string(lua: &Lua, i: usize, raw: &str, value: &str, report: &mut Report
             }
         }
         if FORBIDDEN_NAME_STRINGS.contains(&folded.as_str()) {
-            lua.add(report, "lua.forbidden_name_string", Severity::Critical, i, format!("The string \"{folded}\" names a forbidden function"));
+            // Where the string goes is followed in lua_flow; a string the code may still turn into a
+            // global, through a lookup the scanner cannot follow, stays critical. The key of a table
+            // (`t["os"]`, `{ ["load"] = 1 }`) is used up right there; lua_flow reports it on _G.
+            // A string compared with another (`msg == "load"`, a slash command) is used up too.
+            let key = i > 0 && lua.is_sym(i - 1, Symbol::LeftBracket) && lua.is_sym(j + 1, Symbol::RightBracket);
+            let compared = [Symbol::TwoEqual, Symbol::TildeEqual].iter().any(|&s| (i > 0 && lua.is_sym(i - 1, s)) || lua.is_sym(j + 1, s));
+            let severity = if lua.computed && !key && !compared { Severity::Critical } else { Severity::Info };
+            lua.add(report, "lua.forbidden_name_string", severity, i, format!("The string \"{folded}\" names a forbidden function"));
         }
     }
     let lower = value.to_ascii_lowercase();
+    if lower.split_whitespace().next().is_some_and(|w| SCRIPT_COMMANDS.contains(&w)) {
+        lua.add(report, "lua.dynamic_code", Severity::Warn, i, "A /script or /run command, which runs Lua when it reaches a chat box");
+    }
     if URL_MARKERS.iter().any(|m| lower.contains(m)) {
         lua.add(report, "lua.url", Severity::Notice, i, "Contains a web address");
     }
@@ -549,7 +714,15 @@ pub fn looks_encoded(value: &str) -> bool {
     if spaces as f64 / len as f64 > MAX_ENCODED_SPACES {
         return false;
     }
-    value.chars().all(|c| c.is_ascii_hexdigit()) || shannon(value) > ENTROPY_LIMIT
+    // Base64 and hex are ASCII; Chinese or Korean text has no spaces either. A hex blob has letters
+    // and digits, a long number only digits.
+    if !value.is_ascii() {
+        return false;
+    }
+    let hex = value.chars().all(|c| c.is_ascii_hexdigit())
+        && value.chars().any(|c| c.is_ascii_digit())
+        && value.chars().any(|c| c.is_ascii_alphabetic());
+    hex || shannon(value) > ENTROPY_LIMIT
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ pub const MAX_DEPTH: usize = 10;
 
 pub const ALLOWED_EXTENSIONS: &[&str] =
     &["lua", "toc", "xml", "tga", "blp", "png", "jpg", "jpeg", "ttf", "otf", "mp3", "ogg", "wav", "txt", "md"];
-const LICENSE_NAMES: &[&str] = &["license", "licence", "copying", "readme", "changelog"];
+const LICENSE_NAMES: &[&str] = &["license", "licence", "copying", "readme", "changelog", "credits"];
 /// Files whose content later rules read. Everything else is only sniffed.
 const KEPT_EXTENSIONS: &[&str] = &["lua", "toc", "xml"];
 
@@ -23,6 +23,35 @@ const KEPT_EXTENSIONS: &[&str] = &["lua", "toc", "xml"];
 pub struct TextFile {
     pub path: String,
     pub bytes: Vec<u8>,
+}
+
+/// `path` in lowercase with `/` separators and without `.`, empty parts and `dir/..`, the way the
+/// client opens it: `./A.lua`, `Sub//B.lua` and `x/../C.lua` are files of the zip.
+pub(crate) fn normal_path(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." if parts.last().is_some_and(|p| *p != "..") => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    parts.join("/")
+}
+
+/// The zip path that `path`, written in a file of the folder `dir`, opens: relative to `dir`, or
+/// from the game folder (`Interface\AddOns\Name\a.lua`). `None` for a file of the game itself,
+/// like `..\..\FrameXML\Fonts.xml`, which is not in the zip.
+pub(crate) fn resolve(dir: &str, path: &str) -> Option<String> {
+    let from_game = normal_path(path);
+    let resolved = match from_game.strip_prefix("interface/addons/") {
+        Some(rest) => rest.to_string(),
+        None => normal_path(&format!("{dir}/{path}")),
+    };
+    (!resolved.starts_with("..")).then_some(resolved)
 }
 
 fn extension(path: &str) -> Option<String> {
@@ -37,6 +66,7 @@ fn is_hidden(path: &str) -> bool {
         || lower.split('/').any(|p| p == ".git" || p == ".github")
         || name.starts_with(".git")
         || name == ".editorconfig"
+        || name == ".pkgmeta"
         || name.ends_with(".ds_store")
         || name == "thumbs.db"
 }
@@ -183,7 +213,9 @@ pub fn check(zip: &[u8], expected_folders: &[String], foreign_folders: &[String]
             continue;
         }
         if size >= RATIO_MIN_BYTES && size / compressed.max(1) > MAX_RATIO {
-            report.add("zip.bomb", Severity::Critical, &path, None, format!("Compressed more than {MAX_RATIO} to 1"));
+            // Only a notice: the limits above count what really comes out, and mostly empty
+            // textures compress this well too.
+            report.add("zip.bomb", Severity::Notice, &path, None, format!("Compressed more than {MAX_RATIO} to 1"));
         }
         if let Some((rule, what)) = sniff(&head) {
             report.add(rule, Severity::Critical, &path, None, format!("The file is {what}"));
@@ -249,7 +281,7 @@ pub fn loaded_files(zip: &[u8], texts: &[TextFile]) -> Option<HashSet<String>> {
         for line in String::from_utf8_lossy(&toc.bytes).lines() {
             let line = line.trim().trim_start_matches('\u{feff}');
             if !line.is_empty() && !line.starts_with('#') {
-                queue.push(format!("{dir}{}", line.replace('\\', "/")).to_ascii_lowercase());
+                queue.extend(resolve(&dir, line));
             }
         }
     }
@@ -282,7 +314,8 @@ fn check_toc_files(addon: &forge_core::archive::DetectedAddon, texts: &[TextFile
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let wanted = format!("{dir}{}", line.replace('\\', "/")).to_ascii_lowercase();
+        // A file of the game itself is not in the zip.
+        let Some(wanted) = resolve(&dir, line) else { continue };
         if !all.contains(&wanted) {
             report.add_with_snippet("zip.toc_missing_file", Severity::Warn, &toc.path, Some(n as u32 + 1),
                 "The .toc loads a file that is not in the zip", line);
