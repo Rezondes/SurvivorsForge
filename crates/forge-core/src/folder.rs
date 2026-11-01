@@ -16,7 +16,8 @@ pub fn folder_key(name: &str) -> String {
 }
 
 /// `name` means the same folder on every system: no trailing dot or space, no character Windows
-/// forbids, and no device name.
+/// forbids, no device name, and no `~` before a digit. Windows opens the 8.3 short name
+/// `SHAGUT~1` as the folder `ShaguTweaks`, and every short name it makes has a `~` and a number.
 pub fn windows_safe_folder(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or_default().to_ascii_lowercase();
     !name.is_empty()
@@ -24,4 +25,5 @@ pub fn windows_safe_folder(name: &str) -> bool {
         && !name.contains(['<', '>', ':', '"', '|', '?', '*', '/', '\\'])
         && !name.chars().any(char::is_control)
         && !DEVICES.contains(&stem.as_str())
+        && !name.as_bytes().windows(2).any(|w| w[0] == b'~' && w[1].is_ascii_digit())
 }

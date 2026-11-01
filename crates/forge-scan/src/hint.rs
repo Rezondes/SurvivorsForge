@@ -34,7 +34,7 @@ pub fn hint(rule: &str, snippet: &str) -> Option<&'static str> {
         "zip.deep_nesting" => "Flatten the folders of the addon.",
         "zip.path_traversal" | "zip.symlink" => "Zip the addon folders again with a normal zip tool.",
         "zip.unreadable" => "Zip the addon folders again, without a password.",
-        "zip.invalid_folder" => "Rename the folder without a dot or space at the end and without a reserved name like CON or NUL.",
+        "zip.invalid_folder" => "Rename the folder without a dot or space at the end, without a reserved name like CON or NUL, and without a ~ before a digit like ~1.",
         "zip.foreign_folder" => "Remove the folder of the other addon from the zip.",
         "zip.undeclared_folder" => "Register the folder for this addon, or remove it from the zip. Put libraries inside your addon folder, like MyAddon/Libs/, so they cannot overwrite the copy of another addon.",
         "zip.missing_folder" => "Add the folder to the zip, or remove it from the registered folders.",

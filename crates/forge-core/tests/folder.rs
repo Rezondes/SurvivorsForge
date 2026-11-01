@@ -10,10 +10,10 @@ fn key_ignores_case_and_trailing_dots_and_spaces() {
 
 #[test]
 fn windows_unsafe_names() {
-    for name in ["Bagnon.", "Bagnon ", "CON", "con", "com1.lua", "LPT9", "a:b", "a<b", "a|b", "a?b", "a*b", "a\"b", "", ".", ".."] {
+    for name in ["Bagnon.", "Bagnon ", "CON", "con", "com1.lua", "LPT9", "a:b", "a<b", "a|b", "a?b", "a*b", "a\"b", "", ".", "..", "SHAGUT~1", "shagut~12", "SH5A3F~1.TOC"] {
         assert!(!windows_safe_folder(name), "{name:?} should be unsafe");
     }
-    for name in ["Bagnon", "!Libs", "Bagnon_Options", "pfUI", "Console", "COM10", "A.B"] {
+    for name in ["Bagnon", "!Libs", "Bagnon_Options", "pfUI", "Console", "COM10", "A.B", "~Libs", "Bagnon~"] {
         assert!(windows_safe_folder(name), "{name:?} should be safe");
     }
 }
