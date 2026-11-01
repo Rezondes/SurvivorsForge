@@ -382,6 +382,8 @@ pub async fn update(
     let can = user_permissions(&state.pool, &addon, &user).await?;
     require(can.owner || !touches_owner_fields(&body), "Only the owner can change this")?;
     require(can.edit_description || (body.summary.is_none() && body.description_md.is_none()), "You may not edit the description")?;
+    // Even a patch without fields writes `updated_at`, so it needs an edit right as well.
+    require(can.edit_description, "You may not edit this addon")?;
 
     if let Some(name) = &body.name {
         validate_name(name)?;

@@ -73,6 +73,9 @@ async fn description_edit_needs_flag(pool: PgPool) {
     assert_eq!(reply.json()["description_md"], "# Hi");
     assert_eq!(app.patch("/v1/addons/lucky", Some(&bob), json!({ "name": "Mine" })).await.status, StatusCode::FORBIDDEN, "no owner fields");
     assert_eq!(app.patch("/v1/addons/lucky", Some(&carol), json!({ "summary": "x" })).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(app.patch("/v1/addons/lucky", Some(&carol), json!({})).await.status, StatusCode::FORBIDDEN, "empty patch needs an edit right");
+    let dave = app.login(4, "dave").await;
+    assert_eq!(app.patch("/v1/addons/lucky", Some(&dave), json!({})).await.status, StatusCode::FORBIDDEN, "stranger");
     assert_eq!(app.delete("/v1/addons/lucky", Some(&bob)).await.status, StatusCode::FORBIDDEN);
 }
 
