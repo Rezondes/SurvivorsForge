@@ -7,6 +7,7 @@ pub mod config;
 pub mod creator;
 pub mod comments;
 pub mod issues;
+pub mod i18n;
 pub mod csrf;
 pub mod error;
 pub mod metrics;
