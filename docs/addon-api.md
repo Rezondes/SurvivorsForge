@@ -1,15 +1,15 @@
 # Azeroth Survivors: Addon API
 
 > This is the addon API of Azeroth Survivors as **Aethus** published it, as of
-> **1 November 2026**. The game may have changed since. Ask questions and look for a newer version in the
+> **2 November 2026**. The game may have changed since. Ask questions and look for a newer version in the
 > [official addon channel on Discord](https://discord.com/channels/1557821819032051852/1564599899469914203).
 
 Azeroth Survivors runs inside the World of Warcraft 1.12.1 client, so addons are ordinary 1.12
 addons (`## Interface: 11200`, Lua, XML, the stock frame API). The game also lets addons read
 the run's state: the clock, the phase, the bosses (alive and still to come), guardians and
 elites, the hero and where it stands, spells, buffs, summons, totems, the meters, the banners and
-the run's end. It gives them each of your hits with a place in the world to draw it, and the
-device's local time. It also lets them hide the game's own HUD so they can draw their own, and keep
+the run's end. It gives them each of your hits with a place in the world to draw it, a place on
+screen for any enemy, cache, lair or downed friend, and the device's local time. It also lets them hide the game's own HUD so they can draw their own, and keep
 their frames over the level-up cards.
 
 The data covers the current run only. Out of a run, the tables are empty or still hold the
@@ -25,11 +25,12 @@ previous run's values, so check `AZS_GetPhase()` first.
 4. [Tables](#tables)
 5. [The meter API (version 1)](#the-meter-api-version-1)
 6. [World-anchored combat text (version 1)](#world-anchored-combat-text-version-1)
-7. [Hiding the game's HUD](#hiding-the-games-hud)
-8. [Raw addon messages](#raw-addon-messages)
-9. [Reference values](#reference-values)
-10. [Limits and tips](#limits-and-tips)
-11. [Examples](#examples)
+7. [World anchors (version 1)](#world-anchors-version-1)
+8. [Hiding the game's HUD](#hiding-the-games-hud)
+9. [Raw addon messages](#raw-addon-messages)
+10. [Reference values](#reference-values)
+11. [Limits and tips](#limits-and-tips)
+12. [Examples](#examples)
 
 ---
 
@@ -214,6 +215,39 @@ A party's revives: `{ down, share, by, reviving, rshare }`. `down` is 1 while yo
 `share` how far (0 to 1) a friend has brought you back and `by` that friend's name; `reviving` is
 the downed friend you stand over and `rshare` how far it is. Empty out of a party. To draw your
 own revive bar, hide the game's with `AZS_SetHudShown("revive", false)`.
+
+### `AZS_GetDownedPartyMembers()` → `list, nil` or `nil, err`
+The other heroes of your party who are down, with where each can be brought back: the spot a friend
+has to stand at, whatever the body's animation does. It works on every map, dungeons and raids
+included, with no target, no open map and no nameplate. An empty list means none is down (or you are
+out of a party). `nil, err` means the list can't be told yet: the [errors](#errors) of
+`AZS_GetPlayerPosition`, or `NOT_READY` while the run's lines are on their way after a `/reload`.
+
+| field | meaning |
+|---|---|
+| `id` | this hero, the same across its falls; a string to compare, the same form as a combat text event's `sourceId` |
+| `name` | its name, for display: don't key on it |
+| `positionAvailable` | whether the place is known in the space you are in. `false` leaves the fields below out, and the friend is still down |
+| `x`, `y`, `z` | world coordinates in yards, as `AZS_GetPlayerPosition()`'s; 0 is a real position |
+| `mapId`, `spaceId`, `runId` | as `AZS_GetPlayerPosition()`'s, whose `spaceId` these always match |
+| `anchorId`, `anchorStatus` | `ready` with a [world anchor](#world-anchors-version-1) handle for this fall; `notReady` in the first frame of a new UI; `unavailable` with no handle |
+
+A friend is off the list once it is back up, leaves the party or the run ends. Each call gives new
+tables, yours to keep or change. Paused or choosing a card, the list stays as it is.
+
+```lua
+local p = AZS_GetPlayerPosition();
+local down = AZS_GetDownedPartyMembers();
+if ( p and down ) then
+	for i = 1, table.getn(down) do
+		local d = down[i];
+		if ( d.positionAvailable ) then
+			local dx, dy = d.x - p.x, d.y - p.y; -- +x is north, +y is west
+			MyAddon_PointAt(d.name, math.sqrt(dx * dx + dy * dy), MyAddon_Bearing(dx, dy) - p.facing);
+		end
+	end
+end
+```
 
 ### `AZS_GetLairs()` → `lairs`
 The guardians' lairs: `AZS_LAIRS` (below), each entry with `active` set: `true` while a guardian
@@ -524,6 +558,10 @@ The lines `AZS_GetPartyMeter()` returns.
 
 ### `AZS_REVIVE`: a party's revives
 What `AZS_GetRevive()` returns.
+
+### `AZS_DOWNED`: a party's other heroes down or gone
+The line behind `AZS_GetDownedPartyMembers()`, which is what to read: `{ id, name, x, y, z, ep, state, runId,
+mapId, spaceId }`, `ep` when it fell and `state` `down`, `left` (it left the party) or `ended` (the run is over).
 
 ### `AZS_CHESTS`: the caches on the field
 Every cache waiting to be opened (the ones at the start, the ones elites drop and the rest), in
@@ -880,8 +918,8 @@ Tables are yours; ids and cursors are strings to compare for equality only and n
 | `STREAM_CHANGED` | your cursor belongs to a stream that ended (a new world, a new run, a `/reload`): clear your labels and read with `nil` |
 
 ### `AZS_GetCombatTextCapabilities()`
-`apiVersion` 1; `impactAnchors`, `followAnchors`, `frameProjection`, `distanceMetrics`, `frameHandler`
-all `true`; `maxEventsPerRead` and `maxAnchorsPerRead` 256; `eventCapacity` and `anchorCapacity` 4096;
+`apiVersion` 1; `impactAnchors`, `followAnchors`, `frameProjection`, `distanceMetrics`, `frameHandler`,
+`playerDistanceMetrics` all `true` (`distanceMetrics` is the camera's, `playerDistanceMetrics` your hero's); `maxEventsPerRead` and `maxAnchorsPerRead` 256; `eventCapacity` and `anchorCapacity` 4096;
 `eventRetentionSeconds` and `anchorRetentionSeconds` 5. It works outside a run. Older versions don't
 have this function: check that it exists.
 
@@ -907,6 +945,7 @@ cursor. `limit` is 1 to 256, 256 if left out. The game keeps hits only while som
 | `eventId` | this hit |
 | `presentedAt` | `GetTime()` when it landed. Check its age: don't show a delayed batch's old hits |
 | `targetId`, `targetName` | this one life of the target (a revive is a new one), and its name for display. `targetId` is absent if the game never held the target |
+| `targetUnitId` | the target's number, the `id` of `AZS_UNITS` and the `unitId` of a [world anchor](#world-anchors-version-1). `targetId` and `anchorId` are this feed's own handles, not world anchors' |
 | `sourceId`, `sourceKind` | the attacker: `player`, `pet`, `summon`, `totem` or `ownedUnknown` |
 | `kind` | `damage` or `miss` |
 | `amount` | `damage` only: the number the game would float |
@@ -915,6 +954,7 @@ cursor. `limit` is 1 to 256, 256 if left out. The game keeps hits only while som
 | `damageType` | `melee`, `ranged` or `spell`; absent if unknown |
 | `schoolMask` | Physical 1, Holy 2, Fire 4, Nature 8, Frost 16, Shadow 32, Arcane 64; absent if unknown |
 | `spellId`, `abilityName`, `icon` | the spell, when there is one; a melee swing or a shield has none |
+| `meterSource`, `meterSourceKey` | the damage meter line this hit counts toward, as the meter names it (`Shadow Weaving`, `Pets`, `Melee`), and the `sourceKey` of its row in `AZS_GetMeterSnapshot`. It tells a proc from the spell whose name and icon it borrows, and names what a pet's or a summon's swing is, which has no `abilityName`. Both are absent on a miss and on a hit the meter doesn't count, such as a damage shield. A talent's free cast (Nightfall's Shadow Bolt) has the talent's line as `meterSource` and the cast ability's row as `meterSourceKey`, that row's `originSourceKeys` holding the talent. In co-op the name is in the host's language: compare `meterSourceKey` |
 | `anchorId`, `anchorStatus` | `ready` with its handle, or `unavailable` and no `anchorId`: never a place the game does not know |
 
 It covers your hits and your pets', summons' and totems' on others, not hits on you, and not
@@ -944,10 +984,28 @@ handle, in order:
 | `x`, `y` | `onScreen` only: offsets from `WorldFrame`'s bottom left, for `SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", x, y)` |
 | `cameraDistance`, `cameraDepth` | `onScreen` only: yards from the camera, straight and along its view |
 | `uiUnitsPerYard` | `onScreen` only: what one yard measures at that depth, for sizing text by distance |
+| `playerDistance` | `onScreen` only, when known: yards in a straight line from your hero's feet to the enemy's (`follow`, its death place after it died) or to where the hit landed (`impact`). The height of the label isn't in it. Your hero's, even for a pet's or totem's hit. Rotating or zooming the camera never changes it, moving does; 0 is a distance. Absent when your hero's place isn't known or the enemy left with no death seen |
 | `reason` | `expired` only: `age`, or `resourceLimit` if over 4096 anchors pushed it out early |
 
 Anything but `onScreen` has no coordinates: hide the label and keep counting down its lifetime, don't
 restart it. This is the camera's view only; a wall in front of the spot doesn't hide it.
+
+**Make your frames children of `WorldFrame`.** `x` and `y` are in `WorldFrame`'s units, and a `SetPoint`
+offset is measured in the units of the frame you anchor. A child of `UIParent` is scaled by the UI scale
+(0.9 by default), so its labels land off target, drifting toward the bottom left of the screen. For a
+frame that has to stay under `UIParent`, divide first: `local k = frame:GetEffectiveScale();
+frame:SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", point.x / k, point.y / k)`.
+
+To shrink far text, use `playerDistance`, not `cameraDistance` or `cameraDepth`, which change with
+every zoom. Check it first: it can be absent on older versions.
+
+```lua
+local factor = 1;
+local d = point.playerDistance;
+if ( d and d > 20 ) then
+	factor = math.max(0.55, 20 / d); -- full size within 20 yards, 55% at the farthest
+end
+```
 
 ### `AZS_RegisterCombatTextFrameHandler(handler)` / `AZS_UnregisterCombatTextFrameHandler(handler)`
 **Move your labels here, not in `OnUpdate`.** `OnUpdate` runs before the camera moves for the frame, so
@@ -958,7 +1016,7 @@ in the handler, `false` from anywhere else. Errors go to the error handler and l
 running.
 
 ```lua
-local labels = {}; -- yours: each with anchorId, born, holder
+local labels = {}; -- yours: each with anchorId, born, holder (a frame under WorldFrame)
 local cursor;
 
 if ( AZS_GetCombatTextCapabilities ) then
@@ -998,6 +1056,178 @@ end
 ```
 
 With more than 256 labels, split them into several calls; every call in a frame shares one camera.
+
+---
+
+## World anchors (version 1)
+
+For an addon that puts its own markers in the world: an icon over an enemy, on the spot it fell, or
+over a cache, a guardian, a boss, a lair or a downed friend. It works on every map, with nothing
+selected, no nameplates and no damage dealt. Everything here is the combat text API's conventions:
+`result, nil` or `nil, err` with `err = { code, message }`, never raises, tables are yours, and ids
+and cursors are strings to compare and never to save or to take apart.
+
+| `code` | meaning |
+|---|---|
+| `INVALID_ARGUMENT` | a bad argument |
+| `NOT_IN_WORLD` | not in the world; capabilities still answer |
+| `NOT_READY` | the first frame after a `/reload`, or the first time you ask for enemies: try next frame |
+| `CATALOG_CHANGED` | your cursor belongs to an older catalog: read from the start |
+| `STREAM_CHANGED` | your cursor belongs to a stream that ended (a new world, a new run, a `/reload`): forget your handles and read from the start |
+
+### `AZS_GetWorldAnchorCapabilities()`
+`apiVersion` 1; `kinds` and `attachments`, the lists below; `frameProjection`, `frameHandler` and
+`playerDistanceMetrics` and `worldOffsets` `true`; `occlusion` `false`; `maxEntriesPerCall` and
+`maxProjectionsPerCall` 256; `fallenRetentionSeconds` 60; `fallenCapacity` and `livingCapacity` 4096.
+It works outside a run. Older versions don't have this function: check that it exists.
+
+### `AZS_GetWorldAnchors(query, cursor, limit)`
+A page of the catalog. `query` is `nil` for everything, or `{ kinds = { ... }, states = { ... } }`,
+either left out for any; `limit` is 1 to 256, 256 if left out. Pass the page's `nextCursor` with the
+same `query` for the next one, until `hasMore` is `false`.
+
+| `kind` | what | `state` |
+|---|---|---|
+| `enemy` | any enemy of the horde, and what a boss sets on the ground that you can hit | `alive`, `dead` |
+| `elite`, `guardian`, `boss`, `finalBoss` | as the same in `AZS_UNITS` | `alive`, `dead` |
+| `cache` | a cache on the field | `present` |
+| `guardianLair` | a lair: the place, not who holds it. It stays while it is empty | `empty`, `asleep`, `awake` |
+| `downedPartyMember` | a friend down, one handle for each fall | `downed` |
+
+`state = "dead"` is a fallen enemy, kept where its health reached 0 for 60 seconds, read or not. The
+corpse's animation, its removal and reading the anchor change nothing. An enemy gone with no death
+seen never becomes one.
+
+| page field | meaning |
+|---|---|
+| `apiVersion` | 1 |
+| `catalogId` | this catalog. It changes when an anchor comes, goes or changes kind or state, not when one moves |
+| `worldId`, `streamId` | the world and its epoch, and this stream |
+| `mapId`, `spaceId`, `runId` | the coordinate space, as `AZS_GetPlayerPosition()`'s; `runId` is absent outside a run |
+| `clockSeconds` | `GetTime()` |
+| `entries` | the anchors, oldest first |
+| `nextCursor`, `hasMore` | where to go on, and whether there's more |
+| `overflowed` | `true` if over 4096 living enemies left some out, which you won't meet in play |
+
+| entry field | meaning |
+|---|---|
+| `anchorId` | the handle: the same for as long as this life, this place or this fall lasts, and never another's |
+| `kind`, `state` | as above. An enemy's `kind` settles within a fifth of a second of its coming: it can read `enemy` before it reads `guardian` |
+| `name` | for display; absent while the game doesn't know it. Don't key on it |
+| `unitId`, `cacheId`, `lairIndex`, `memberId` | what it is elsewhere: `AZS_UNITS`' and the combat text's `targetUnitId`, `AZS_CHESTS`' `id`, `AZS_LAIRS`' `index`, `AZS_GetDownedPartyMembers()`'s `id`. A unit's number is the same across its lives; only the `anchorId` tells them apart |
+| `occupantUnitId` | a lair's guardian, while it has one |
+| `attachments` | what can be asked of this anchor: `position`, and `overhead` for units |
+| `positionAvailable`, `x`, `y`, `z`, `mapId`, `spaceId`, `runId` | where it is now, as `AZS_GetPlayerPosition()`'s; 0 is a real position |
+| `expiresAt` | a fallen enemy's: the `GetTime()` it goes |
+
+**Read all the pages of one catalog in one go, in one frame.** With a horde dying, any later frame
+likely has another catalog, so its cursor answers `CATALOG_CHANGED`. Reading a partial list tells you
+nothing about what isn't on it. Once you have a handle, keep it and project it: there's no need to
+read the catalog each frame.
+
+`AZS_GetBosses()`, `AZS_GetGuardians()`, `AZS_GetDownedPartyMembers()`, `AZS_GetLairs()` and
+`AZS_CHESTS` also carry the same `anchorId`, once something has read the catalog. Reading never makes
+another handle nor extends one.
+
+### `AZS_ProjectWorldAnchors(requests)`
+Up to 256 `{ anchorId = ..., attachment = ... }` through the camera:
+
+- `"position"`: the entity's feet, the place a friend is down at, the place something fell, a cache or
+  a lair.
+- `"overhead"`: where the game puts a unit's name, by its model's real height. This is the one for an
+  icon above an enemy. Other kinds have none, and read `unavailable`.
+
+A request can also take `offset = { x = ..., y = ..., z = ... }`: yards added to that point in the
+world before it goes through the camera, on `AZS_GetPlayerPosition()`'s axes (+x north, +y west,
++z up), any axis left out 0. It scales with distance as the world does: `offset = { z = 2 }` lifts a
+cache's marker two yards off the ground, and it shrinks as the cache gets farther away. For a gap that
+stays the same on screen, add to the `x, y` you get instead. An offset changes `x`, `y`,
+`cameraDistance`, `cameraDepth`, `uiUnitsPerYard` and whether the point is `onScreen`. It doesn't change
+`playerDistance` or the anchor, and it isn't kept between calls.
+
+The answer has `apiVersion`, `worldId`, `streamId`, `cameraSampleId` (the same for one frame, new the
+next), `clockSeconds`, `frameCurrent` and `entries`, one per request, in order:
+
+| entry field | meaning |
+|---|---|
+| `anchorId`, `attachment` | what you asked |
+| `state` | `onScreen`, `offscreen`, `behindCamera`, `clipped`, `notReady` (no camera now, or a loading screen), `unavailable`, `expired`, `unknownAnchor` or `worldChanged` |
+| `entityState` | the anchor's `state` above; absent for `expired`, `unknownAnchor` and `worldChanged` |
+| `x`, `y` | `onScreen` only: offsets from `WorldFrame`'s bottom left, for `SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", x, y)` |
+| `cameraDistance`, `cameraDepth`, `uiUnitsPerYard` | `onScreen` only: as the combat text's |
+| `playerDistance` | `onScreen` only, when known: yards in a straight line from your hero's feet to the entity's or the place, whichever `attachment` you asked. The camera never changes it |
+| `reason` | `expired`: `age`, `resourceLimit` (over 4096 fallen), `collected`, `revived`, `departed` (the friend left), `runEnded`, or `removed` (an enemy gone with no death seen). `unavailable`: `unsupportedAttachment` |
+
+Anything but `onScreen` has no coordinates: hide the marker. Turning away hides it, turning back
+shows it again on the same handle. This is the camera's view only: **markers show through walls and
+terrain**, and `onScreen` doesn't mean a clear line of sight.
+
+**Make your markers children of `WorldFrame`**, as with [combat text](#azs_projectcombattextanchorsanchorids-mode):
+under `UIParent` the UI scale (0.9 by default) pulls them off target unless you divide `x` and `y` by the
+frame's `GetEffectiveScale()`. An enemy far out at the edge of the field can have an anchor before its model
+shows.
+
+### `AZS_RegisterWorldAnchorFrameHandler(handler)` / `AZS_UnregisterWorldAnchorFrameHandler(handler)`
+**Move your markers here, not in `OnUpdate`**, for the combat text's reason: this runs once every frame
+in the world, paused too, after the camera moved and before anything is drawn. `frameCurrent` is
+`true` here and `false` anywhere else. Errors go to the error handler and leave others' handlers
+running; a handler can unregister itself while it runs, and each unregisters only its own.
+
+```lua
+local anchors = {}; -- handle -> icon, yours: frames made with CreateFrame("Frame", nil, WorldFrame)
+
+local function Refresh()
+	local cursor, page, err;
+	repeat
+		page, err = AZS_GetWorldAnchors({ kinds = { "elite", "guardian", "boss", "finalBoss" }, states = { "alive" } }, cursor);
+		if ( not page ) then
+			return; -- NOT_READY, CATALOG_CHANGED: next frame
+		end
+		for i = 1, table.getn(page.entries) do
+			local e = page.entries[i];
+			if ( not anchors[e.anchorId] ) then
+				anchors[e.anchorId] = MyAddon_NewIcon(e.kind);
+			end
+		end
+		cursor = page.nextCursor;
+	until not page.hasMore;
+end
+
+local function PlaceIcons()
+	Refresh();
+	local requests, icons = {}, {};
+	for id, icon in pairs(anchors) do
+		table.insert(requests, { anchorId = id, attachment = "overhead" });
+		table.insert(icons, icon);
+	end
+	local projection = AZS_ProjectWorldAnchors(requests);
+	if ( not projection ) then
+		return;
+	end
+	for i = 1, table.getn(projection.entries) do
+		local entry, icon = projection.entries[i], icons[i];
+		if ( projection.frameCurrent and entry.state == "onScreen" ) then
+			icon:ClearAllPoints();
+			icon:SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", entry.x, entry.y + 6);
+			icon:Show();
+		else
+			icon:Hide();
+			if ( entry.state == "expired" or entry.state == "worldChanged" or entry.state == "unknownAnchor" ) then
+				anchors[entry.anchorId] = nil;
+				MyAddon_FreeIcon(icon);
+			end
+		end
+	end
+end
+
+if ( AZS_GetWorldAnchorCapabilities ) then
+	AZS_RegisterWorldAnchorFrameHandler(PlaceIcons);
+end
+```
+
+The scan of the world's enemies starts the first time an addon asks for them (a `query` of `nil`
+does), and costs next to nothing after. Ask only for what you draw: filter the discovery, keep your
+handles and project only the markers you need.
 
 ---
 
@@ -1067,6 +1297,7 @@ time your handler runs.
 | `AZSSPELLS` | `AZS_SPELLS` | on change |
 | `AZSTIMERS` | `AZS_TIMERS` | on change (a talent's clock starts again) |
 | `AZSREVIVE` | `AZS_REVIVE` | on change (in a party) |
+| `AZSDOWNED` | `AZS_DOWNED` | on change (in a party) |
 | `AZSBUFFS` | `AZS_BUFFS` | on change |
 | `AZSPETS` | `AZS_PETS` | on change (a summon comes or goes) |
 | `AZSTOTEMS` | `AZS_TOTEMS` | on change (a totem goes down or one goes) |
