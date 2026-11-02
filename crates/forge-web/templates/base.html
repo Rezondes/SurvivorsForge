@@ -16,6 +16,7 @@
   <link rel="icon" href="/static/icon.png" type="image/png">
   <link rel="apple-touch-icon" href="/static/icon.png">
   <link rel="stylesheet" href="/static/app.css?v={{ crate::app::asset_version() }}">
+  <script src="/static/i18n.js?v={{ crate::app::asset_version() }}"></script>
   <script src="/static/view.js?v={{ crate::app::asset_version() }}"></script>
   <script src="/static/htmx.min.js?v={{ crate::app::asset_version() }}" defer></script>
 </head>
@@ -23,25 +24,30 @@
   <header class="top">
     <a class="brand" href="/">SurvivorsForge</a>
     <nav>
-      <a href="/addons"{% if crate::app::in_section("/addons") %} aria-current="page"{% endif %}>Addons</a>
-      <a href="/packs"{% if crate::app::in_section("/packs") %} aria-current="page"{% endif %}>Packs</a>
+      <a href="/addons"{% if crate::app::in_section("/addons") %} aria-current="page"{% endif %}><span data-i18n="addons">Addons</span></a>
+      <a href="/packs"{% if crate::app::in_section("/packs") %} aria-current="page"{% endif %}><span data-i18n="packs">Packs</span></a>
       {% match user %}
       {% when Some with (u) %}
-        <a href="/me/addons"{% if crate::app::in_section("/me/addons") %} aria-current="page"{% endif %}>My addons</a>
-        {% if u.staff %}<a href="/admin"{% if crate::app::in_section("/admin") %} aria-current="page"{% endif %}>Admin</a>{% endif %}
+        <a href="/me/addons"{% if crate::app::in_section("/me/addons") %} aria-current="page"{% endif %}><span data-i18n="my_addons">My addons</span></a>
+        {% if u.staff %}<a href="/admin"{% if crate::app::in_section("/admin") %} aria-current="page"{% endif %}><span data-i18n="admin">Admin</span></a>{% endif %}
         <form method="post" action="/logout" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf }}">
-          <button type="submit" class="link">Log out {{ u.login }}</button>
+          <button type="submit" class="link"><span data-i18n="auth_logout">Log out</span> {{ u.login }}</button>
         </form>
       {% when None %}
-        <a href="/login" class="button">Log in with GitHub</a>
+        <a href="/login" class="button"><span data-i18n="login">Log in with GitHub</span></a>
       {% endmatch %}
+      <label class="forge-locale-label" for="forge-locale"><span data-i18n="language">Language</span>
+        <select id="forge-locale" aria-label="Choose language" data-i18n-aria-label="choose_language">
+          <option value="en">English</option><option value="pl">Polski</option><option value="cs">Čeština</option><option value="de">Deutsch</option><option value="pt-BR">Português (Brasil)</option><option value="es">Español</option><option value="fr">Français</option><option value="ro">Română</option><option value="tr">Türkçe</option><option value="ru">Русский</option><option value="uk">Українська</option><option value="zh-Hans">简体中文</option><option value="ja">日本語</option><option value="ko">한국어</option>
+        </select>
+      </label>
     </nav>
   </header>
   <main>
     {% block content %}{% endblock %}
     <footer class="bottom">
-      <p>SurvivorsForge is a community project and <a href="https://github.com/Rezondes/SurvivorsForge">open source</a>. Releases and downloads come from GitHub. <a href="https://rezondes.github.io/SurvivorsForge/">Get the launcher</a> · <a href="/docs">Documentation</a> · <a href="/stats">Statistics</a></p>
+      <p><span data-i18n="footer_intro">SurvivorsForge is a community project and</span> <a href="https://github.com/Rezondes/SurvivorsForge" data-i18n="open_source">open source</a>. <span data-i18n="footer_releases">Releases and downloads come from GitHub.</span> <a href="https://rezondes.github.io/SurvivorsForge/" data-i18n="get_launcher">Get the launcher</a> · <a href="/docs">Documentation</a> · <a href="/stats">Statistics</a></p>
     </footer>
   </main>
 </body>
