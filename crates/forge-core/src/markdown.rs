@@ -262,4 +262,13 @@ mod tests {
             assert!(out.contains(tag), "missing {tag} in {out}");
         }
     }
+
+    #[test]
+    fn windows_line_ends_leave_no_carriage_return_in_blocks() {
+        let md = "## How it works\r\n\r\nRecords each drop.\r\nDrops are also heard.\r\n\r\n- one\r\n- two\r\n";
+        let all = blocks(md, "https://img.test");
+        assert!(all.iter().all(|b| !format!("{b:?}").contains("\\r")), "{all:?}");
+        assert!(all.contains(&Block::Paragraph("Records each drop.\nDrops are also heard.".into())), "{all:?}");
+    }
+
 }

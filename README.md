@@ -66,7 +66,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-Both cover only the launcher. The platform crates are tested with `--workspace`; their API and website tests need a Postgres in `DATABASE_URL` (see [docs/local-setup.md](docs/local-setup.md)).
+Both cover only the launcher. Its layout tests (`layout_tests` in `src/main.rs`, e.g. that a long description never runs into the facts below it) find elements by name, which Slint only keeps in builds with `SLINT_EMIT_DEBUG_INFO=1`; without it they skip, CI sets it. The platform crates are tested with `--workspace`; their API and website tests need a Postgres in `DATABASE_URL` (see [docs/local-setup.md](docs/local-setup.md)).
 
 Tests run offline. Tests that need the network are marked `#[ignore]`:
 

@@ -27,7 +27,11 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Element names for the launcher's layout tests (src/main.rs, layout_tests); without them
+      # those tests skip.
       - run: cargo test -p survivorsforge -p forge-core -p forge-scan
+        env:
+          SLINT_EMIT_DEBUG_INFO: "1"
       - run: cargo clippy -p survivorsforge -p forge-core -p forge-scan --all-targets -- -D warnings
 
   # The platform: API and website against a real Postgres, Linux only.

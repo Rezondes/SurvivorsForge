@@ -6502,6 +6502,7 @@ dependencies = [
  "flate2",
  "forge-core",
  "forge-scan",
+ "i-slint-backend-testing",
  "image",
  "open",
  "rfd",

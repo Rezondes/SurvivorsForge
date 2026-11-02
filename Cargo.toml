@@ -39,6 +39,8 @@ winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+# Lays the UI out without a window, for layout tests (same version as slint).
+i-slint-backend-testing = "=1.18.1"
 
 [profile.release]
 strip = true

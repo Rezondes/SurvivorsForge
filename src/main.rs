@@ -1988,3 +1988,88 @@ fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
     ui.window().set_minimized(false);
     ui.window().with_winit_window(|w| w.focus_window());
 }
+
+#[cfg(test)]
+mod layout_tests {
+    use i_slint_backend_testing::ElementRoot;
+    use slint::{ComponentHandle, ModelRc, VecModel};
+
+    // The description and the first fact of the detail view, in a plain layout (no spare room
+    // hides a short measurement there) and in the ScrollPanel the detail view uses.
+    slint::slint! {
+        import { AboutBlockView, Fact, ScrollPanel, AboutBlock } from "ui/components.slint";
+        export component Probe inherits Window {
+            in property <[AboutBlock]> about;
+            in property <bool> scroll;
+            width: 1100px;
+            height: 6000px;
+            if !root.scroll : VerticalLayout {
+                spacing: 18px;
+                alignment: start;
+                VerticalLayout {
+                    spacing: 10px;
+                    for block in root.about : AboutBlockView { block: block; }
+                }
+                Fact { label: "Safety check"; text: "The automatic check found nothing."; }
+            }
+            if root.scroll : ScrollPanel {
+                spacing: 18px;
+                VerticalLayout {
+                    spacing: 10px;
+                    for block in root.about : AboutBlockView { block: block; }
+                }
+                Fact { label: "Safety check"; text: "The automatic check found nothing."; }
+            }
+        }
+    }
+
+    fn block(kind: i32, marker: &str, text: &str) -> AboutBlock {
+        AboutBlock { kind, marker: marker.into(), text: text.into(), ..Default::default() }
+    }
+
+    /// The room between the end of the description and the fact below; negative when they
+    /// overlap. `None` without element names, which only `SLINT_EMIT_DEBUG_INFO=1` builds have.
+    fn gap(scroll: bool, about: Vec<AboutBlock>) -> Option<f32> {
+        let ui = Probe::new().unwrap();
+        ui.set_about(ModelRc::new(VecModel::from(about)));
+        ui.set_scroll(scroll);
+        ui.show().unwrap();
+        // Conditional and repeated elements exist once the layout ran: ask sizes until nothing is new.
+        let mut seen = 0;
+        let all = loop {
+            let all = ui.root_element().query_descendants().find_all();
+            all.iter().for_each(|e| { e.size(); });
+            if all.len() == seen {
+                break all;
+            }
+            seen = all.len();
+        };
+        let of_type = |name: &str| all.iter().filter(|e| e.type_name().is_some_and(|t| t == name)).cloned().collect::<Vec<_>>();
+        let top = of_type("Fact").first()?.absolute_position().y;
+        let bottom = of_type("AboutBlockView").iter().map(|b| b.absolute_position().y + b.size().height).fold(0.0, f32::max);
+        Some(top - bottom)
+    }
+
+    #[test]
+    fn a_long_description_never_runs_into_the_facts_below() {
+        i_slint_backend_testing::init_no_event_loop();
+        let long = "ASDrops listens to the loot chat messages and to the boss-kill banners, and records each drop with its rarity and type. ".repeat(4);
+        let cases: Vec<(&str, Vec<AboutBlock>)> = vec![
+            ("paragraphs", (0..8).map(|_| block(0, "", &long)).collect()),
+            ("line breaks", (0..8).map(|_| block(0, "", &format!("{long}\nmore"))).collect()),
+            ("headings", (0..8).map(|n| block(1, "", &format!("Heading {n}"))).collect()),
+            ("list items", (0..8).map(|_| block(2, "\u{2022}", &long)).collect()),
+            ("quotes", (0..8).map(|_| block(4, "", &long)).collect()),
+            ("code", (0..8).map(|_| block(3, "", &long)).collect()),
+        ];
+        for (name, about) in cases {
+            for scroll in [false, true] {
+                let Some(gap) = gap(scroll, about.clone()) else {
+                    eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                    return;
+                };
+                assert!(gap >= 0.0, "{name} (scroll panel: {scroll}) runs {} px into the facts", -gap);
+            }
+        }
+    }
+}

@@ -860,7 +860,7 @@ component Picture inherits Rectangle {
 }
 
 // One block of a description, styled as the website styles it.
-component AboutBlockView inherits VerticalLayout {
+export component AboutBlockView inherits VerticalLayout {
     in property <AboutBlock> block;
     callback enlarge(image, string);
     padding-top: root.block.kind == 1 ? 8px : 0px;
@@ -871,17 +871,21 @@ component AboutBlockView inherits VerticalLayout {
         color: root.block.kind == 1 ? Theme.gold : Theme.text;
         wrap: word-wrap;
     }
-    if root.block.kind == 2 : HorizontalLayout {
-        spacing: 8px;
-        padding-left: 6px;
+    // Wrapping text never goes into a HorizontalLayout: Slint measures its height there as one
+    // unbroken line, and everything below would slide into it. A fixed width measures it right.
+    if root.block.kind == 2 : Rectangle {
+        height: item.preferred-height;
         Text {
+            x: 6px;
+            y: 0;
             text: root.block.marker;
             font-size: Theme.body;
             color: Theme.gold;
-            min-width: 14px;
         }
-        Text {
-            horizontal-stretch: 1;
+        item := Text {
+            x: 28px;
+            y: 0;
+            width: parent.width - self.x;
             text: root.block.text;
             font-size: Theme.body;
             color: Theme.text;
@@ -904,14 +908,18 @@ component AboutBlockView inherits VerticalLayout {
             wrap: word-wrap;
         }
     }
-    if root.block.kind == 4 : HorizontalLayout {
-        spacing: 12px;
+    if root.block.kind == 4 : Rectangle {
+        height: quote.preferred-height;
         Rectangle {
+            x: 0;
             width: 3px;
+            height: parent.height;
             background: Theme.outline;
         }
-        Text {
-            horizontal-stretch: 1;
+        quote := Text {
+            x: 15px;
+            y: 0;
+            width: parent.width - self.x;
             text: root.block.text;
             font-size: Theme.body;
             color: Theme.text-muted;
@@ -926,7 +934,7 @@ component AboutBlockView inherits VerticalLayout {
 }
 
 // One fact of the detail view: a gold label over its text.
-component Fact inherits VerticalLayout {
+export component Fact inherits VerticalLayout {
     in property <string> label;
     in property <string> text;
     spacing: 4px;
