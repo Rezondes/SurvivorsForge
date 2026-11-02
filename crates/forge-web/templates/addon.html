@@ -59,6 +59,14 @@
   {% endmatch %}
 </section>
 
+<section class="panel">
+  <h2>Community</h2>
+  <p class="muted">Discuss this addon, share feedback and report problems.</p>
+  <div class="actions">
+    <a class="button secondary" href="/addons/{{ slug }}/comments">Comments</a>
+    <a class="button secondary" href="/addons/{{ slug }}/issues">Issues</a>
+  </div>
+</section>
 {% if !shots.is_empty() %}
 <section class="shots" aria-label="Screenshots">
   {% for shot in shots %}
