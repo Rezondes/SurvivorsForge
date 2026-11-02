@@ -56,7 +56,7 @@ async fn callback_sets_cookie_or_shows_error() {
     let cookie = web.cookies.get("forge_session").expect("session cookie");
     assert!(!cookie.contains("tok-1"), "the token is encrypted in the cookie");
     let page = web.get("/").await;
-    assert!(page.body.contains("Log out alice"), "{}", page.body);
+    assert!(page.body.contains(r#"<span data-i18n="auth_logout">Log out</span> alice"#), "{}", page.body);
 }
 
 #[tokio::test]
