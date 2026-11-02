@@ -253,7 +253,12 @@ pub async fn addon(
     Ok(render(&page).into_response())
 }
 
-pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Html<String>> {
+#[derive(Deserialize)]
+pub struct VersionsQuery {
+    page: Option<i64>,
+}
+
+pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>, Query(query): Query<VersionsQuery>) -> WebResult<Html<String>> {
     let visitor = visitor(&state, &jar).await?;
     let a = state.api.get(&format!("/v1/addons/{}", seg(&slug)), None).await?;
     if a["blocked"] == true {
@@ -265,13 +270,19 @@ pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Exte
         None => None,
     };
     let user = visitor.map(|(v, _)| v);
-    let list = state.api.get(&format!("/v1/addons/{}/versions", seg(&slug)), None).await?;
+    let page = query.page.unwrap_or(1).clamp(1, 1_000_000);
+    let list = state.api.get(&format!("/v1/addons/{}/versions/page?page={page}&per_page=20", seg(&slug)), None).await?;
+    let per_page = list["per_page"].as_i64().unwrap_or(20).clamp(1, 100);
+    let total = list["total"].as_i64().unwrap_or(0);
+    let reported_page = list["page"].as_i64().unwrap_or(page);
+    let slug_for_pages = slug.clone();
+    let pager = crate::templates::Pager::new(reported_page, per_page, total, "versions", move |n| format!("/addons/{slug_for_pages}/versions?page={n}"));
     let verified_author = a["verified_author"] == true;
-    let rows = list.as_array().into_iter().flatten().map(|v| version_row(v, verified_author)).collect::<Vec<_>>();
+    let rows = list["versions"].as_array().into_iter().flatten().map(|v| version_row(v, verified_author)).collect::<Vec<_>>();
     let rows = rows.into_iter().map(|r| (download_href(&slug, &r), r)).collect();
     // GitHub counts downloads of release files only, not the source zips of tags.
     let counted = a["source_type"] != "tag";
-    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), rows, perms, counted }))
+    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), rows, perms, counted, pager }))
 }
 
 async fn version_data(state: &AppState, slug: &str, tag: &str) -> WebResult<(Value, VersionRow)> {
