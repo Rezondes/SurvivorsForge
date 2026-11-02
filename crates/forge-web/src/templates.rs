@@ -9,6 +9,7 @@ use serde_json::Value;
 /// The logged-in visitor as the API describes them (`/v1/me`).
 #[derive(Debug, Clone, Default)]
 pub struct Visitor {
+    pub id: i64,
     pub login: String,
     pub avatar_url: String,
     pub role: String,
@@ -22,6 +23,7 @@ impl Visitor {
     pub fn from_me(me: &Value) -> Visitor {
         let permissions: Vec<String> = me["permissions"].as_array().into_iter().flatten().filter_map(|p| p.as_str().map(str::to_string)).collect();
         Visitor {
+            id: me["id"].as_i64().unwrap_or_default(),
             login: me["login"].as_str().unwrap_or_default().to_string(),
             avatar_url: me["avatar_url"].as_str().unwrap_or_default().to_string(),
             role: me["role"].as_str().unwrap_or("user").to_string(),
@@ -1144,3 +1146,49 @@ mod pager_tests {
         assert_eq!(Pager::new(1, 20, 1, "addons", |n| n.to_string()).unwrap().summary, "1–1 of 1 addon");
     }
 }
+
+pub struct IssueItem {
+    pub id: i64,
+    pub title: String,
+    pub kind: String,
+    pub status: String,
+    pub author: String,
+}
+
+pub struct IssueComment {
+    pub id: i64,
+    pub can_edit: bool,
+    pub author: String,
+    pub body: String,
+}
+
+#[derive(Template)]
+#[template(path = "issues.html")]
+pub struct IssuesPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub slug: String,
+    pub name: String,
+    pub issues: Vec<IssueItem>,
+    pub next: Option<i64>,
+}
+
+#[derive(Template)]
+#[template(path = "issue.html")]
+pub struct IssuePage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub slug: String,
+    pub name: String,
+    pub id: i64,
+    pub title: String,
+    pub body: String,
+    pub kind: String,
+    pub status: String,
+    pub author: String,
+    pub comments: Vec<IssueComment>,
+    pub can_manage: bool,
+    pub can_edit_issue: bool,
+    pub can_delete_issue: bool,
+}
+

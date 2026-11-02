@@ -5,6 +5,8 @@ pub mod api_client;
 pub mod app;
 pub mod config;
 pub mod creator;
+pub mod comments;
+pub mod issues;
 pub mod csrf;
 pub mod error;
 pub mod metrics;
