@@ -10,6 +10,7 @@ pub mod dependencies;
 pub mod game_versions;
 pub mod github_meta;
 pub mod images;
+pub mod issues;
 pub mod me;
 pub mod members;
 pub mod packs;
