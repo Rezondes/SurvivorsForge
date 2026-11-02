@@ -51,6 +51,9 @@ pub fn router(state: AppState) -> Router {
             "/v1/addons/{slug}",
             get(routes::addons::show).patch(routes::addons::update).delete(routes::addons::delete),
         )
+        .route("/v1/addons/{slug}/comments", get(routes::comments::list).post(routes::comments::create))
+        .route("/v1/addons/{slug}/comments/{id}", axum::routing::patch(routes::comments::edit).delete(routes::comments::remove))
+        .route("/v1/addons/{slug}/comments/{id}/reports", post(routes::comments::report))
         .route("/v1/addons/{slug}/issues", get(routes::issues::list).post(routes::issues::create))
         .route("/v1/addons/{slug}/issues/{id}", get(routes::issues::show).patch(routes::issues::set_status).delete(routes::issues::remove))
         .route("/v1/addons/{slug}/issues/{id}/edit", axum::routing::patch(routes::issues::edit))
