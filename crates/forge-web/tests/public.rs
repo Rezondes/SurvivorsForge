@@ -975,3 +975,26 @@ async fn one_page_of_addons_still_shows_the_pager() {
     assert!(pager.contains("1–3 of 3 addons") && pager.contains(r#"aria-current="page">1<"#), "{pager}");
     assert!(!pager.contains(r#"rel="prev""#) && !pager.contains(r#"rel="next""#), "{pager}");
 }
+
+#[tokio::test]
+async fn multilingual_navigation_and_catalog_are_served() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("id=\"forge-locale\""), "language picker is missing");
+    assert!(page.body.contains("value=\"fr\""), "French language option is missing");
+    assert!(page.body.contains("data-i18n=\"addons\""), "navigation is not marked for translation");
+    assert!(page.body.contains("/static/i18n.js"), "translation runtime is not loaded");
+    let script = web.get("/static/i18n.js").await;
+    assert_eq!(script.status, StatusCode::OK);
+    assert!(script.body.contains("forge-locale"), "language persistence is missing");
+}
+
+#[tokio::test]
+async fn addon_detail_links_to_community_sections() {
+    let mut web = with_addon("scanned", "available").await;
+    let page = web.get("/addons/lucky").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("href=\"/addons/lucky/comments\""), "comments link missing");
+    assert!(page.body.contains("href=\"/addons/lucky/issues\""), "issues link missing");
+}
