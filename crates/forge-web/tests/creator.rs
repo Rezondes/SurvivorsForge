@@ -149,6 +149,7 @@ async fn the_edit_toolbar_stays_on_every_edit_page() {
     let mut web = logged_in(owner()).await;
     get_json(&web, "/v1/addons/lucky/members", json!([])).await;
     get_json(&web, "/v1/addons/lucky/versions", json!([{ "tag": "v1", "game_min": null, "game_max": null }])).await;
+    get_json(&web, "/v1/addons/lucky/versions/page", json!({ "versions": [{ "tag": "v1", "game_min": null, "game_max": null }], "total": 1, "page": 1, "per_page": 20 })).await;
     get_json(&web, "/v1/game-versions", json!([{ "name": "0.69.0" }])).await;
     let toolbar = r#"<nav class="subnav" aria-label="Edit addon">"#;
     for page in ["/addons/lucky/edit", "/addons/lucky/images", "/addons/lucky/members", "/addons/lucky/dependencies", "/addons/lucky/versions", "/addons/lucky/versions/v1/edit", "/addons/lucky/delete"] {
@@ -158,6 +159,7 @@ async fn the_edit_toolbar_stays_on_every_edit_page() {
     let mut anonymous = TestWeb::new().await;
     get_json(&anonymous, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky", "blocked": false, "verified_author": false })).await;
     get_json(&anonymous, "/v1/addons/lucky/versions", json!([])).await;
+    get_json(&anonymous, "/v1/addons/lucky/versions/page", json!({ "versions": [], "total": 0, "page": 1, "per_page": 20 })).await;
     assert!(!anonymous.get("/addons/lucky/versions").await.body.contains(toolbar), "only for those who may edit");
 }
 
