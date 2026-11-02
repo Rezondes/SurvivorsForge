@@ -663,3 +663,14 @@ async fn verification_requests_are_listed_and_decided() {
     expect(&web, "POST", "/v1/admin/verification-requests/4/reject", json!({ "note": "no post" })).await;
     assert_eq!(web.post_form("/admin/verification-requests/4/reject", &[("note", "no post")]).await.status, StatusCode::SEE_OTHER);
 }
+
+#[tokio::test]
+async fn a_verification_request_that_is_no_link_shows_as_text() {
+    let mut web = as_admin().await;
+    get_json(&web, "/v1/admin/verification-requests", json!([
+        { "id": 5, "slug": "lucky", "name": "Lucky", "version_id": 9, "tag": "v2", "trust": "scanned", "discord_url": "javascript:alert(1) see my thread", "requested_by": "alice", "created_at": "2026-05-01T10:00:00Z" }
+    ]))
+    .await;
+    let page = web.get("/admin/verification-requests").await;
+    assert!(page.body.contains("javascript:alert(1) see my thread") && !page.body.contains(r#"href="javascript"#), "{}", page.body);
+}

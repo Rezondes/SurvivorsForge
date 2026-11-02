@@ -33,7 +33,7 @@
     <li>Copy the link to your post (right-click it, then Copy Message Link) and paste it here.</li>
   </ol>
   <label for="discord_url">Link to your Discord post</label>
-  <input id="discord_url" name="discord_url" type="url" required value="{{ discord_url }}" placeholder="{{ channel }}/...">
+  <input id="discord_url" name="discord_url" type="text" required maxlength="500" value="{{ discord_url }}" placeholder="https://discord.com/channels/...">
   <p><button type="submit">Send request</button></p>
 </form>
 {% endif %}

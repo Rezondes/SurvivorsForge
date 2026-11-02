@@ -1,6 +1,6 @@
 //! Owners of an addon no admin has verified yet ask for the check by hand: they post the addon in
-//! the Discord channel verified-addons and send the link. Admins approve, which verifies the version
-//! asked about, or reject with a reason.
+//! the Discord channel verified-addons and send the link. The link is not checked here: admins open
+//! it, approve, which verifies the version asked about, or reject with a reason.
 //!
 //! `/v1/addons/{slug}/verification-request` (owner) and `/v1/admin/verification-requests` (staff).
 
@@ -19,12 +19,8 @@ use serde_json::{Value, json};
 /// The channel verified-addons on the Azeroth Survivors Discord.
 pub const CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564402358094405744";
 
-/// The channel itself or one message in it.
-pub fn valid_link(url: &str) -> bool {
-    url.strip_prefix(CHANNEL).is_some_and(|rest| {
-        rest.is_empty() || rest.strip_prefix('/').is_some_and(|id| !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit()))
-    })
-}
+/// The most a link (or whatever the owner sends instead) may hold.
+pub const MAX_LINK: usize = 500;
 
 #[derive(Deserialize)]
 pub struct Ask {
@@ -37,8 +33,8 @@ pub async fn ask(State(state): State<AppState>, user: CurrentUser, Path(slug): P
     not_blocked(&addon)?;
     require(user_permissions(&state.pool, &addon, &user).await?.owner, "Only the owner asks for a verification")?;
     let url = body.discord_url.trim();
-    if !valid_link(url) {
-        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid_link", format!("Send the link to your post in the channel verified-addons ({CHANNEL})")));
+    if url.is_empty() || url.chars().count() > MAX_LINK {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid_link", format!("Paste the link to your post in verified-addons (at most {MAX_LINK} characters)")));
     }
     let verified: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM verifications w JOIN versions v ON v.id = w.version_id WHERE v.addon_id = $1)")
         .bind(addon.id)
@@ -162,12 +158,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn links_point_into_the_channel() {
-        assert!(valid_link(CHANNEL));
-        assert!(valid_link(&format!("{CHANNEL}/1570000000000000000")));
-        assert!(!valid_link(&format!("{CHANNEL}/")));
-        assert!(!valid_link(&format!("{CHANNEL}0")));
-        assert!(!valid_link(&format!("{CHANNEL}/12/34")));
-        assert!(!valid_link("https://discord.com/channels/1557821819032051852/1"));
+    fn the_channel_is_a_discord_link() {
+        assert!(CHANNEL.starts_with("https://discord.com/channels/"));
     }
 }

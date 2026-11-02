@@ -73,15 +73,18 @@ async fn owners_ask_with_a_link_to_the_discord_channel(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn only_links_to_the_verified_addons_channel_count(pool: PgPool) {
+async fn any_link_counts_the_admins_check_it(pool: PgPool) {
     let (app, owner, _) = setup(pool).await;
     scanned_version(&app, "v1", false).await;
-    for bad in ["https://example.com/x", "https://discord.com/channels/1557821819032051852/1", "http://discord.com/channels/1557821819032051852/1564402358094405744", &format!("{CHANNEL}/abc"), &format!("{CHANNEL}x"), ""] {
+    let too_long = "x".repeat(501);
+    for bad in ["", "   ", too_long.as_str()] {
         let reply = app.post("/v1/addons/lucky/verification-request", Some(&owner), json!({ "discord_url": bad })).await;
         assert_eq!((reply.status, reply.error()), (StatusCode::BAD_REQUEST, "invalid_link".into()), "{bad}");
     }
-    let ok = app.post("/v1/addons/lucky/verification-request", Some(&owner), json!({ "discord_url": CHANNEL })).await;
-    assert_eq!(ok.status, StatusCode::CREATED, "the channel itself is fine: {}", ok.error());
+    // A thread in the forum channel has an id of its own; the admins look at it, not the API.
+    let thread = "https://discord.com/channels/1557821819032051852/1565374254063816906/1565374254063816906";
+    let ok = app.post("/v1/addons/lucky/verification-request", Some(&owner), json!({ "discord_url": thread })).await;
+    assert_eq!(ok.status, StatusCode::CREATED, "{}", ok.error());
 }
 
 #[sqlx::test]
