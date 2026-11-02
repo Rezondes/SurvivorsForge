@@ -298,6 +298,7 @@ pub struct VersionsPage {
     pub perms: Option<Perms>,
     /// GitHub counts the downloads (release files, not the source zips of tags).
     pub counted: bool,
+    pub pager: Option<Pager>,
 }
 
 #[derive(Template)]
