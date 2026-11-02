@@ -57,7 +57,7 @@ pub fn negotiate(explicit: Option<&str>, accept_language: Option<&str>) -> &'sta
                 quality = value.parse::<f32>().ok()?;
             }
         }
-        if !(0.0..=1.0).contains(&quality) || quality == 0.0 { return None; }
+        if !quality.is_finite() || !(0.0..=1.0).contains(&quality) || quality == 0.0 { return None; }
         Some((index, quality, language))
     }).collect();
     preferences.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -82,6 +82,14 @@ mod tests {
         assert_eq!(normalize("zh-CN"), Some("zh-Hans"));
         assert_eq!(normalize("xx"), None);
         assert_eq!(normalize("<script>"), None);
+    }
+
+    #[test]
+    fn rejects_non_finite_and_disabled_language_weights() {
+        assert_eq!(negotiate(None, Some("fr;q=NaN,en;q=0.8")), "en");
+        assert_eq!(negotiate(None, Some("fr;q=inf,en;q=0.8")), "en");
+        assert_eq!(negotiate(None, Some("fr;q=0,en;q=0.8")), "en");
+        assert_eq!(negotiate(None, Some("fr;q=2,en;q=0.8")), "en");
     }
 
     #[test]
