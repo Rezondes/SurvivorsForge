@@ -209,6 +209,74 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 7,
+      "title": "Launcher downloads",
+      "description": "Downloads of the launcher's release files on GitHub over all versions, self-updates included; one point per hourly poll.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT at AS time, downloads AS \"downloads of every version\" FROM launcher_counts WHERE downloads IS NOT NULL AND $__timeFilter(at) ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 8,
+      "title": "Launchers active in the last 30 days",
+      "description": "Launchers of any version that installed or updated an addon in the 30 days before each hourly poll and send an installation ID; the number on /stats.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT at AS time, active_30d AS \"active launchers (30 days)\" FROM launcher_counts WHERE $__timeFilter(at) ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
     }
   ]
 }

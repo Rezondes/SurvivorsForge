@@ -7,11 +7,23 @@ use sqlx::PgPool;
 /// The hourly job that copies the counts from GitHub.
 pub const POLL: &str = "poll_launcher_releases";
 
-/// Replaces the stored counts with GitHub's. On a GitHub error the old ones stay.
+/// Replaces the stored counts with GitHub's. On a GitHub error the old ones stay. Each run also
+/// keeps a row in `launcher_counts` for the curves in Grafana.
 pub async fn poll(state: &AppState) -> Result<(), String> {
+    let now = (state.clock)();
+    // Counted like `active_installations_30d` on /v1/stats, and kept even when GitHub fails.
+    sqlx::query(
+        "INSERT INTO launcher_counts (at, active_30d)
+         SELECT $1, count(DISTINCT install_id) FROM telemetry_events WHERE install_id IS NOT NULL AND day >= $2
+         ON CONFLICT (at) DO UPDATE SET active_30d = EXCLUDED.active_30d",
+    )
+    .bind(now)
+    .bind((now - chrono::TimeDelta::days(30)).date_naive())
+    .execute(&state.pool)
+    .await
+    .map_err(|e| e.to_string())?;
     let repo = state.github.repo_by_name(None, &state.config.launcher_repo).await.map_err(|e| e.to_string())?;
     let releases = state.github.releases(None, repo.id).await.map_err(|e| e.to_string())?;
-    let now = (state.clock)();
     let mut tx = state.pool.begin().await.map_err(|e| e.to_string())?;
     // Everything at once, so a release deleted on GitHub leaves the totals too.
     sqlx::query("DELETE FROM launcher_releases").execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -32,6 +44,11 @@ pub async fn poll(state: &AppState) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         }
     }
+    sqlx::query("UPDATE launcher_counts SET downloads = (SELECT coalesce(sum(download_count), 0) FROM launcher_releases) WHERE at = $1")
+    .bind(now)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())
 }
 
