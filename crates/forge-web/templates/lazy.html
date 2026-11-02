@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{# A page whose content comes from GitHub: everything known at once is here, the rest loads into
+   the skeleton (the same URL again, of which htmx keeps #lazy-content). #}
+{% block title %}{{ title }} - SurvivorsForge{% endblock %}
+{% block content %}
+{% if let Some((href, label)) = back %}<p class="back"><a href="{{ href }}">{{ label }}</a></p>{% endif %}
+<h1>{{ place.name }}</h1>
+{% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
+
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% if let Some(d) = done %}<div class="notice ok" role="status">{{ d }}</div>{% endif %}
+
+<div class="lazy" data-lazy hx-get="{{ url }}" hx-trigger="load" hx-select="#lazy-content" hx-swap="outerHTML" hx-request='{"timeout": 15000}' aria-busy="true">
+  <p class="sr-only" role="status">Loading from GitHub</p>
+  <div class="skeleton" aria-hidden="true">
+    {% if skeleton == "list" %}
+    <span class="skeleton-line w-35 tall"></span>
+    <div class="skeleton-block bar"></div>
+    <div class="panel skeleton-rows">
+      {% for _ in 0..5 %}<div class="skeleton-row"><span class="skeleton-line w-60"></span><span class="skeleton-line w-35"></span></div>{% endfor %}
+    </div>
+    {% else if skeleton == "post" %}
+    <span class="skeleton-line w-50 tall"></span>
+    <div class="panel"><span class="skeleton-line w-25"></span><span class="skeleton-line w-90"></span><span class="skeleton-line w-80"></span><span class="skeleton-line w-60"></span></div>
+    <div class="panel"><span class="skeleton-line w-25"></span><span class="skeleton-line w-70"></span></div>
+    {% else %}
+    <div class="panel"><span class="skeleton-line w-35"></span><span class="skeleton-block field"></span><span class="skeleton-block area"></span></div>
+    {% endif %}
+  </div>
+  <noscript><p><a href="{{ full_url }}">Show the page</a></p></noscript>
+</div>
+{% endblock %}

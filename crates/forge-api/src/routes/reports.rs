@@ -1,4 +1,4 @@
-//! `/v1/reports`: logged-in users report addons, versions and images; admins work the queue.
+//! `/v1/reports`: logged-in users report addons, versions, images and comments; admins work the queue.
 
 use crate::app::AppState;
 use crate::audit::{self, Entry};
@@ -28,7 +28,7 @@ pub fn note_required(note: &str) -> ApiResult<&str> {
 #[derive(Deserialize)]
 pub struct NewReport {
     target_type: String,
-    /// The slug for an addon, the numeric id for a version or an image.
+    /// The slug for an addon, the numeric id for a version, an image or a comment.
     target: String,
     reason: String,
     #[serde(default)]
@@ -49,7 +49,11 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, Json(body)
             let table = if body.target_type == "version" { "versions" } else { "images" };
             sqlx::query_scalar(&format!("SELECT id FROM {table} WHERE id = $1")).bind(id).fetch_optional(&state.pool).await?
         }
-        _ => return Err(invalid("invalid_target", "target_type is addon, version or image")),
+        "comment" => {
+            let id: i64 = body.target.parse().map_err(|_| ApiError::not_found())?;
+            sqlx::query_scalar("SELECT id FROM addon_comments WHERE id = $1 AND deleted_at IS NULL").bind(id).fetch_optional(&state.pool).await?
+        }
+        _ => return Err(invalid("invalid_target", "target_type is addon, version, image or comment")),
     };
     let target_id = target_id.ok_or_else(ApiError::not_found)?;
     let now = (state.clock)();
@@ -85,7 +89,9 @@ pub async fn queue(State(state): State<AppState>, StaffUser(_): StaffUser) -> Ap
                     'addon', CASE r.target_type
                                  WHEN 'addon' THEN (SELECT slug FROM addons WHERE id = r.target_id)
                                  WHEN 'version' THEN (SELECT a.slug FROM versions v JOIN addons a ON a.id = v.addon_id WHERE v.id = r.target_id)
-                                 ELSE (SELECT a.slug FROM images i JOIN addons a ON a.id = i.addon_id WHERE i.id = r.target_id) END,
+                                 WHEN 'image' THEN (SELECT a.slug FROM images i JOIN addons a ON a.id = i.addon_id WHERE i.id = r.target_id)
+                                 ELSE (SELECT a.slug FROM addon_comments c JOIN addons a ON a.id = c.addon_id WHERE c.id = r.target_id) END,
+                    'comment', CASE WHEN r.target_type = 'comment' THEN (SELECT CASE WHEN deleted_at IS NULL THEN body ELSE '' END FROM addon_comments WHERE id = r.target_id) END,
                     'reason', r.reason, 'text', r.text, 'reporter', u.login, 'created_at', r.created_at)
                 ORDER BY r.created_at, r.id), '[]')
          FROM reports r JOIN users u ON u.id = r.reporter_id WHERE r.status = 'open'",

@@ -614,3 +614,75 @@ button.suggestion:hover { border-color: var(--outline-hover); background: var(--
 .doc-list .panel { margin: 0; }
 .doc-list h2 { margin: 0 0 8px; font-size: 1.25rem; }
 .doc-list p { margin: 0; }
+
+/* Addon tabs (Overview, Issues, Versions): links between the addon's pages, underlined like the
+   range toggle so they read as one place with sections, not as buttons. */
+.addon-tabs { display: flex; gap: 4px; margin: 16px 0 20px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.addon-tabs a { padding: 10px 16px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.addon-tabs a:hover { color: var(--gold); }
+.addon-tabs a[aria-current="page"] { color: var(--gold-bright); box-shadow: inset 0 -2px 0 var(--gold); }
+
+/* Issues: a list of rows, a filter bar with a status toggle and search, posts with replies. */
+.issues-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+.issues-head h2 { margin: 0 0 4px; }
+.issue-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.issue-filter input[type="search"] { flex: 1 1 240px; }
+.segmented { display: inline-flex; border: 1px solid var(--outline); border-radius: var(--radius); overflow: hidden; }
+.segmented a { padding: 6px 14px; color: var(--muted); text-decoration: none; }
+.segmented a + a { border-left: 1px solid var(--line); }
+.segmented a:hover { background: var(--control); color: var(--gold); }
+.segmented a[aria-current="page"] { background: var(--control); color: var(--gold-bright); box-shadow: inset 0 -2px 0 var(--gold); }
+.segmented .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+fieldset.segmented { display: flex; gap: 16px; padding: 8px 12px; margin: 0 0 12px; }
+fieldset.segmented legend { padding: 0 4px; color: var(--muted); font-size: var(--meta); }
+.issue-rows { list-style: none; margin: 0; padding: 0; }
+.issue-rows li + li { border-top: 1px solid var(--line); }
+.issue-rows a { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 8px; color: var(--text); text-decoration: none; }
+.issue-rows a:hover { background: var(--row-hover); }
+.issue-title { color: var(--gold-bright); }
+.issue-meta { grid-column: 1; font-size: var(--meta); }
+.issue-badges { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+p.issue-badges { margin: 4px 0 0; justify-content: flex-start; }
+.issue-head h2 { margin: 0; }
+.post-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.post-head .avatar { border-radius: 50%; }
+.post-body { padding-top: 8px; overflow-wrap: anywhere; }
+.post-tools { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); font-size: var(--meta); }
+.post-tools summary { cursor: pointer; color: var(--muted); }
+.post-tools details[open] { flex-basis: 100%; }
+@media (max-width: 560px) {
+  .issues-head { flex-direction: column; }
+  .issue-rows a { grid-template-columns: 1fr; }
+  .issue-badges { grid-column: 1; grid-row: auto; justify-content: flex-start; }
+}
+
+/* Comments: posts like the issue replies; a reply is indented under its comment, at most three
+   steps. A reported comment in the admin queue is set off with a gold rule. */
+.comments { display: grid; gap: 12px; margin-top: 12px; }
+.comments .panel { margin: 0; }
+.comment.depth-1 { margin-left: 24px; }
+.comment.depth-2 { margin-left: 48px; }
+.comment.depth-3 { margin-left: 72px; }
+.comment .post-body { white-space: pre-wrap; }
+.reported-comment { margin: 8px 0 0; padding: 4px 12px; border-left: 3px solid var(--gold); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .comment.depth-1, .comment.depth-2, .comment.depth-3 { margin-left: 12px; }
+}
+
+/* Skeletons stand where GitHub's answer will be. They show only after 150 ms, so a fast answer
+   does not flash them; they pulse unless the visitor asks for less motion. */
+.skeleton { display: grid; gap: 12px; opacity: 0; animation: skeleton-in 0s linear 150ms forwards; }
+.skeleton .panel { display: grid; gap: 10px; margin: 0; }
+.skeleton-rows { padding-top: 4px; }
+.skeleton-row { display: grid; gap: 6px; padding: 10px 8px; }
+.skeleton-row + .skeleton-row { border-top: 1px solid var(--line); }
+.skeleton-line, .skeleton-block { display: block; border-radius: var(--radius); background: var(--line); animation: skeleton-pulse 1.4s ease-in-out infinite; }
+.skeleton-line { height: 12px; }
+.skeleton-line.tall { height: 22px; }
+.skeleton-block.bar { height: 44px; }
+.skeleton-block.field { height: 40px; }
+.skeleton-block.area { height: 160px; }
+.w-25 { width: 25%; } .w-35 { width: 35%; } .w-50 { width: 50%; } .w-60 { width: 60%; } .w-70 { width: 70%; } .w-80 { width: 80%; } .w-90 { width: 90%; }
+@keyframes skeleton-in { to { opacity: 1; } }
+@keyframes skeleton-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-line, .skeleton-block { animation: none; } }

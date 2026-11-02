@@ -69,9 +69,17 @@ impl ApiClient {
 
     /// Calls the API; a `2xx` answer comes back as JSON (`Null` for an empty body).
     pub async fn call(&self, method: Method, path: &str, token: Option<&str>, body: Option<&Value>) -> ApiResult<Value> {
+        self.call_as(method, path, token, None, body).await
+    }
+
+    /// Like `call`, with the visitor's GitHub token for writes on GitHub as them.
+    pub async fn call_as(&self, method: Method, path: &str, token: Option<&str>, github_token: Option<&str>, body: Option<&Value>) -> ApiResult<Value> {
         let mut request = forwarded(self.http.request(method, format!("{}{path}", self.base)));
         if let Some(token) = token {
             request = request.bearer_auth(token);
+        }
+        if let Some(github_token) = github_token {
+            request = request.header("x-github-token", github_token);
         }
         if let Some(body) = body {
             request = request.json(body);

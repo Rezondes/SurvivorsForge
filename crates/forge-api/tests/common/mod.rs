@@ -73,7 +73,15 @@ impl TestApp {
     }
 
     pub async fn call(&self, method: &str, uri: &str, token: Option<&str>, body: Option<serde_json::Value>) -> Reply {
+        self.call_as(method, uri, token, None, body).await
+    }
+
+    /// Like `call`, with the user's GitHub token in `X-GitHub-Token` as the website sends it.
+    pub async fn call_as(&self, method: &str, uri: &str, token: Option<&str>, github_token: Option<&str>, body: Option<serde_json::Value>) -> Reply {
         let mut request = Request::builder().method(method).uri(uri);
+        if let Some(github_token) = github_token {
+            request = request.header("x-github-token", github_token);
+        }
         if let Some(token) = token {
             request = request.header("authorization", format!("Bearer {token}"));
         }

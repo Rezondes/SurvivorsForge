@@ -39,10 +39,15 @@ On GitHub: *Settings → Developer settings → GitHub Apps → New GitHub App*.
 | Request user authorization (OAuth) during installation | off |
 | Webhook | active, URL `https://api.forge.example.com/v1/github/webhook` |
 | Webhook secret | a long random value (`openssl rand -hex 32`), becomes `GITHUB_WEBHOOK_SECRET` |
-| Repository permissions | `Contents: Read-only`, `Metadata: Read-only` |
+| Repository permissions | `Contents: Read-only`, `Metadata: Read-only`, `Issues: Read and write` (players post issues on the Issues tab as themselves) |
+| Expire user authorization tokens | on (the default); the website renews them through the API |
 | Account permissions | none |
 | Subscribe to events | `Release`, `Create`, `Repository` (`Installation` and `Installation repositories` are always sent) |
 | Where can this GitHub App be installed? | Any account |
+
+An App that already runs and gets `Issues: Read and write` later: GitHub asks every account that
+installed it to accept the new permission. Until an owner accepts, the Issues tab of their addons
+shows the issues and links to GitHub for new ones; their edit page says so.
 
 After saving, note from the App's settings page:
 
@@ -109,7 +114,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `METRICS_BIND_ADDR` | no | Address of the Prometheus metrics of the API and the worker; never published | `0.0.0.0:9100` |
 | `MIGRATE_ON_START` | no | Apply database migrations when the API starts | `true` |
 | `RATE_LIMIT_PER_MINUTE` | no | Requests per minute and client IP, for the API and the website each | `120` |
-| `CACHE_SECONDS` | no | How long public answers stay in the API's memory cache; a write through the API empties it, worker changes show after this time; `0` turns it off | `60` |
+| `CACHE_SECONDS` | no | How long public answers stay in the API's memory cache; a write through the API empties it, worker changes and issues written on GitHub itself show after this time; `0` turns it off | `60` |
 | `TRUSTED_PROXIES` | no, set by Compose | Proxies whose `X-Forwarded-For` counts | API: `FORGE_CADDY_IP` and `FORGE_WEB_IP`; website: `FORGE_CADDY_IP` |
 | `WEBSITE_IP` | no, set by Compose | The website's address; it limits each visitor itself, so the API does not count its requests again | `FORGE_WEB_IP` |
 | `SOURCE_CHECK_BATCH` | no | Versions compared with GitHub per 6-hourly run | `200` |

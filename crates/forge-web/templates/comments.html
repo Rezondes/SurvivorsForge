@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Comments · {{ name }} - SurvivorsForge{% endblock %}
+{% block content %}
+<h1>{{ name }}</h1>
+{% let tab = "comments" %}{% include "addon_tabs.html" %}
+
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% if let Some(d) = done %}<div class="notice ok" role="status">{{ d }}</div>{% endif %}
+
+{% if off %}
+<div class="notice">The creator has not turned on comments for this addon.</div>
+{% else if user.is_some() %}
+<form class="panel" method="post" action="/addons/{{ slug }}/comments">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="new-comment">Your comment</label>
+  <textarea id="new-comment" name="body" rows="4" maxlength="5000" required placeholder="Thanks, questions, ideas: bugs go to the Issues tab."></textarea>
+  <div class="actions"><button type="submit">Post comment</button></div>
+</form>
+{% else %}
+<div class="notice"><a href="/login">Log in with GitHub</a> to write a comment.</div>
+{% endif %}
+
+{% if comments.is_empty() && !off %}<p class="muted">No comments yet.</p>{% endif %}
+<div class="comments">
+{% for c in comments %}
+<article class="panel post comment depth-{{ c.depth }}" id="comment-{{ c.id }}">
+  {% if c.deleted %}
+  <p class="muted">Deleted comment.</p>
+  {% else %}
+  <header class="post-head">
+    {% if c.avatar_url != "" %}<img class="avatar" src="{{ c.avatar_url }}" alt="" width="28" height="28" loading="lazy">{% endif %}
+    <strong>{{ c.author }}</strong> <span class="muted"><a href="#comment-{{ c.id }}">{{ c.created }}</a>{% if c.edited %} · edited{% endif %}</span>
+  </header>
+  <div class="post-body">{{ c.body }}</div>
+  {% if user.is_some() %}
+  <div class="post-tools">
+    <details>
+      <summary>Reply</summary>
+      <form method="post" action="/addons/{{ slug }}/comments">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="parent_id" value="{{ c.id }}">
+        <label for="reply-{{ c.id }}" class="sr-only">Reply to {{ c.author }}</label>
+        <textarea id="reply-{{ c.id }}" name="body" rows="3" maxlength="5000" required></textarea>
+        <button type="submit">Post reply</button>
+      </form>
+    </details>
+    {% if c.can_edit %}
+    <details>
+      <summary>Edit</summary>
+      <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/edit">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="edit-{{ c.id }}" class="sr-only">Comment</label>
+        <textarea id="edit-{{ c.id }}" name="body" rows="4" maxlength="5000" required>{{ c.body }}</textarea>
+        <button type="submit">Save</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if c.can_delete %}
+    <details>
+      <summary>Delete</summary>
+      <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <p>Replies stay, the comment shows as deleted.</p>
+        <button type="submit" class="danger">Delete comment</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if c.can_report %}
+    <details>
+      <summary>Report</summary>
+      <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/report">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="reason-{{ c.id }}">Reason</label>
+        <select id="reason-{{ c.id }}" name="reason" required>
+          {% for (value, label) in reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <label for="report-text-{{ c.id }}">For the admins (optional)</label>
+        <textarea id="report-text-{{ c.id }}" name="text" rows="2" maxlength="2000"></textarea>
+        <button type="submit" class="secondary">Send report</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</article>
+{% endfor %}
+</div>
+{% if let Some(href) = older %}<p><a class="button secondary" href="{{ href }}">Older comments</a></p>{% endif %}
+{% endblock %}

@@ -71,6 +71,12 @@ impl TestWeb {
         self.request(request).await
     }
 
+    /// Like `get`, as htmx asks for the part of a page that loads after it.
+    pub async fn get_htmx(&mut self, uri: &str) -> Page {
+        let request = Request::get(uri).header("cookie", self.cookie_header()).header("hx-request", "true").body(Body::empty()).unwrap();
+        self.request(request).await
+    }
+
     /// A form post from our own origin with the visitor's CSRF token.
     pub async fn post_form(&mut self, uri: &str, fields: &[(&str, &str)]) -> Page {
         let token = self.csrf().await;
@@ -142,6 +148,20 @@ impl TestWeb {
         self.get("/login").await;
         let page = self.get("/auth/callback?code=abc").await;
         assert_eq!(page.status, StatusCode::SEE_OTHER, "{}", page.body);
+    }
+}
+
+impl TestWeb {
+    /// Like `login_as`, with the GitHub token the API hands over when the website asks for it.
+    pub async fn login_with_github(&mut self, token: &str, me: Value, github_token: Value) {
+        Mock::given(method("POST"))
+            .and(path("/v1/auth/exchange"))
+            .and(wiremock::matchers::body_partial_json(json!({ "github_token": true })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "token": token, "expires_at": "2030-01-01T00:00:00Z", "github_token": github_token })))
+            .with_priority(1)
+            .mount(&self.api)
+            .await;
+        self.login_as(token, me).await;
     }
 }
 

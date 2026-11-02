@@ -93,6 +93,42 @@ async fn contributor_sees_only_allowed_sections() {
 }
 
 #[tokio::test]
+async fn only_the_owner_switches_issues_and_comments() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/edit").await;
+    assert!(page.body.contains(r#"name="comments" value="1">"#) && page.body.contains(r#"name="issues" value="1">"#), "both off until turned on: {}", page.body);
+    Mock::given(method("PATCH"))
+        .and(path("/v1/addons/lucky"))
+        .and(body_partial_json(json!({ "comments_enabled": false, "issues_enabled": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let saved = web.post_form("/addons/lucky/edit", &[("tabs_form", "1"), ("issues", "1")]).await;
+    assert!(saved.body.contains("Saved."), "an unticked box turns its tab off: {}", saved.body);
+
+    let mut contributor = logged_in(json!({ "owner": false, "edit_description": true, "edit_images": false })).await;
+    assert!(!contributor.get("/addons/lucky/edit").await.body.contains(r#"name="tabs_form""#));
+}
+
+#[tokio::test]
+async fn the_issues_note_loads_after_the_edit_page() {
+    let mut web = logged_in(owner()).await;
+    assert!(!web.get("/addons/lucky/edit").await.body.contains("/edit/issues-note"), "no note while the tab is off");
+    Mock::given(method("GET"))
+        .and(path("/v1/addons/lucky"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "slug": "lucky", "name": "Lucky", "issues_enabled": true })))
+        .with_priority(1)
+        .mount(&web.api)
+        .await;
+    let page = web.get("/addons/lucky/edit").await;
+    assert!(page.body.contains(r#"hx-get="/addons/lucky/edit/issues-note""#) && !page.body.contains("<strong>Issues.</strong>"), "{}", page.body);
+    get_json(&web, "/v1/addons/lucky/issues", json!({ "issues_enabled": true, "can_write": false })).await;
+    let note = web.get("/addons/lucky/edit/issues-note").await.body;
+    assert!(note.trim_start().starts_with(r#"<div id="lazy-content" class="notice warn"><strong>Issues.</strong> Players can read"#), "{note}");
+}
+
+#[tokio::test]
 async fn owner_manages_members() {
     let mut web = logged_in(owner()).await;
     get_json(&web, "/v1/addons/lucky/members", json!([{ "github_id": 2, "login": "bob", "can_edit_description": true, "can_edit_images": false }])).await;

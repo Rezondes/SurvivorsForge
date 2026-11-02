@@ -153,6 +153,7 @@ const AUDIT_RESOLVED: &str = "resolved AS (
                    WHEN 'report' THEN 'report ' || l.target_id || coalesce(' on ' || ra.name, '')
                    WHEN 'game_version' THEN coalesce(g.name, l.details->>'name', 'game version ' || l.target_id)
                    WHEN 'category' THEN l.target_id
+                   WHEN 'comment' THEN 'comment ' || l.target_id || coalesce(' on ' || (l.details->>'addon'), '')
                    ELSE l.target_type || ' ' || l.target_id END,
                'addon_slug', coalesce(va.slug, aa.slug, ra.slug), 'addon_name', coalesce(va.name, aa.name, ra.name),
                'tag', coalesce(v.tag, rv.tag), 'login', tu.login, 'report_reason', r.reason) AS target
@@ -165,7 +166,9 @@ const AUDIT_RESOLVED: &str = "resolved AS (
     LEFT JOIN reports r ON l.target_type = 'report' AND r.id::text = l.target_id
     LEFT JOIN versions rv ON r.target_type = 'version' AND rv.id = r.target_id
     LEFT JOIN images ri ON r.target_type = 'image' AND ri.id = r.target_id
-    LEFT JOIN addons ra ON ra.id = CASE r.target_type WHEN 'addon' THEN r.target_id WHEN 'version' THEN rv.addon_id WHEN 'image' THEN ri.addon_id END
+    LEFT JOIN addon_comments rc ON r.target_type = 'comment' AND rc.id = r.target_id
+    LEFT JOIN addons ra ON ra.id = CASE r.target_type WHEN 'addon' THEN r.target_id WHEN 'version' THEN rv.addon_id WHEN 'image' THEN ri.addon_id
+                                                      WHEN 'comment' THEN rc.addon_id END
     LEFT JOIN game_versions g ON l.target_type = 'game_version' AND g.id::text = l.target_id)";
 
 /// One row of `resolved`, as `h`, as JSON.

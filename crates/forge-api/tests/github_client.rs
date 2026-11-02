@@ -218,7 +218,7 @@ async fn oauth_user_trades_code_and_reads_user() {
     Mock::given(method("POST"))
         .and(path("/login/oauth/access_token"))
         .and(wiremock::matchers::body_partial_json(json!({ "code": "abc", "code_verifier": "ver", "client_secret": "sec" })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "access_token": "gho_user" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "access_token": "gho_user", "expires_in": 28800, "refresh_token": "ghr_1", "refresh_token_expires_in": 15897600 })))
         .mount(&server)
         .await;
     Mock::given(method("POST"))
@@ -237,9 +237,21 @@ async fn oauth_user_trades_code_and_reads_user() {
         client_id: "cid".into(),
         client_secret: "sec".into(),
     });
-    let user = gh.oauth_user("abc", "ver", "https://api.test/cb").await.unwrap();
+    let (user, token) = gh.oauth_user("abc", "ver", "https://api.test/cb").await.unwrap();
     assert_eq!((user.id, user.login.as_str()), (9, "nine"));
-    assert_eq!(gh.oauth_user("wrong", "ver", "https://api.test/cb").await, Err(GitHubError::Auth("bad_verification_code".into())));
+    assert_eq!((token.access_token.as_str(), token.refresh_token.as_deref()), ("gho_user", Some("ghr_1")), "kept for writes as the user");
+    assert_eq!(token.expires_at, Some(t0() + chrono::Duration::hours(8)));
+    assert!(!format!("{token:?}").contains("gho_user"), "Debug never prints the token");
+    Mock::given(method("POST"))
+        .and(path("/login/oauth/access_token"))
+        .and(wiremock::matchers::body_partial_json(json!({ "grant_type": "refresh_token", "refresh_token": "ghr_1", "client_secret": "sec" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "access_token": "gho_new", "expires_in": 28800, "refresh_token": "ghr_2" })))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    let renewed = gh.refresh_user_token("ghr_1").await.unwrap();
+    assert_eq!((renewed.access_token.as_str(), renewed.refresh_token.as_deref()), ("gho_new", Some("ghr_2")));
+    assert_eq!(gh.oauth_user("wrong", "ver", "https://api.test/cb").await.map(|(u, _)| u), Err(GitHubError::Auth("bad_verification_code".into())));
 }
 
 #[tokio::test]
@@ -281,4 +293,26 @@ async fn without_installation_reads_public_api_without_token() {
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1, "no token request");
     assert!(!requests[0].headers.contains_key("authorization"));
+}
+
+#[tokio::test]
+async fn issue_rights_come_fresh_from_the_installation() {
+    let server = MockServer::start().await;
+    let now = Arc::new(Mutex::new(t0()));
+    let gh = client(&server, now.clone());
+    Mock::given(method("GET"))
+        .and(path("/app/installations/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": 1, "permissions": { "contents": "read" } })))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/app/installations/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": 1, "permissions": { "contents": "read", "issues": "write" } })))
+        .mount(&server)
+        .await;
+    assert!(!gh.issues_writable(1).await.unwrap());
+    assert!(!gh.issues_writable(1).await.unwrap(), "kept for a minute");
+    *now.lock().unwrap() += chrono::Duration::seconds(61);
+    assert!(gh.issues_writable(1).await.unwrap(), "the owner accepted the permission meanwhile");
 }

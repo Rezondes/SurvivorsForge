@@ -135,7 +135,8 @@ async fn escapes_and_single_safe_use() {
             safe_uses.push(line.trim().to_string());
         }
     }
-    assert!(safe_uses.iter().all(|l| l.contains("description_html|safe")), "{safe_uses:?}");
+    // Only HTML the API built with forge_core::markdown (ammonia): addon descriptions, issue texts.
+    assert!(safe_uses.iter().all(|l| l.contains("description_html|safe") || l.contains("body_html|safe")), "{safe_uses:?}");
 }
 
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {

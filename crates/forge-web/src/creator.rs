@@ -467,6 +467,10 @@ pub struct EditForm {
     pub folders: Option<String>,
     pub summary: Option<String>,
     pub description_md: Option<String>,
+    /// Sent by the Tabs form, whose checkboxes `comments` and `issues` are missing when unticked.
+    pub tabs_form: Option<String>,
+    pub comments: Option<String>,
+    pub issues: Option<String>,
 }
 
 async fn edit_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, errors: Errors, saved: bool) -> WebResult<Html<String>> {
@@ -489,7 +493,45 @@ async fn edit_page(state: &AppState, user: Visitor, token: &str, csrf: String, s
         perms: p,
         errors,
         saved,
+        comments_enabled: a["comments_enabled"] == true,
+        issues_enabled: a["issues_enabled"] == true,
     }))
+}
+
+/// What the Issues tab offers players, for the edit page; loaded after it, as it asks GitHub.
+#[derive(askama::Template)]
+#[template(path = "creator/issues_note.html")]
+pub struct IssuesNote {
+    pub slug: String,
+    pub ok: bool,
+    pub text: String,
+    /// The App's page on GitHub, where owners accept its permissions.
+    pub install_url: String,
+}
+
+/// `GET /addons/{slug}/edit/issues-note`: the note, or nothing while the tab is off or GitHub is
+/// silent.
+pub async fn issues_note_part(State(state): State<AppState>, jar: PrivateCookieJar, Path(slug): Path<String>) -> WebResult<Html<String>> {
+    me(&state, &jar).await?;
+    Ok(match issues_note(&state, &slug).await {
+        Some((ok, text)) => render(&IssuesNote { slug, ok, text, install_url: state.install_url() }),
+        None => Html(String::new()),
+    })
+}
+
+/// What the Issues tab offers players of this addon, for its owner; nothing while it is off.
+async fn issues_note(state: &AppState, slug: &str) -> Option<(bool, String)> {
+    let answer = state.api.get(&format!("/v1/addons/{}/issues?state=open", crate::public::seg(slug)), None).await.ok()?;
+    if answer["issues_here"] == false {
+        return None;
+    }
+    Some(if answer["issues_enabled"] == false {
+        (false, "Issues are switched off for the repo on GitHub, so the Issues tab stays empty. Turn them on in the repo's settings to get bug reports.".into())
+    } else if answer["can_write"] != true {
+        (false, "Players can read the issues here but post them on GitHub. To let them post from the Issues tab, accept the permission Issues: Read & write of the SurvivorsForge App on GitHub.".into())
+    } else {
+        (true, "Players post bug reports, feature requests and questions on the Issues tab. They land in your repo's issues under each player's GitHub account.".into())
+    })
 }
 
 pub async fn edit_addon(
@@ -533,6 +575,10 @@ pub async fn save_addon(
     }
     if let Some(f) = &form.folders {
         body.insert("folders".into(), json!(folders_of(f)));
+    }
+    if form.tabs_form.is_some() {
+        body.insert("comments_enabled".into(), json!(form.comments.is_some()));
+        body.insert("issues_enabled".into(), json!(form.issues.is_some()));
     }
     match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}"), Some(&token), Some(&Value::Object(body))).await {
         Ok(_) => Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), true).await?.into_response()),

@@ -4,6 +4,7 @@
 <h1>Edit {{ name }}</h1>
 {% let section = "details" %}{% include "creator/nav.html" %}
 {% if saved %}<div class="notice ok" role="status">Saved.</div>{% endif %}
+{% if issues_enabled %}<div data-lazy hx-get="/addons/{{ slug }}/edit/issues-note" hx-trigger="load" hx-select="#lazy-content" hx-swap="outerHTML" hx-request='{"timeout": 15000}'></div>{% endif %}
 {% if errors.get("form") != "" %}<div class="notice bad" role="alert">{{ errors.get("form") }}</div>{% endif %}
 
 {% if perms.owner %}
@@ -29,6 +30,17 @@
   <textarea id="folders" name="folders" rows="3">{{ folders }}</textarea>
   {% if errors.get("folders") != "" %}<p class="field-error">{{ errors.get("folders") }}</p>{% endif %}
   <p><button type="submit">Save details</button></p>
+</form>
+
+<form class="panel" method="post" action="/addons/{{ slug }}/edit">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="tabs_form" value="1">
+  <h2>Issues and comments</h2>
+  <label class="check"><input type="checkbox" name="issues" value="1"{% if issues_enabled %} checked{% endif %}> The <a href="/addons/{{ slug }}/issues">Issues tab</a> shows your repo's GitHub issues, and players post there</label>
+  <p class="muted">Off, the tab only links to your repo's issues on GitHub.</p>
+  <label class="check"><input type="checkbox" name="comments" value="1"{% if comments_enabled %} checked{% endif %}> Players can write comments on the <a href="/addons/{{ slug }}/comments">Comments tab</a></label>
+  <p class="muted">Off, the tab says so. Comments written while it was on are hidden, not deleted, and show again when you turn it back on.</p>
+  <p><button type="submit">Save</button></p>
 </form>
 {% endif %}
 

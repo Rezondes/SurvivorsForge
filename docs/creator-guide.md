@@ -232,6 +232,23 @@ On your addon's edit pages you can also:
 - name libraries or other addons it needs (**Dependencies**; required ones are installed with it),
 - let other GitHub users edit the description or images (**Contributors**).
 
+Players report bugs, wish for features and ask questions on your addon's **Issues** tab, once you
+turn it on: tick **Issues** under **Issues and comments** on your addon's edit page. Until then the
+tab only links to your repo's issues on GitHub. Turned on, it shows your repo's GitHub issues, and
+what players post there lands in your repo's issues under their own GitHub account, labelled `bug`,
+`enhancement` or `question`. You answer on GitHub or on the tab, as you like. For
+players to post from the tab, the SurvivorsForge App needs the permission **Issues: Read and
+write** on your repo: if GitHub asks you to accept it (an e-mail, or **Settings > Applications >
+Installed GitHub Apps**), accept it. Your addon's edit page shows whether it works. Issues must be
+switched on in the repo's settings.
+
+Everything else goes on the **Comments** tab, once you tick **Comments** there too: thanks, tips,
+questions to other players. Comments
+stay on SurvivorsForge, not on GitHub. Players reply under a comment and change only their own.
+You and your contributors who edit the description can delete any comment on your addon; that is
+recorded for the admins. A comment that breaks the rules can be reported to the admins. Unticking
+**Comments** again hides the comments without deleting them; they come back when you tick it again.
+
 ## 8. When something goes wrong
 
 | Problem | Fix |

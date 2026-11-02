@@ -30,10 +30,14 @@ pub struct AddonRow {
     pub description_md: String,
     pub blocked_at: Option<DateTime<Utc>>,
     pub block_reason: Option<String>,
+    /// The owner turns the Comments tab on.
+    pub comments_enabled: bool,
+    /// The owner turns the Issues tab on; until then it only links to GitHub.
+    pub issues_enabled: bool,
 }
 
 const ADDON_COLUMNS: &str = "id, slug::text AS slug, name, owner_id, repo_id, repo_full_name, installation_id, source_type,
-    asset_pattern, category::text AS category, summary, description_md, blocked_at, block_reason";
+    asset_pattern, category::text AS category, summary, description_md, blocked_at, block_reason, comments_enabled, issues_enabled";
 
 /// The addon behind `slug`, unless it is deleted.
 pub async fn load_addon(pool: &PgPool, slug: &str) -> ApiResult<AddonRow> {
@@ -138,7 +142,7 @@ pub async fn addon_view(state: &AppState, id: i64) -> ApiResult<Value> {
         "SELECT json_build_object(
              'slug', a.slug, 'name', a.name, 'summary', a.summary, 'description_md', a.description_md,
              'category', a.category, 'repo', a.repo_full_name, 'source_type', a.source_type,
-             'asset_pattern', a.asset_pattern,
+             'asset_pattern', a.asset_pattern, 'comments_enabled', a.comments_enabled, 'issues_enabled', a.issues_enabled,
              'folders', (SELECT coalesce(json_agg(f.folder ORDER BY f.folder), '[]') FROM addon_folders f WHERE f.addon_id = a.id),
              'owner', CASE WHEN u.id IS NULL THEN NULL
                            ELSE json_build_object('github_id', u.github_id, 'login', u.login, 'avatar_url', u.avatar_url) END,
@@ -335,6 +339,8 @@ pub struct PatchAddon {
     source_type: Option<String>,
     asset_pattern: Option<String>,
     folders: Option<Vec<String>>,
+    comments_enabled: Option<bool>,
+    issues_enabled: Option<bool>,
 }
 
 /// What `user` may do with `addon`.
@@ -369,6 +375,8 @@ fn touches_owner_fields(body: &PatchAddon) -> bool {
         || body.source_type.is_some()
         || body.asset_pattern.is_some()
         || body.folders.is_some()
+        || body.comments_enabled.is_some()
+        || body.issues_enabled.is_some()
 }
 
 pub async fn update(
@@ -415,7 +423,7 @@ pub async fn update(
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "UPDATE addons SET name = $2, summary = $3, description_md = $4, category = $5, repo_id = $6, repo_full_name = $7,
-                installation_id = $8, source_type = $9, asset_pattern = $10, updated_at = $11
+                installation_id = $8, source_type = $9, asset_pattern = $10, updated_at = $11, comments_enabled = $12, issues_enabled = $13
          WHERE id = $1",
     )
     .bind(addon.id)
@@ -429,6 +437,8 @@ pub async fn update(
     .bind(&source_type)
     .bind(&pattern)
     .bind((state.clock)())
+    .bind(body.comments_enabled.unwrap_or(addon.comments_enabled))
+    .bind(body.issues_enabled.unwrap_or(addon.issues_enabled))
     .execute(&mut *tx)
     .await
     .map_err(map_unique)?;

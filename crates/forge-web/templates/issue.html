@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ issue.title }} · #{{ issue.number }} · {{ place.name }} - SurvivorsForge{% endblock %}
+{% block content %}
+<p class="back"><a href="{{ place.base }}/issues">Issues of {{ place.name }}</a></p>
+<h1>{{ place.name }}</h1>
+{% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
+
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% if let Some(d) = done %}<div class="notice ok" role="status">{{ d }}</div>{% endif %}
+
+<div id="lazy-content">
+{% let badge = issue.badge() %}
+<header class="issue-head">
+  <h2>{{ issue.title }} <span class="muted">#{{ issue.number }}</span></h2>
+  <p class="issue-badges">{% if issue.kind_label() != "" %}<span class="badge">{{ issue.kind_label() }}</span>{% endif %}<span class="badge {{ badge.0 }}">{{ badge.1 }}</span> <a href="{{ issue.html_url }}" rel="external noopener">On GitHub</a></p>
+</header>
+
+<article class="panel post">
+  <header class="post-head">
+    {% if issue.author.avatar_url != "" %}<img class="avatar" src="{{ issue.author.avatar_url }}" alt="" width="28" height="28">{% endif %}
+    <strong>{{ issue.author.login }}</strong> <span class="muted">reported {{ issue.created }}{% if issue.edited %} · edited{% endif %}</span>
+  </header>
+  <div class="post-body description">{% if issue.body_html.trim().is_empty() %}<p class="muted">No description.</p>{% else %}{{ issue.body_html|safe }}{% endif %}</div>
+  {% if issue.mine && frame.write == Write::Ok %}
+  <div class="post-tools">
+    <details>
+      <summary>Edit</summary>
+      <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/edit">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="edit-title">Title</label>
+        <input id="edit-title" name="title" value="{{ issue.title }}" maxlength="256" required>
+        <label for="edit-body">Description</label>
+        <textarea id="edit-body" name="body" rows="8" maxlength="20000" required>{{ issue.body }}</textarea>
+        <button type="submit">Save on GitHub</button>
+      </form>
+    </details>
+    <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/state">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if issue.open %}<input type="hidden" name="state" value="closed"><button type="submit" class="secondary">Close issue</button>
+      {% else %}<input type="hidden" name="state" value="open"><button type="submit" class="secondary">Reopen issue</button>{% endif %}
+    </form>
+  </div>
+  {% endif %}
+</article>
+
+<h3>Discussion ({{ replies.len() }})</h3>
+{% for r in replies %}
+<article class="panel post" id="reply-{{ r.id }}">
+  <header class="post-head">
+    {% if r.author.avatar_url != "" %}<img class="avatar" src="{{ r.author.avatar_url }}" alt="" width="28" height="28">{% endif %}
+    <strong>{{ r.author.login }}</strong> <span class="muted"><a href="{{ r.html_url }}" rel="external noopener">{{ r.created }}</a>{% if r.edited %} · edited{% endif %}</span>
+  </header>
+  <div class="post-body description">{{ r.body_html|safe }}</div>
+  {% if r.mine && frame.write == Write::Ok %}
+  <div class="post-tools">
+    <details>
+      <summary>Edit</summary>
+      <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/replies/{{ r.id }}/edit">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="reply-body-{{ r.id }}" class="sr-only">Reply</label>
+        <textarea id="reply-body-{{ r.id }}" name="body" rows="5" maxlength="20000" required>{{ r.body }}</textarea>
+        <button type="submit">Save on GitHub</button>
+      </form>
+    </details>
+    <details>
+      <summary>Delete</summary>
+      <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/replies/{{ r.id }}/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <p>This deletes the reply on GitHub too. It cannot be undone.</p>
+        <button type="submit" class="danger">Delete reply</button>
+      </form>
+    </details>
+  </div>
+  {% endif %}
+</article>
+{% endfor %}
+
+{% include "issue_write.html" %}
+{% if frame.write != Write::Ok && reply != "" %}
+<div class="panel">
+  <label for="unsent">Your reply was not posted. Copy it before you leave:</label>
+  <textarea id="unsent" rows="5" readonly>{{ reply }}</textarea>
+</div>
+{% endif %}
+{% if issue.locked %}
+<div class="notice">This issue is locked on GitHub: only the repo's team can reply.</div>
+{% else if frame.write == Write::Ok %}
+<form class="panel" method="post" action="{{ place.base }}/issues/{{ issue.number }}/reply">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="reply">Reply</label>
+  <textarea id="reply" name="body" rows="5" maxlength="20000" required placeholder="What did you try, what happened?">{{ reply }}</textarea>
+  <div class="actions">
+    <button type="submit">Post reply</button>
+    {% if let Some(u) = user %}<small class="muted">Posted publicly on GitHub as {{ u.login }}. Markdown works.</small>{% endif %}
+  </div>
+</form>
+{% endif %}
+</div>
+{% endblock %}

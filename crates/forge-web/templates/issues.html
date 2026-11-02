@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Issues of {{ place.name }} - SurvivorsForge{% endblock %}
+{% block content %}
+{% if place.addon() %}<p class="back"><a href="/addons/{{ place.slug }}">{{ place.name }}</a></p>{% endif %}
+<h1>{{ place.name }}</h1>
+{% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
+
+<div id="lazy-content">
+<header class="issues-head">
+  <div>
+    <h2>Community issues</h2>
+    {% if frame.write != Write::Off %}<p class="muted">{% if place.addon() %}Bug reports, feature requests and questions for this addon{% else %}Bug reports, feature requests and questions for the SurvivorsForge launcher and website{% endif %}, from <a href="{{ frame.issues_url }}" rel="external noopener">GitHub</a>. Look for yours before you open a new one.</p>{% endif %}
+  </div>
+  {% if frame.write == Write::Ok %}<a class="button" href="{{ place.base }}/issues/new">New issue</a>{% endif %}
+</header>
+{% include "issue_write.html" %}
+
+{% if frame.write != Write::Disabled && frame.write != Write::Off %}
+<section class="panel issue-list">
+  <form class="issue-filter" method="get" action="{{ place.base }}/issues" role="search">
+    <div class="segmented" role="group" aria-label="Status">
+      <a href="{{ place.base }}/issues?state=open&amp;q={{ q|urlencode }}"{% if state == "open" %} aria-current="page"{% endif %}>Open <span class="count">{{ counts.0 }}</span></a>
+      <a href="{{ place.base }}/issues?state=closed&amp;q={{ q|urlencode }}"{% if state == "closed" %} aria-current="page"{% endif %}>Closed <span class="count">{{ counts.1 }}</span></a>
+      <a href="{{ place.base }}/issues?state=all&amp;q={{ q|urlencode }}"{% if state == "all" %} aria-current="page"{% endif %}>All <span class="count">{{ counts.2 }}</span></a>
+    </div>
+    <input type="hidden" name="state" value="{{ state }}">
+    <label for="issue-q" class="sr-only">Search issues</label>
+    <input id="issue-q" type="search" name="q" value="{{ q }}" placeholder="Search by title, author or #number">
+    <noscript><button type="submit">Search</button></noscript>
+  </form>
+  {% if rows.is_empty() %}
+    {% if q != "" %}
+    <p>No issue matches "{{ q }}". <a href="{{ place.base }}/issues?state={{ state }}">Show all</a></p>
+    {% else if state == "open" %}
+    <p>No open issues. {% if counts.1 > 0 %}<a href="{{ place.base }}/issues?state=closed">See the closed ones</a>.{% endif %}</p>
+    {% else %}
+    <p>No issues here yet.</p>
+    {% endif %}
+  {% else %}
+  <ul class="issue-rows">
+    {% for r in rows %}
+    {% let badge = r.badge() %}
+    <li>
+      <a href="{{ place.base }}/issues/{{ r.number }}">
+        <span class="issue-title">{{ r.title }}</span>
+        <span class="issue-meta muted">#{{ r.number }} by {{ r.author.login }} · updated {{ r.updated }}{% if r.comments > 0 %} · {{ r.comments }} repl{% if r.comments == 1 %}y{% else %}ies{% endif %}{% endif %}</span>
+        <span class="issue-badges">{% if r.kind_label() != "" %}<span class="badge">{{ r.kind_label() }}</span>{% endif %}<span class="badge {{ badge.0 }}">{{ badge.1 }}</span></span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if let Some(pager) = pager %}{% include "pager.html" %}{% endif %}
+  {% endif %}
+  {% if truncated %}<p class="muted">Showing the 100 issues updated last. <a href="{{ frame.issues_url }}" rel="external noopener">All issues on GitHub</a></p>{% endif %}
+</section>
+{% endif %}
+</div>
+{% endblock %}

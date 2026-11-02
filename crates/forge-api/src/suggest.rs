@@ -145,7 +145,7 @@ mod tests {
         zip.start_file("LuckyLib/LuckyLib.toc", options).unwrap();
         zip.write_all(b"## Title: Lib\n").unwrap();
         let bytes = zip.finish().unwrap().into_inner();
-        let repo = Repo { id: 1, full_name: "cadoky/LuckyOdds".into(), private: false, owner: Owner { id: 1, login: "cadoky".into() }, description: None };
+        let repo = Repo { id: 1, full_name: "cadoky/LuckyOdds".into(), private: false, owner: Owner { id: 1, login: "cadoky".into() }, description: None, has_issues: true };
 
         let s = suggest(&repo, "release", "LuckyOdds-v*.zip", Some(&bytes), "release v0.7.0".into());
         assert_eq!((s.name.as_str(), s.slug.as_str(), s.summary.as_str()), ("Lucky Odds", "luckyodds", "Odds for rare cards"));

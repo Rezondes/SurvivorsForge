@@ -9,6 +9,7 @@ use serde_json::Value;
 /// The logged-in visitor as the API describes them (`/v1/me`).
 #[derive(Debug, Clone, Default)]
 pub struct Visitor {
+    pub id: i64,
     pub login: String,
     pub avatar_url: String,
     pub role: String,
@@ -22,6 +23,7 @@ impl Visitor {
     pub fn from_me(me: &Value) -> Visitor {
         let permissions: Vec<String> = me["permissions"].as_array().into_iter().flatten().filter_map(|p| p.as_str().map(str::to_string)).collect();
         Visitor {
+            id: me["id"].as_i64().unwrap_or_default(),
             login: me["login"].as_str().unwrap_or_default().to_string(),
             avatar_url: me["avatar_url"].as_str().unwrap_or_default().to_string(),
             role: me["role"].as_str().unwrap_or("user").to_string(),
@@ -448,6 +450,10 @@ pub struct EditAddonPage {
     pub perms: Perms,
     pub errors: Errors,
     pub saved: bool,
+    /// Whether the Comments tab takes comments and the Issues tab shows the repo's issues; only
+    /// the owner switches them.
+    pub comments_enabled: bool,
+    pub issues_enabled: bool,
 }
 
 pub struct ImageRow {
@@ -674,6 +680,10 @@ pub struct ReportRow {
     pub id: i64,
     pub target: String,
     pub addon: String,
+    /// Where the reported thing is shown: the addon page, or the comment in its discussion.
+    pub link: String,
+    /// The text of a reported comment, as it is now.
+    pub comment: Option<String>,
     pub reason: String,
     pub text: String,
     pub reporter: String,

@@ -6,10 +6,14 @@
 //!    browser back to `return_to?code=<one-time code>`.
 //! 3. The client posts that code to `POST /v1/auth/exchange` and gets a bearer token.
 //!
-//! The GitHub user token is used once for `GET /user` and then dropped.
+//! The GitHub user token reads the user and goes to the client with the bearer token, if it asks
+//! (`github_token`); the database never holds it.
 
-use super::{hash, random_token};
+use super::{CurrentUser, hash, random_token};
 use crate::app::AppState;
+use crate::github::types::UserToken;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
 use axum::extract::{Query, State};
@@ -93,7 +97,7 @@ pub async fn callback(State(state): State<AppState>, Query(query): Query<Callbac
     let (verifier, return_to, _) = stored.filter(|(_, _, expires)| *expires > now).ok_or_else(invalid)?;
     let Some(code) = query.code else { return back_to(&return_to, "error", "denied") };
 
-    let github_user = state.github.oauth_user(&code, &verifier, &callback_url(&state)).await.map_err(|e| {
+    let (github_user, github_token) = state.github.oauth_user(&code, &verifier, &callback_url(&state)).await.map_err(|e| {
         tracing::warn!(error = %e, "GitHub login failed");
         ApiError::new(StatusCode::BAD_GATEWAY, "github_login_failed", "GitHub login failed, try again")
     })?;
@@ -124,20 +128,44 @@ pub async fn callback(State(state): State<AppState>, Query(query): Query<Callbac
         .bind(now + CODE_TTL)
         .execute(&state.pool)
         .await?;
+    keep_github_token(hash(&login_code), github_token, now + CODE_TTL, now);
     back_to(&return_to, "code", &login_code)
+}
+
+/// The GitHub tokens of logins whose code the client has not exchanged yet, by code hash. They
+/// never touch the database: the website keeps them in its encrypted cookie.
+// ponytail: per-process, one API instance only; keep them next to `login_codes` when the API scales out.
+type Pending = HashMap<Vec<u8>, (UserToken, DateTime<Utc>)>;
+static PENDING_GITHUB_TOKENS: LazyLock<Mutex<Pending>> = LazyLock::new(Default::default);
+
+fn keep_github_token(code_hash: Vec<u8>, token: UserToken, expires_at: DateTime<Utc>, now: DateTime<Utc>) {
+    let mut pending = PENDING_GITHUB_TOKENS.lock().unwrap_or_else(|e| e.into_inner());
+    pending.retain(|_, (_, expires)| *expires > now);
+    pending.insert(code_hash, (token, expires_at));
+}
+
+/// Takes the token of a login code out; an expired one is gone either way.
+fn take_github_token(code_hash: &[u8], now: DateTime<Utc>) -> Option<UserToken> {
+    let mut pending = PENDING_GITHUB_TOKENS.lock().unwrap_or_else(|e| e.into_inner());
+    pending.remove(code_hash).filter(|(_, expires)| *expires > now).map(|(token, _)| token)
 }
 
 #[derive(Deserialize)]
 pub struct ExchangeBody {
     code: String,
     return_to: String,
+    /// The website asks for the user's GitHub token, to post issues as them.
+    #[serde(default)]
+    github_token: bool,
 }
 
 pub async fn exchange(State(state): State<AppState>, Json(body): Json<ExchangeBody>) -> ApiResult<Json<serde_json::Value>> {
     let now = (state.clock)();
+    let code_hash = hash(&body.code);
+    let github_token = take_github_token(&code_hash, now);
     let stored: Option<(i64, String, DateTime<Utc>)> =
         sqlx::query_as("DELETE FROM login_codes WHERE code_hash = $1 RETURNING user_id, return_to, expires_at")
-            .bind(hash(&body.code))
+            .bind(&code_hash)
             .fetch_optional(&state.pool)
             .await?;
     let (user_id, _, _) = stored
@@ -152,5 +180,52 @@ pub async fn exchange(State(state): State<AppState>, Json(body): Json<ExchangeBo
         .bind(expires_at)
         .execute(&state.pool)
         .await?;
-    Ok(Json(serde_json::json!({ "token": token, "expires_at": expires_at })))
+    let mut answer = serde_json::json!({ "token": token, "expires_at": expires_at });
+    if let Some(github) = github_token.filter(|_| body.github_token) {
+        answer["github_token"] = serde_json::to_value(github).map_err(|_| ApiError::internal())?;
+    }
+    Ok(Json(answer))
+}
+
+#[derive(Deserialize)]
+pub struct RefreshBody {
+    refresh_token: String,
+}
+
+/// `POST /v1/auth/github/refresh`: a new GitHub token for the logged-in user's expired one. Only
+/// the API knows the App's client secret this takes.
+pub async fn refresh_github_token(State(state): State<AppState>, user: CurrentUser, Json(body): Json<RefreshBody>) -> ApiResult<Json<UserToken>> {
+    let reauth = || ApiError::new(StatusCode::FORBIDDEN, "github_reauth", "Log in again to post on GitHub");
+    let token = state.github.refresh_user_token(&body.refresh_token).await.map_err(|e| {
+        tracing::info!(error = %e, "GitHub token refresh failed");
+        reauth()
+    })?;
+    // A refresh token of someone else gives their account nothing here.
+    let owner = state.github.token_user(&token.access_token).await.map_err(|_| reauth())?;
+    if owner.id != user.github_id {
+        return Err(reauth());
+    }
+    Ok(Json(token))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn token(n: u8) -> UserToken {
+        UserToken { access_token: format!("gho-{n}"), expires_at: None, refresh_token: None, refresh_token_expires_at: None }
+    }
+
+    #[test]
+    fn github_tokens_wait_only_as_long_as_their_code() {
+        let now = Utc::now();
+        keep_github_token(vec![200, 1], token(1), now + CODE_TTL, now);
+        assert_eq!(take_github_token(&[200, 1], now + Duration::seconds(10)), Some(token(1)));
+        assert_eq!(take_github_token(&[200, 1], now + Duration::seconds(10)), None, "handed out once");
+        keep_github_token(vec![200, 2], token(2), now + CODE_TTL, now);
+        assert_eq!(take_github_token(&[200, 2], now + CODE_TTL + Duration::seconds(1)), None, "gone with the code");
+        keep_github_token(vec![200, 3], token(3), now + CODE_TTL, now);
+        keep_github_token(vec![200, 4], token(4), now + Duration::hours(1), now + Duration::minutes(2));
+        assert!(!PENDING_GITHUB_TOKENS.lock().unwrap().contains_key(&vec![200, 3]), "a new login clears the expired ones");
+    }
 }

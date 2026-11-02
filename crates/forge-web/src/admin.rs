@@ -279,6 +279,11 @@ pub async fn reports(State(state): State<AppState>, jar: PrivateCookieJar, Exten
         .map(|r| crate::templates::ReportRow {
             id: r["id"].as_i64().unwrap_or(0),
             target: format!("{} {}", s(&r["target_type"]), s(&r["target_id"])),
+            link: match r["target_type"].as_str() {
+                Some("comment") => format!("/addons/{}/comments#comment-{}", s(&r["addon"]), r["target_id"]),
+                _ => format!("/addons/{}", s(&r["addon"])),
+            },
+            comment: r["comment"].as_str().map(str::to_string),
             addon: s(&r["addon"]),
             reason: s(&r["reason"]),
             text: s(&r["text"]),

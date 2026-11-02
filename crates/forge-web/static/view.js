@@ -614,3 +614,26 @@
     });
   });
 })();
+
+// A part that loads after the page (data-lazy) and fails says so and offers another try, instead
+// of a skeleton that never ends. The texts are fixed here; nothing from the answer goes into the page.
+(function () {
+  function failed(event) {
+    var box = event.detail && event.detail.elt && event.detail.elt.closest("[data-lazy]");
+    if (!box) return;
+    box.setAttribute("aria-busy", "false");
+    box.innerHTML = '<div class="notice bad" role="alert">GitHub did not answer in time. ' +
+      '<button type="button" class="secondary" data-lazy-retry>Try again</button></div>';
+  }
+  document.addEventListener("htmx:responseError", failed);
+  document.addEventListener("htmx:sendError", failed);
+  document.addEventListener("htmx:timeout", failed);
+  document.addEventListener("click", function (event) {
+    var retry = event.target.closest("[data-lazy-retry]");
+    if (!retry || !window.htmx) return;
+    var box = retry.closest("[data-lazy]");
+    box.setAttribute("aria-busy", "true");
+    retry.disabled = true;
+    window.htmx.ajax("GET", box.getAttribute("hx-get"), { target: box, select: "#lazy-content", swap: "outerHTML" });
+  });
+})();
