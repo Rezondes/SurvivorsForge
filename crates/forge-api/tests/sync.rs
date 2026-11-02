@@ -174,7 +174,7 @@ async fn existing_release_refreshes_published_date_without_rescanning(pool: PgPo
     let (published_at, sha256, scan_status): (chrono::DateTime<chrono::Utc>, Option<String>, String) =
         sqlx::query_as("SELECT published_at, sha256, scan_status FROM versions WHERE addon_id = $1 AND tag = 'v1'")
             .bind(id).fetch_one(&app.pool).await.unwrap();
-    assert_eq!(published_at, corrected, "the existing release must reflect the corrected GitHub date");
+    assert_eq!(published_at.timestamp_micros(), corrected.timestamp_micros(), "the existing release must reflect the corrected GitHub date at PostgreSQL microsecond precision");
     assert_eq!(sha256.as_deref(), Some("verified"), "date-only updates must preserve scan results");
     assert_eq!(scan_status, "done");
     assert_eq!(scan_jobs(&app).await, 1, "date-only updates must not enqueue another scan");
