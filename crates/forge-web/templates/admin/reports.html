@@ -8,9 +8,10 @@
 <div class="list">
 {% for r in rows %}
 <section class="panel">
-  <h2>{{ r.reason }}: <a href="/addons/{{ r.addon }}">{{ r.addon }}</a> <span class="muted">({{ r.target }})</span></h2>
+  <h2>{{ r.reason }}: <a href="{{ r.link }}">{{ r.addon }}</a> <span class="muted">({{ r.target }})</span></h2>
   <p class="muted">by {{ r.reporter }}, {{ r.created }}</p>
   {% if r.text != "" %}<p>{{ r.text }}</p>{% endif %}
+  {% if let Some(c) = r.comment %}<blockquote class="reported-comment">{% if c.is_empty() %}<span class="muted">Deleted since.</span>{% else %}{{ c }}{% endif %}</blockquote>{% endif %}
   <p><a href="/admin/addons/{{ r.addon }}">Block or hand over the addon</a></p>
   <form method="post" action="/admin/reports/{{ r.id }}/resolve" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}">

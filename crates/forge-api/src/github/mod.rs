@@ -15,7 +15,7 @@ use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, ETAG, HeaderMap, IF_NONE_MATCH, USER_AGENT};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use types::{Installation, InstallationToken, Owner, Permission, Release, Repo, Tag, User};
+use types::{Installation, InstallationToken, Issue, IssueComment, Owner, Permission, Release, Repo, Tag, User, UserToken};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GitHubError {
@@ -82,9 +82,28 @@ pub trait GitHubApi: Send + Sync {
     async fn release(&self, installation: Option<i64>, repo_id: i64, release_id: i64) -> GitHubResult<Option<Release>>;
     /// Newest first.
     async fn tags(&self, installation: Option<i64>, repo_id: i64) -> GitHubResult<Vec<Tag>>;
-    /// Finishes a user's OAuth login: trades the code for a user token, reads the user with it and
-    /// drops the token.
-    async fn oauth_user(&self, code: &str, verifier: &str, redirect_uri: &str) -> GitHubResult<User>;
+    /// Finishes a user's OAuth login: trades the code for a user token and reads the user with it.
+    async fn oauth_user(&self, code: &str, verifier: &str, redirect_uri: &str) -> GitHubResult<(User, UserToken)>;
+    /// A new user token for an expired one.
+    async fn refresh_user_token(&self, refresh_token: &str) -> GitHubResult<UserToken>;
+    /// The account a user token belongs to.
+    async fn token_user(&self, token: &str) -> GitHubResult<User>;
+    /// Whether the installation's owner granted `Issues: Read & write`.
+    async fn issues_writable(&self, installation: i64) -> GitHubResult<bool>;
+    /// The 100 issues updated last, pull requests included (GitHub lists both).
+    async fn issues(&self, installation: Option<i64>, repo: &str) -> GitHubResult<Vec<Issue>>;
+    async fn issue(&self, installation: Option<i64>, repo: &str, number: i64) -> GitHubResult<Option<Issue>>;
+    /// The first 100 replies, oldest first.
+    async fn issue_comments(&self, installation: Option<i64>, repo: &str, number: i64) -> GitHubResult<Vec<IssueComment>>;
+    /// Labels set with the installation: users without triage rights cannot label their issues.
+    async fn add_labels(&self, installation: i64, repo: &str, number: i64, labels: &[&str]) -> GitHubResult<()>;
+    /// As the user of `token`.
+    async fn create_issue(&self, token: &str, repo: &str, title: &str, body: &str) -> GitHubResult<Issue>;
+    /// As the user of `token`: `title`, `body` and `state` of `changes`.
+    async fn update_issue(&self, token: &str, repo: &str, number: i64, changes: &serde_json::Value) -> GitHubResult<Issue>;
+    async fn create_comment(&self, token: &str, repo: &str, number: i64, body: &str) -> GitHubResult<IssueComment>;
+    async fn update_comment(&self, token: &str, repo: &str, comment_id: i64, body: &str) -> GitHubResult<IssueComment>;
+    async fn delete_comment(&self, token: &str, repo: &str, comment_id: i64) -> GitHubResult<()>;
     /// Reads at most `max_bytes`; more is `TooLarge`, whatever `Content-Length` says.
     async fn download(&self, url: &str, max_bytes: u64) -> GitHubResult<Vec<u8>>;
     /// The core limit of public reads (`GITHUB_READ_TOKEN`, else this IP); costs no request.
@@ -103,6 +122,8 @@ pub struct GitHubClient {
     key: EncodingKey,
     clock: Clock,
     tokens: Mutex<HashMap<i64, InstallationToken>>,
+    /// Whether an installation may write issues, and when GitHub said so (`ISSUE_RIGHTS_FOR`).
+    issue_rights: Mutex<HashMap<i64, (bool, DateTime<Utc>)>>,
     etags: Mutex<EtagCache>,
     oauth: Option<OAuthApp>,
     /// Sent with requests outside an installation: 5000 instead of 60 requests per hour.
@@ -118,6 +139,10 @@ pub struct OAuthApp {
 
 /// Installation tokens are renewed this long before they expire.
 const TOKEN_MARGIN: Duration = Duration::minutes(5);
+
+/// How long the issue rights of an installation are trusted: an owner who accepts the permission
+/// sees the Issues tab open for writing within this time.
+const ISSUE_RIGHTS_FOR: Duration = Duration::seconds(60);
 
 /// The bytes of URLs, ETags and bodies the ETag cache holds at most. Callers put user input into
 /// the URLs, so without a bound every new URL would stay in memory for good.
@@ -169,6 +194,7 @@ impl GitHubClient {
             key,
             clock,
             tokens: Mutex::new(HashMap::new()),
+            issue_rights: Mutex::new(HashMap::new()),
             etags: Mutex::new(EtagCache::default()),
             oauth: None,
             read_token: None,
@@ -210,6 +236,42 @@ impl GitHubClient {
         let token: InstallationToken = parse(check(response).await?).await?;
         self.tokens.lock().unwrap().insert(installation, token.clone());
         Ok(token.token)
+    }
+
+    /// A request as the user of `token`; only for writes and `/user`, so no ETag cache.
+    async fn as_user(&self, method: reqwest::Method, token: &str, path: &str, body: Option<&serde_json::Value>) -> GitHubResult<reqwest::Response> {
+        let mut request = self.request(self.http.request(method, format!("{}{path}", self.api_url)), token);
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        let response = request.send().await.map_err(network)?;
+        self.count("oauth", &response);
+        check(response).await
+    }
+
+    /// Trades a code or a refresh token (`grant`) for a user token.
+    async fn user_token(&self, grant: serde_json::Value) -> GitHubResult<UserToken> {
+        let oauth = self.oauth.as_ref().ok_or_else(|| GitHubError::Auth("OAuth is not configured".into()))?;
+        let url = format!("{}/login/oauth/access_token", oauth.oauth_url.trim_end_matches('/'));
+        let mut body = serde_json::json!({ "client_id": oauth.client_id, "client_secret": oauth.client_secret });
+        if let (Some(body), Some(grant)) = (body.as_object_mut(), grant.as_object()) {
+            body.extend(grant.clone());
+        }
+        let request = self.http.post(&url).header(ACCEPT, "application/json").header(USER_AGENT, "SurvivorsForge").json(&body);
+        let response = request.send().await.map_err(network)?;
+        self.count("oauth", &response);
+        let answer: serde_json::Value = parse(check(response).await?).await?;
+        let Some(token) = answer["access_token"].as_str() else {
+            return Err(GitHubError::Auth(answer["error"].as_str().unwrap_or("no access token").to_string()));
+        };
+        let now = (self.clock)();
+        let after = |key: &str| answer[key].as_i64().map(|s| now + Duration::seconds(s));
+        Ok(UserToken {
+            access_token: token.to_string(),
+            expires_at: after("expires_in"),
+            refresh_token: answer["refresh_token"].as_str().map(str::to_string),
+            refresh_token_expires_at: after("refresh_token_expires_in"),
+        })
     }
 
     /// Counts an answer for `usage`, with the clock of this client.
@@ -402,26 +464,84 @@ impl GitHubApi for GitHubClient {
         self.get_json(installation, &format!("/repositories/{repo_id}/tags?per_page=100")).await
     }
 
-    async fn oauth_user(&self, code: &str, verifier: &str, redirect_uri: &str) -> GitHubResult<User> {
-        let oauth = self.oauth.as_ref().ok_or_else(|| GitHubError::Auth("OAuth is not configured".into()))?;
-        let url = format!("{}/login/oauth/access_token", oauth.oauth_url.trim_end_matches('/'));
-        let body = serde_json::json!({
-            "client_id": oauth.client_id,
-            "client_secret": oauth.client_secret,
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "code_verifier": verifier,
-        });
-        let request = self.http.post(&url).header(ACCEPT, "application/json").header(USER_AGENT, "SurvivorsForge").json(&body);
-        let response = request.send().await.map_err(network)?;
+    async fn oauth_user(&self, code: &str, verifier: &str, redirect_uri: &str) -> GitHubResult<(User, UserToken)> {
+        let token = self.user_token(serde_json::json!({ "code": code, "redirect_uri": redirect_uri, "code_verifier": verifier })).await?;
+        let response = self.request(self.http.get(format!("{}/user", self.api_url)), &token.access_token).send().await.map_err(network)?;
         self.count("oauth", &response);
+        Ok((parse(check(response).await?).await?, token))
+    }
+
+    async fn refresh_user_token(&self, refresh_token: &str) -> GitHubResult<UserToken> {
+        self.user_token(serde_json::json!({ "grant_type": "refresh_token", "refresh_token": refresh_token })).await
+    }
+
+    async fn token_user(&self, token: &str) -> GitHubResult<User> {
+        parse(self.as_user(reqwest::Method::GET, token, "/user", None).await?).await
+    }
+
+    async fn issues_writable(&self, installation: i64) -> GitHubResult<bool> {
+        let now = (self.clock)();
+        if let Some((writable, at)) = self.issue_rights.lock().unwrap().get(&installation)
+            && now - *at < ISSUE_RIGHTS_FOR
+        {
+            return Ok(*writable);
+        }
+        // From the installation itself: a cached token keeps the rights it was made with for an hour.
+        let url = format!("{}/app/installations/{installation}", self.api_url);
+        let response = self.request(self.http.get(&url), &self.app_jwt()?).send().await.map_err(network)?;
+        self.count("app", &response);
         let answer: serde_json::Value = parse(check(response).await?).await?;
-        let token = answer["access_token"]
-            .as_str()
-            .ok_or_else(|| GitHubError::Auth(answer["error"].as_str().unwrap_or("no access token").to_string()))?;
-        let response = self.request(self.http.get(format!("{}/user", self.api_url)), token).send().await.map_err(network)?;
-        self.count("oauth", &response);
-        parse(check(response).await?).await
+        let writable = answer["permissions"]["issues"] == "write";
+        self.issue_rights.lock().unwrap().insert(installation, (writable, now));
+        let mut tokens = self.tokens.lock().unwrap();
+        if writable && tokens.get(&installation).is_some_and(|t| t.permissions.get("issues").is_none_or(|p| p != "write")) {
+            tokens.remove(&installation);
+        }
+        Ok(writable)
+    }
+
+    async fn issues(&self, installation: Option<i64>, repo: &str) -> GitHubResult<Vec<Issue>> {
+        // ponytail: the 100 updated last; page through GitHub once a repo has more worth showing.
+        self.get_json(installation, &format!("/repos/{repo}/issues?state=all&sort=updated&per_page=100")).await
+    }
+
+    async fn issue(&self, installation: Option<i64>, repo: &str, number: i64) -> GitHubResult<Option<Issue>> {
+        optional(self.get_json(installation, &format!("/repos/{repo}/issues/{number}")).await)
+    }
+
+    async fn issue_comments(&self, installation: Option<i64>, repo: &str, number: i64) -> GitHubResult<Vec<IssueComment>> {
+        self.get_json(installation, &format!("/repos/{repo}/issues/{number}/comments?per_page=100")).await
+    }
+
+    async fn add_labels(&self, installation: i64, repo: &str, number: i64, labels: &[&str]) -> GitHubResult<()> {
+        let token = self.installation_token(installation).await?;
+        let url = format!("{}/repos/{repo}/issues/{number}/labels", self.api_url);
+        let response = self.request(self.http.post(&url), &token).json(&serde_json::json!({ "labels": labels })).send().await.map_err(network)?;
+        self.count(&format!("installation:{installation}"), &response);
+        check(response).await.map(|_| ())
+    }
+
+    async fn create_issue(&self, token: &str, repo: &str, title: &str, body: &str) -> GitHubResult<Issue> {
+        let body = serde_json::json!({ "title": title, "body": body });
+        parse(self.as_user(reqwest::Method::POST, token, &format!("/repos/{repo}/issues"), Some(&body)).await?).await
+    }
+
+    async fn update_issue(&self, token: &str, repo: &str, number: i64, changes: &serde_json::Value) -> GitHubResult<Issue> {
+        parse(self.as_user(reqwest::Method::PATCH, token, &format!("/repos/{repo}/issues/{number}"), Some(changes)).await?).await
+    }
+
+    async fn create_comment(&self, token: &str, repo: &str, number: i64, body: &str) -> GitHubResult<IssueComment> {
+        let body = serde_json::json!({ "body": body });
+        parse(self.as_user(reqwest::Method::POST, token, &format!("/repos/{repo}/issues/{number}/comments"), Some(&body)).await?).await
+    }
+
+    async fn update_comment(&self, token: &str, repo: &str, comment_id: i64, body: &str) -> GitHubResult<IssueComment> {
+        let body = serde_json::json!({ "body": body });
+        parse(self.as_user(reqwest::Method::PATCH, token, &format!("/repos/{repo}/issues/comments/{comment_id}"), Some(&body)).await?).await
+    }
+
+    async fn delete_comment(&self, token: &str, repo: &str, comment_id: i64) -> GitHubResult<()> {
+        self.as_user(reqwest::Method::DELETE, token, &format!("/repos/{repo}/issues/comments/{comment_id}"), None).await.map(|_| ())
     }
 
     async fn rate_limit(&self) -> GitHubResult<types::RateLimit> {

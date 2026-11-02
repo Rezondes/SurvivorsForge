@@ -3,6 +3,7 @@
 {% block content %}
 <p><a href="/addons/{{ slug }}">Back to {{ name }}</a></p>
 <h1>Versions of {{ name }}</h1>
+{% let tab = "versions" %}{% include "addon_tabs.html" %}
 {% if let Some(perms) = perms %}{% let section = "versions" %}{% include "creator/nav.html" %}{% endif %}
 {% if rows.is_empty() %}
 <section class="panel"><p>No release yet.</p></section>
@@ -25,23 +26,5 @@
   </tbody>
 </table>
 </div>
-{% endif %}
-{% if let Some(pager) = pager %}
-<nav class="pager" aria-label="Version pages">
-  <p class="pager-summary">{{ pager.summary }}</p>
-  <ol class="pager-pages">
-    <li>{% if let Some(p) = pager.prev %}<a class="pager-step" href="{{ p }}" aria-label="Previous page" rel="prev">‹</a>{% else %}<span class="pager-step" aria-hidden="true">‹</span>{% endif %}</li>
-    {% for item in pager.items %}
-    {% if item.number == 0 %}
-    <li class="pager-gap" aria-hidden="true">…</li>
-    {% else if item.current %}
-    <li><a href="{{ item.href }}" aria-current="page">{{ item.number }}</a></li>
-    {% else %}
-    <li class="pager-far"><a href="{{ item.href }}" aria-label="Page {{ item.number }}">{{ item.number }}</a></li>
-    {% endif %}
-    {% endfor %}
-    <li>{% if let Some(n) = pager.next %}<a class="pager-step" href="{{ n }}" aria-label="Next page" rel="next">›</a>{% else %}<span class="pager-step" aria-hidden="true">›</span>{% endif %}</li>
-  </ol>
-</nav>
 {% endif %}
 {% endblock %}

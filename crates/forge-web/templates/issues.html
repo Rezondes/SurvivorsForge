@@ -1,51 +1,56 @@
 {% extends "base.html" %}
-{% block title %}Issues - {{ name }}{% endblock %}
+{% block title %}Issues of {{ place.name }} - SurvivorsForge{% endblock %}
 {% block content %}
-<div class="issues-shell">
-  <p class="issues-back"><a href="/addons/{{ slug }}">← {{ name }}</a></p>
-  <div class="issues-heading">
-    <div><h1 data-i18n="community_issues">Community issues</h1><p class="muted"><span data-i18n="issue_report_intro">Report bugs, suggest improvements, and follow progress for this AddOn.</span> {{ name }}</p></div>
-    {% if user.is_some() %}<a class="button" href="#new-issue" data-i18n="new_issue">+ New issue</a>{% else %}<a class="button" href="/login" data-i18n="login_report">Log in to report</a>{% endif %}
+{% if place.addon() %}<p class="back"><a href="/addons/{{ place.slug }}">{{ place.name }}</a></p>{% endif %}
+<h1>{{ place.name }}</h1>
+{% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
+
+<header class="issues-head">
+  <div>
+    <h2>Community issues</h2>
+    {% if frame.write != Write::Off %}<p class="muted">{% if place.addon() %}Bug reports, feature requests and questions for this addon{% else %}Bug reports, feature requests and questions for the SurvivorsForge launcher and website{% endif %}, from <a href="{{ frame.issues_url }}" rel="external noopener">GitHub</a>. Look for yours before you open a new one.</p>{% endif %}
   </div>
-  <section class="issues-board" aria-label="Issue tracker" data-i18n-aria-label="issue_tracker">
-    <div class="issues-toolbar">
-      <div class="issues-tabs" role="group" aria-label="Filter by status" data-i18n-aria-label="issue_filter">
-        <button type="button" class="secondary active" data-issue-filter="open" aria-pressed="true" data-i18n="open">Open</button>
-        <button type="button" class="secondary" data-issue-filter="closed" aria-pressed="false" data-i18n="closed">Closed</button>
-        <button type="button" class="secondary" data-issue-filter="all" aria-pressed="false" data-i18n="issue_all">All</button>
-      </div>
-      <label class="issues-search"><span class="sr-only" data-i18n="search_issues">Search issues</span><input id="issue-search" type="search" placeholder="Search issues by title or author…" data-i18n-placeholder="issue_search_placeholder_full"></label>
+  {% if frame.write == Write::Ok %}<a class="button" href="{{ place.base }}/issues/new">New issue</a>{% endif %}
+</header>
+{% include "issue_write.html" %}
+
+{% if frame.write != Write::Disabled && frame.write != Write::Off %}
+<section class="panel issue-list">
+  <form class="issue-filter" method="get" action="{{ place.base }}/issues" role="search">
+    <div class="segmented" role="group" aria-label="Status">
+      <a href="{{ place.base }}/issues?state=open&amp;q={{ q|urlencode }}"{% if state == "open" %} aria-current="page"{% endif %}>Open <span class="count">{{ counts.0 }}</span></a>
+      <a href="{{ place.base }}/issues?state=closed&amp;q={{ q|urlencode }}"{% if state == "closed" %} aria-current="page"{% endif %}>Closed <span class="count">{{ counts.1 }}</span></a>
+      <a href="{{ place.base }}/issues?state=all&amp;q={{ q|urlencode }}"{% if state == "all" %} aria-current="page"{% endif %}>All <span class="count">{{ counts.2 }}</span></a>
     </div>
-    <div id="issues-list">
-      {% for issue in issues %}
-      <article class="issue-row" data-status="{{ issue.status }}" data-search="{{ issue.title }} {{ issue.author }} {{ issue.kind }}">
-        <span class="issue-state" aria-hidden="true">{% if issue.status == "open" %}◉{% else if issue.status == "in_progress" %}◷{% else %}✓{% endif %}</span>
-        <div class="issue-row-content">
-          <a class="issue-row-title" href="/addons/{{ slug }}/issues/{{ issue.id }}">{{ issue.title }}</a>
-          <div class="issue-row-meta">#{{ issue.id }} · <span data-i18n="issue_opened_by">opened by</span> {{ issue.author }} <span class="badge" data-i18n-enum="issue_kind" data-i18n-value="{{ issue.kind }}">{{ issue.kind }}</span> <span class="badge" data-i18n-enum="issue_status" data-i18n-value="{{ issue.status }}">{{ issue.status }}</span></div>
-        </div>
-        <a class="issue-row-arrow" href="/addons/{{ slug }}/issues/{{ issue.id }}" aria-label="View issue #{{ issue.id }}">→</a>
-      </article>
-      {% endfor %}
-      <p class="issues-empty" id="issues-empty" hidden data-i18n="no_issue_matches">No issues match your filters.</p>
-      {% if issues.is_empty() %}<div class="issues-empty" data-i18n="issue_empty">No issues yet. Be the first to start a discussion.</div>{% endif %}
-    </div>
-  </section>
-  {% if let Some(cursor) = next %}<nav aria-label="Issue pages"><a class="button secondary" href="/addons/{{ slug }}/issues?before={{ cursor }}" data-i18n="older_issues">Older issues →</a></nav>{% endif %}
-  {% if user.is_some() %}
-  <section class="panel issues-compose" id="new-issue">
-    <div class="issues-compose-heading"><h2 data-i18n="issue_new_heading">Open a new issue</h2><p class="muted" data-i18n="issue_new_intro">Describe what happened, or explain what you would like to improve.</p></div>
-    <form method="post" action="/addons/{{ slug }}/issues">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <label for="issue-title" data-i18n="title">Title</label>
-      <input id="issue-title" name="title" required minlength="3" maxlength="160" placeholder="A short, descriptive title" data-i18n-placeholder="issue_title_placeholder">
-      <label for="issue-kind" data-i18n="category">Category</label>
-      <select id="issue-kind" name="kind"><option value="bug" data-i18n="bug_report">Bug report</option><option value="feature" data-i18n="feature_request">Feature request</option><option value="question" data-i18n="question">Question</option></select>
-      <label for="issue-body" data-i18n="description">Description</label>
-      <textarea id="issue-body" name="body" required maxlength="10000" rows="7" placeholder="What happened? What did you expect? How can the author reproduce it?" data-i18n-placeholder="issue_body_placeholder_full"></textarea>
-      <div class="issues-form-footer"><span class="muted" data-i18n="issue_privacy">Avoid sharing passwords, tokens, or other private information.</span><button type="submit" data-i18n="submit_issue">Submit issue</button></div>
-    </form>
-  </section>
-  {% else %}<p class="notice"><span data-i18n="issue_question">Want to report a problem?</span> <a href="/login" data-i18n="login">Log in with GitHub</a> <span data-i18n="issue_participate">to participate.</span></p>{% endif %}
-</div>
+    <input type="hidden" name="state" value="{{ state }}">
+    <label for="issue-q" class="sr-only">Search issues</label>
+    <input id="issue-q" type="search" name="q" value="{{ q }}" placeholder="Search by title, author or #number">
+    <noscript><button type="submit">Search</button></noscript>
+  </form>
+  {% if rows.is_empty() %}
+    {% if q != "" %}
+    <p>No issue matches "{{ q }}". <a href="{{ place.base }}/issues?state={{ state }}">Show all</a></p>
+    {% else if state == "open" %}
+    <p>No open issues. {% if counts.1 > 0 %}<a href="{{ place.base }}/issues?state=closed">See the closed ones</a>.{% endif %}</p>
+    {% else %}
+    <p>No issues here yet.</p>
+    {% endif %}
+  {% else %}
+  <ul class="issue-rows">
+    {% for r in rows %}
+    {% let badge = r.badge() %}
+    <li>
+      <a href="{{ place.base }}/issues/{{ r.number }}">
+        <span class="issue-title">{{ r.title }}</span>
+        <span class="issue-meta muted">#{{ r.number }} by {{ r.author.login }} · updated {{ r.updated }}{% if r.comments > 0 %} · {{ r.comments }} repl{% if r.comments == 1 %}y{% else %}ies{% endif %}{% endif %}</span>
+        <span class="issue-badges">{% if r.kind_label() != "" %}<span class="badge">{{ r.kind_label() }}</span>{% endif %}<span class="badge {{ badge.0 }}">{{ badge.1 }}</span></span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if let Some(pager) = pager %}{% include "pager.html" %}{% endif %}
+  {% endif %}
+  {% if truncated %}<p class="muted">Showing the 100 issues updated last. <a href="{{ frame.issues_url }}" rel="external noopener">All issues on GitHub</a></p>{% endif %}
+</section>
+{% endif %}
 {% endblock %}

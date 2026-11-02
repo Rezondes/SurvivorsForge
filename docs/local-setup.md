@@ -28,7 +28,8 @@ callback URL per App. On GitHub: *Settings → Developer settings → GitHub App
 | Callback URL | `http://localhost:3081/v1/auth/github/callback` |
 | Request user authorization (OAuth) during installation | off |
 | Webhook | **inactive** (GitHub cannot reach your machine) |
-| Repository permissions | `Contents: Read-only`, `Metadata: Read-only` |
+| Repository permissions | `Contents: Read-only`, `Metadata: Read-only`, `Issues: Read and write` (players post issues on the Issues tab as themselves) |
+| Expire user authorization tokens | on (the default); the website renews them through the API |
 | Where can this GitHub App be installed? | Only on this account |
 
 After saving, from the App's settings page:

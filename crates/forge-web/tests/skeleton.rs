@@ -56,7 +56,7 @@ async fn callback_sets_cookie_or_shows_error() {
     let cookie = web.cookies.get("forge_session").expect("session cookie");
     assert!(!cookie.contains("tok-1"), "the token is encrypted in the cookie");
     let page = web.get("/").await;
-    assert!(page.body.contains(r#"<span data-i18n="auth_logout">Log out</span> alice"#), "{}", page.body);
+    assert!(page.body.contains("Log out alice"), "{}", page.body);
 }
 
 #[tokio::test]
@@ -135,7 +135,8 @@ async fn escapes_and_single_safe_use() {
             safe_uses.push(line.trim().to_string());
         }
     }
-    assert!(safe_uses.iter().all(|l| l.contains("description_html|safe")), "{safe_uses:?}");
+    // Only HTML the API built with forge_core::markdown (ammonia): addon descriptions, issue texts.
+    assert!(safe_uses.iter().all(|l| l.contains("description_html|safe") || l.contains("body_html|safe")), "{safe_uses:?}");
 }
 
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {

@@ -27,6 +27,13 @@ pub struct Repo {
     pub owner: Owner,
     #[serde(default)]
     pub description: Option<String>,
+    /// Issues switched on for the repo.
+    #[serde(default = "yes")]
+    pub has_issues: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -91,6 +98,75 @@ pub struct Permission {
 pub struct InstallationToken {
     pub token: String,
     pub expires_at: DateTime<Utc>,
+    /// What the installation's owner granted, e.g. `issues` -> `write`.
+    #[serde(default)]
+    pub permissions: std::collections::HashMap<String, String>,
+}
+
+/// A user's token from a GitHub login: lets the platform act as them on GitHub. With token
+/// expiration on (the App's default) it lasts 8 hours and the refresh token 6 months.
+#[derive(Clone, PartialEq, serde::Serialize, Deserialize)]
+pub struct UserToken {
+    pub access_token: String,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub refresh_token_expires_at: Option<DateTime<Utc>>,
+}
+
+/// Never prints the tokens.
+impl std::fmt::Debug for UserToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserToken").field("expires_at", &self.expires_at).finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+pub struct Label {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Issue {
+    pub number: i64,
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    /// `open` or `closed`.
+    pub state: String,
+    /// `completed`, `not_planned` or `reopened`.
+    #[serde(default)]
+    pub state_reason: Option<String>,
+    /// `None` for a deleted account.
+    #[serde(default)]
+    pub user: Option<User>,
+    #[serde(default)]
+    pub labels: Vec<Label>,
+    #[serde(default)]
+    pub comments: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub html_url: String,
+    /// Locked by the repo's team: only they can still reply.
+    #[serde(default)]
+    pub locked: bool,
+    /// Set on pull requests, which the issues list of GitHub includes.
+    #[serde(default)]
+    pub pull_request: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct IssueComment {
+    pub id: i64,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub user: Option<User>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub html_url: String,
 }
 
 fn sha256_digest<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {

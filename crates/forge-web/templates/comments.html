@@ -1,57 +1,90 @@
 {% extends "base.html" %}
-{% block title %}Comments - {{ name }}{% endblock %}
+{% block title %}Comments · {{ name }} - SurvivorsForge{% endblock %}
 {% block content %}
-<div class="issues-shell addon-comments" data-dynamic-comments aria-busy="false">
-  <p class="back"><a href="/addons/{{ slug }}">← {{ name }}</a></p>
-  <div class="issues-heading"><div><h1 data-i18n="comments">Community comments</h1><p class="muted" data-i18n="comments_intro">Discuss this addon with its creator and community.</p></div></div>
+<h1>{{ name }}</h1>
+{% let tab = "comments" %}{% include "addon_tabs.html" %}
+
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% if let Some(d) = done %}<div class="notice ok" role="status">{{ d }}</div>{% endif %}
+
+{% if off %}
+<div class="notice">The creator has not turned on comments for this addon.</div>
+{% else if user.is_some() %}
+<form class="panel" method="post" action="/addons/{{ slug }}/comments">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="new-comment">Your comment</label>
+  <textarea id="new-comment" name="body" rows="4" maxlength="5000" required placeholder="Thanks, questions, ideas: bugs go to the Issues tab."></textarea>
+  <div class="actions"><button type="submit">Post comment</button></div>
+</form>
+{% else %}
+<div class="notice"><a href="/login">Log in with GitHub</a> to write a comment.</div>
+{% endif %}
+
+{% if comments.is_empty() && !off %}<p class="muted">No comments yet.</p>{% endif %}
+<div class="comments">
+{% for c in comments %}
+<article class="panel post comment depth-{{ c.depth }}" id="comment-{{ c.id }}">
+  {% if c.deleted %}
+  <p class="muted">Deleted comment.</p>
+  {% else %}
+  <header class="post-head">
+    {% if c.avatar_url != "" %}<img class="avatar" src="{{ c.avatar_url }}" alt="" width="28" height="28" loading="lazy">{% endif %}
+    <strong>{{ c.author }}</strong> <span class="muted"><a href="#comment-{{ c.id }}">{{ c.created }}</a>{% if c.edited %} · edited{% endif %}</span>
+  </header>
+  <div class="post-body">{{ c.body }}</div>
   {% if user.is_some() %}
-  <form class="panel issue-reply" method="post" action="/addons/{{ slug }}/comments">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label for="new-comment" data-i18n="your_comment">Your comment</label>
-    <input type="hidden" name="parent_id" id="comment-parent-id"><input type="hidden" name="quote_id" id="comment-quote-id"><p id="comment-context" class="muted" hidden></p><button type="button" id="comment-clear-context" class="secondary" hidden data-i18n="cancel">Cancel</button>
-    <textarea id="new-comment" name="body" required minlength="1" maxlength="10000" rows="4" placeholder="Share your feedback..." data-i18n-placeholder="comment_placeholder"></textarea>
-    <div class="issues-form-footer"><button type="submit" data-i18n="post">Post comment</button></div>
-  </form>
-  {% else %}<p class="panel"><span data-i18n="anonymous_read">You can read comments without signing in.</span> <a href="/login" data-i18n="login_participate">Log in to participate</a>.</p>{% endif %}
-  <section aria-label="Comments" data-i18n-aria-label="comments" class="issue-discussion">
-    {% if comments.is_empty() %}<p class="panel muted" data-i18n="empty_comments">No comments yet. Start the discussion!</p>{% endif %}
-    {% for comment in comments %}
-    <article class="issue-message threaded-comment" data-inline-editor data-comment-id="{{ comment.id }}" data-parent-id="{% if let Some(parent) = comment.parent_id %}{{ parent }}{% endif %}" id="comment-{{ comment.id }}">
-      <header class="issue-message-head">
-        {% if !comment.avatar.is_empty() %}<img class="issue-avatar" src="{{ comment.avatar }}" alt="" width="32" height="32" loading="lazy" decoding="async">{% endif %}
-        <strong>{{ comment.author }}</strong><span class="muted"><time datetime="{{ comment.created_iso }}" title="{{ comment.created_iso }}">{{ comment.created }}</time>{% if comment.edited %} · <time datetime="{{ comment.edited_iso }}" title="{{ comment.edited_iso }}"><span data-i18n="edited">edited</span></time>{% endif %}</span>
-        <span class="issue-action-spacer"></span>
-        {% if comment.can_edit %}<button type="button" class="issue-action" data-edit-toggle data-i18n="edit">Edit</button>{% endif %}
-        {% if comment.can_delete %}<form method="post" action="/addons/{{ slug }}/comments/{{ comment.id }}/delete" data-confirm-delete="Delete this comment?" data-i18n-confirm="confirm_delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="issue-action issue-danger" type="submit" data-i18n="delete">Delete</button></form>{% endif %}
-      </header>
-      <div class="issue-message-body" data-edit-view>{% if let Some(quote) = comment.quote_id %}<a href="#comment-{{ quote }}" class="comment-quote-link">↳ #{{ quote }}</a>{% endif %}{{ comment.body }}</div>
-      {% if user.is_some() && !comment.deleted %}<div class="comment-actions">
-        <button type="button" class="issue-action" data-comment-reply="{{ comment.id }}" data-comment-author="{{ comment.author }}" data-i18n="comment_reply">Reply</button>
-        <button type="button" class="issue-action" data-comment-quote="{{ comment.id }}" data-comment-author="{{ comment.author }}" data-i18n="comment_quote">Quote</button>
-        {% if comment.can_report %}<details class="comment-report"><summary data-i18n="comment_report">Report</summary>
-          <form method="post" action="/addons/{{ slug }}/comments/{{ comment.id }}/report">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <label data-i18n="comment_report_reason">Reason</label>
-            <select name="reason" required>
-              <option value="spam" data-i18n="comment_reason_spam">Spam</option>
-              <option value="harassment" data-i18n="comment_reason_harassment">Harassment</option>
-              <option value="hate" data-i18n="comment_reason_hate">Hateful content</option>
-              <option value="unsafe" data-i18n="comment_reason_unsafe">Unsafe content</option>
-              <option value="other" data-i18n="comment_reason_other">Other</option>
-            </select>
-            <textarea name="details" maxlength="2000" rows="2" data-i18n-placeholder="comment_report_details" placeholder="Additional details (optional)"></textarea>
-            <button type="submit" data-i18n="comment_submit_report">Submit report</button>
-          </form>
-        </details>{% endif %}
-      </div>{% endif %}
-      {% if comment.can_edit %}<form class="issue-inline-form" data-edit-form hidden method="post" action="/addons/{{ slug }}/comments/{{ comment.id }}/edit">
+  <div class="post-tools">
+    <details>
+      <summary>Reply</summary>
+      <form method="post" action="/addons/{{ slug }}/comments">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <textarea name="body" required minlength="1" maxlength="10000" rows="4" aria-label="Edit comment" data-i18n-aria-label="edit_comment">{{ comment.body }}</textarea>
-        <div class="issues-form-footer"><button type="button" class="secondary" data-edit-cancel data-i18n="cancel">Cancel</button><button type="submit" data-i18n="save">Save changes</button></div>
-      </form>{% endif %}
-    </article>
-    {% endfor %}
-  </section>
-  {% if let Some(id) = next %}<p><a class="button secondary" href="/addons/{{ slug }}/comments?before={{ id }}" data-i18n="older_comments">Older comments →</a></p>{% endif %}
+        <input type="hidden" name="parent_id" value="{{ c.id }}">
+        <label for="reply-{{ c.id }}" class="sr-only">Reply to {{ c.author }}</label>
+        <textarea id="reply-{{ c.id }}" name="body" rows="3" maxlength="5000" required></textarea>
+        <button type="submit">Post reply</button>
+      </form>
+    </details>
+    {% if c.can_edit %}
+    <details>
+      <summary>Edit</summary>
+      <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/edit">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="edit-{{ c.id }}" class="sr-only">Comment</label>
+        <textarea id="edit-{{ c.id }}" name="body" rows="4" maxlength="5000" required>{{ c.body }}</textarea>
+        <button type="submit">Save</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if c.can_delete %}
+    <details>
+      <summary>Delete</summary>
+      <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <p>Replies stay, the comment shows as deleted.</p>
+        <button type="submit" class="danger">Delete comment</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if c.can_report %}
+    <details>
+      <summary>Report</summary>
+      <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/report">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="reason-{{ c.id }}">Reason</label>
+        <select id="reason-{{ c.id }}" name="reason" required>
+          {% for (value, label) in reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <label for="report-text-{{ c.id }}">For the admins (optional)</label>
+        <textarea id="report-text-{{ c.id }}" name="text" rows="2" maxlength="2000"></textarea>
+        <button type="submit" class="secondary">Send report</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</article>
+{% endfor %}
 </div>
+{% if let Some(href) = older %}<p><a class="button secondary" href="{{ href }}">Older comments</a></p>{% endif %}
 {% endblock %}

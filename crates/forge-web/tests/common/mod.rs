@@ -145,6 +145,20 @@ impl TestWeb {
     }
 }
 
+impl TestWeb {
+    /// Like `login_as`, with the GitHub token the API hands over when the website asks for it.
+    pub async fn login_with_github(&mut self, token: &str, me: Value, github_token: Value) {
+        Mock::given(method("POST"))
+            .and(path("/v1/auth/exchange"))
+            .and(wiremock::matchers::body_partial_json(json!({ "github_token": true })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "token": token, "expires_at": "2030-01-01T00:00:00Z", "github_token": github_token })))
+            .with_priority(1)
+            .mount(&self.api)
+            .await;
+        self.login_as(token, me).await;
+    }
+}
+
 /// `/v1/me` as the API answers it, with the permissions of the default `ADMIN_STATS_ROLES`.
 pub fn me(login: &str, role: &str) -> Value {
     use forge_core::roles::{self, Role};

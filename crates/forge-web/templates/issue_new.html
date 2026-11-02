@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}New issue · {{ place.name }} - SurvivorsForge{% endblock %}
+{% block content %}
+<p class="back"><a href="{{ place.base }}/issues">Issues of {{ place.name }}</a></p>
+<h1>{{ place.name }}</h1>
+{% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
+<h2>New issue</h2>
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% include "issue_write.html" %}
+{% if frame.write != Write::Ok && (title != "" || body != "") %}
+<div class="panel">
+  <label for="unsent">Your issue was not posted. Copy it before you leave:</label>
+  <textarea id="unsent" rows="8" readonly>{{ title }}
+
+{{ body }}</textarea>
+</div>
+{% endif %}
+{% if frame.write == Write::Ok %}
+<form class="panel" method="post" action="{{ place.base }}/issues">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <fieldset class="segmented">
+    <legend>What is it?</legend>
+    <label><input type="radio" name="kind" value="bug"{% if kind != "feature" && kind != "question" %} checked{% endif %}> Bug report</label>
+    <label><input type="radio" name="kind" value="feature"{% if kind == "feature" %} checked{% endif %}> Feature request</label>
+    <label><input type="radio" name="kind" value="question"{% if kind == "question" %} checked{% endif %}> Question</label>
+  </fieldset>
+  <label for="title">Title</label>
+  <input id="title" name="title" value="{{ title }}" maxlength="256" required placeholder="Short, e.g. &quot;Damage meter resets after a boss&quot;">
+  <label for="body">Description</label>
+  <textarea id="body" name="body" rows="10" maxlength="20000" required placeholder="For a bug: what you did, what happened, what you expected, the addon and game version.">{{ body }}</textarea>
+  <div class="actions">
+    <button type="submit">Post on GitHub</button>
+    {% if let Some(u) = user %}<small class="muted">Posted publicly on GitHub as {{ u.login }}. Markdown works.</small>{% endif %}
+  </div>
+</form>
+{% endif %}
+{% endblock %}

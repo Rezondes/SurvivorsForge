@@ -1,91 +1,97 @@
 {% extends "base.html" %}
-{% block title %}#{{ id }} {{ title }} - {{ name }}{% endblock %}
+{% block title %}{{ issue.title }} · #{{ issue.number }} · {{ place.name }} - SurvivorsForge{% endblock %}
 {% block content %}
-<div class="issues-shell">
-  <p class="issues-back"><a href="/addons/{{ slug }}/issues">← <span data-i18n="issue_back_for">Issues for</span> {{ name }}</a></p>
-  <div class="issue-detail-heading"><h1>{{ title }} <span class="issue-number">#{{ id }}</span></h1>
-    <p class="issue-byline"><span class="badge" data-i18n-enum="issue_status" data-i18n-value="{{ status }}">{{ status }}</span> <strong>{{ author }}</strong> <span data-i18n="issue_opened_this">opened this</span> <span data-i18n-enum="issue_kind" data-i18n-value="{{ kind }}">{{ kind }}</span> <span data-i18n="issue_report_tag">report</span></p>
-  </div>
-  <div class="issue-detail-layout">
-    <div class="issue-conversation">
-      <article class="issue-message">
-        <header class="issue-message-head"><span class="issue-avatar" aria-hidden="true">{{ author }}</span><strong>{{ author }}</strong><span class="muted" data-i18n="issue_reported">reported</span></header>
-        <div class="issue-message-body">{{ body }}</div>
-      </article>
-      {% if can_edit_issue %}
-      <details class="panel">
-        <summary>Edit issue</summary>
-        <form method="post" action="/addons/{{ slug }}/issues/{{ id }}/edit">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <label for="issue-edit-title">Title</label>
-          <input id="issue-edit-title" name="title" value="{{ title }}" required minlength="3" maxlength="160">
-          <label for="issue-edit-kind">Type</label>
-          <select id="issue-edit-kind" name="kind">
-            <option value="bug" {% if kind == "bug" %}selected{% endif %}>Bug</option>
-            <option value="feature" {% if kind == "feature" %}selected{% endif %}>Feature</option>
-            <option value="question" {% if kind == "question" %}selected{% endif %}>Question</option>
-          </select>
-          <label for="issue-edit-body">Description</label>
-          <textarea id="issue-edit-body" name="body" required maxlength="10000" rows="6">{{ body }}</textarea>
-          <button type="submit">Save changes</button>
-        </form>
-      </details>
-      {% endif %}
-      {% if can_delete_issue %}
-      <form method="post" action="/addons/{{ slug }}/issues/{{ id }}/delete" data-confirm-delete="Delete this issue?">
+<p class="back"><a href="{{ place.base }}/issues">Issues of {{ place.name }}</a></p>
+<h1>{{ place.name }}</h1>
+{% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
+
+{% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
+{% if let Some(d) = done %}<div class="notice ok" role="status">{{ d }}</div>{% endif %}
+
+{% let badge = issue.badge() %}
+<header class="issue-head">
+  <h2>{{ issue.title }} <span class="muted">#{{ issue.number }}</span></h2>
+  <p class="issue-badges">{% if issue.kind_label() != "" %}<span class="badge">{{ issue.kind_label() }}</span>{% endif %}<span class="badge {{ badge.0 }}">{{ badge.1 }}</span> <a href="{{ issue.html_url }}" rel="external noopener">On GitHub</a></p>
+</header>
+
+<article class="panel post">
+  <header class="post-head">
+    {% if issue.author.avatar_url != "" %}<img class="avatar" src="{{ issue.author.avatar_url }}" alt="" width="28" height="28">{% endif %}
+    <strong>{{ issue.author.login }}</strong> <span class="muted">reported {{ issue.created }}{% if issue.edited %} · edited{% endif %}</span>
+  </header>
+  <div class="post-body description">{% if issue.body_html.trim().is_empty() %}<p class="muted">No description.</p>{% else %}{{ issue.body_html|safe }}{% endif %}</div>
+  {% if issue.mine && frame.write == Write::Ok %}
+  <div class="post-tools">
+    <details>
+      <summary>Edit</summary>
+      <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/edit">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit" class="issue-danger">Delete issue</button>
+        <label for="edit-title">Title</label>
+        <input id="edit-title" name="title" value="{{ issue.title }}" maxlength="256" required>
+        <label for="edit-body">Description</label>
+        <textarea id="edit-body" name="body" rows="8" maxlength="20000" required>{{ issue.body }}</textarea>
+        <button type="submit">Save on GitHub</button>
       </form>
-      {% endif %}
-      <h2 class="issue-discussion-title"><span data-i18n="issue_discussion">Discussion</span> <span class="muted">({{ comments.len() }})</span></h2>
-      {% for comment in comments %}
-      <article class="issue-message">
-        <header class="issue-message-head"><span class="issue-avatar" aria-hidden="true">{{ comment.author }}</span><strong>{{ comment.author }}</strong><span class="muted" data-i18n="issue_commented">commented</span></header>
-        <div class="issue-message-body">{{ comment.body }}</div>
-        {% if comment.can_edit %}
-        <details>
-          <summary>Edit comment</summary>
-          <form method="post" action="/addons/{{ slug }}/issues/{{ id }}/comments/{{ comment.id }}/edit">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <textarea name="body" required maxlength="10000" rows="3">{{ comment.body }}</textarea>
-            <button type="submit">Save comment</button>
-          </form>
-        </details>
-        <form method="post" action="/addons/{{ slug }}/issues/{{ id }}/comments/{{ comment.id }}/delete" data-confirm-delete="Delete this comment?">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <button type="submit" class="issue-danger">Delete comment</button>
-        </form>
-        {% endif %}
-      </article>
-      {% endfor %}
-      {% if user.is_some() %}
-      <form method="post" action="/addons/{{ slug }}/issues/{{ id }}/comments" class="panel issue-reply">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <label for="issue-reply-body" data-i18n="issue_join">Join the discussion</label>
-        <textarea id="issue-reply-body" name="body" required maxlength="10000" rows="5" placeholder="Write a constructive reply…" data-i18n-placeholder="reply_placeholder"></textarea>
-        <div class="issues-form-footer"><span class="muted" data-i18n="issue_respect">Be respectful and stay on topic.</span><button type="submit" data-i18n="post">Post comment</button></div>
-      </form>
-      {% else %}<p class="notice"><a href="/login" data-i18n="login">Log in with GitHub</a> <span data-i18n="issue_to_join">to join the discussion.</span></p>{% endif %}
-    </div>
-    <aside class="issue-sidebar" aria-label="Issue information" data-i18n-aria-label="issue_information">
-      <section class="panel"><h2 data-i18n="creator_details">Details</h2><p class="muted" data-i18n="status">Status</p><p><span class="badge">{{ status }}</span></p><p class="muted" data-i18n="category">Category</p><p><span class="badge" data-i18n-enum="issue_kind" data-i18n-value="{{ kind }}">{{ kind }}</span></p></section>
-      {% if can_manage %}
-      <section class="panel"><h2 data-i18n="issue_manage">Manage issue</h2>
-        <form method="post" action="/addons/{{ slug }}/issues/{{ id }}/status">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <label for="issue-status" data-i18n="issue_change_status">Change status</label>
-          <select id="issue-status" name="status">
-            <option value="open" {% if status == "open" %}selected{% endif %} data-i18n="open">Open</option>
-            <option value="acknowledged" {% if status == "acknowledged" %}selected{% endif %} data-i18n="acknowledged">Acknowledged</option>
-            <option value="in_progress" {% if status == "in_progress" %}selected{% endif %} data-i18n="in_progress">In progress</option>
-            <option value="resolved" {% if status == "resolved" %}selected{% endif %} data-i18n="resolved">Resolved</option>
-            <option value="closed" {% if status == "closed" %}selected{% endif %} data-i18n="closed">Closed</option>
-          </select>
-          <button type="submit" data-i18n="update_status">Update status</button>
-        </form>
-      </section>
-      {% endif %}
-    </aside>
+    </details>
+    <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/state">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if issue.open %}<input type="hidden" name="state" value="closed"><button type="submit" class="secondary">Close issue</button>
+      {% else %}<input type="hidden" name="state" value="open"><button type="submit" class="secondary">Reopen issue</button>{% endif %}
+    </form>
   </div>
+  {% endif %}
+</article>
+
+<h3>Discussion ({{ replies.len() }})</h3>
+{% for r in replies %}
+<article class="panel post" id="reply-{{ r.id }}">
+  <header class="post-head">
+    {% if r.author.avatar_url != "" %}<img class="avatar" src="{{ r.author.avatar_url }}" alt="" width="28" height="28">{% endif %}
+    <strong>{{ r.author.login }}</strong> <span class="muted"><a href="{{ r.html_url }}" rel="external noopener">{{ r.created }}</a>{% if r.edited %} · edited{% endif %}</span>
+  </header>
+  <div class="post-body description">{{ r.body_html|safe }}</div>
+  {% if r.mine && frame.write == Write::Ok %}
+  <div class="post-tools">
+    <details>
+      <summary>Edit</summary>
+      <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/replies/{{ r.id }}/edit">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="reply-body-{{ r.id }}" class="sr-only">Reply</label>
+        <textarea id="reply-body-{{ r.id }}" name="body" rows="5" maxlength="20000" required>{{ r.body }}</textarea>
+        <button type="submit">Save on GitHub</button>
+      </form>
+    </details>
+    <details>
+      <summary>Delete</summary>
+      <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/replies/{{ r.id }}/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <p>This deletes the reply on GitHub too. It cannot be undone.</p>
+        <button type="submit" class="danger">Delete reply</button>
+      </form>
+    </details>
+  </div>
+  {% endif %}
+</article>
+{% endfor %}
+
+{% include "issue_write.html" %}
+{% if frame.write != Write::Ok && reply != "" %}
+<div class="panel">
+  <label for="unsent">Your reply was not posted. Copy it before you leave:</label>
+  <textarea id="unsent" rows="5" readonly>{{ reply }}</textarea>
 </div>
+{% endif %}
+{% if issue.locked %}
+<div class="notice">This issue is locked on GitHub: only the repo's team can reply.</div>
+{% else if frame.write == Write::Ok %}
+<form class="panel" method="post" action="{{ place.base }}/issues/{{ issue.number }}/reply">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="reply">Reply</label>
+  <textarea id="reply" name="body" rows="5" maxlength="20000" required placeholder="What did you try, what happened?">{{ reply }}</textarea>
+  <div class="actions">
+    <button type="submit">Post reply</button>
+    {% if let Some(u) = user %}<small class="muted">Posted publicly on GitHub as {{ u.login }}. Markdown works.</small>{% endif %}
+  </div>
+</form>
+{% endif %}
 {% endblock %}

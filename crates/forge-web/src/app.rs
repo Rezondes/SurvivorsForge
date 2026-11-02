@@ -20,7 +20,7 @@ use sha2::Digest;
 use std::sync::Arc;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob: https://avatars.githubusercontent.com; \
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob: https://avatars.githubusercontent.com https://github.com https://user-images.githubusercontent.com https://github-production-user-asset-6210df.s3.amazonaws.com; \
                        form-action 'self'; frame-ancestors 'none'; base-uri 'none'; connect-src 'self'";
 
 #[derive(Clone)]
@@ -96,14 +96,6 @@ pub fn router(state: AppState) -> Router {
         .route("/creator-guide", get(moved_doc))
         .route("/addon-api", get(moved_doc))
         .route("/addons", get(crate::public::addons))
-        .route("/addons/{slug}/issues", get(crate::issues::list).post(crate::issues::create))
-        .route("/addons/{slug}/issues/{id}", get(crate::issues::show).post(crate::issues::comment))
-        .route("/addons/{slug}/issues/{id}/comments", post(crate::issues::comment))
-        .route("/addons/{slug}/issues/{id}/status", post(crate::issues::status))
-        .route("/addons/{slug}/issues/{id}/edit", post(crate::issues::edit))
-        .route("/addons/{slug}/issues/{id}/delete", post(crate::issues::delete))
-        .route("/addons/{slug}/issues/{id}/comments/{comment_id}/edit", post(crate::issues::edit_comment))
-        .route("/addons/{slug}/issues/{id}/comments/{comment_id}/delete", post(crate::issues::delete_comment))
         .route("/addons/{slug}/comments", get(crate::comments::list).post(crate::comments::create))
         .route("/addons/{slug}/comments/{id}/edit", post(crate::comments::edit))
         .route("/addons/{slug}/comments/{id}/report", post(crate::comments::report))
@@ -113,6 +105,22 @@ pub fn router(state: AppState) -> Router {
         .route("/addons/{slug}/versions/{tag}", get(crate::public::version))
         .route("/addons/{slug}/versions/{tag}/download", get(crate::public::download))
         .route("/addons/{slug}/report", get(crate::report::report_page).post(crate::report::send_report))
+        .route("/addons/{slug}/issues", get(crate::issues::list).post(crate::issues::create))
+        .route("/addons/{slug}/issues/new", get(crate::issues::new_form))
+        .route("/addons/{slug}/issues/{number}", get(crate::issues::show))
+        .route("/addons/{slug}/issues/{number}/reply", post(crate::issues::reply))
+        .route("/addons/{slug}/issues/{number}/edit", post(crate::issues::edit))
+        .route("/addons/{slug}/issues/{number}/state", post(crate::issues::set_state))
+        .route("/addons/{slug}/issues/{number}/replies/{id}/edit", post(crate::issues::edit_reply))
+        .route("/addons/{slug}/issues/{number}/replies/{id}/delete", post(crate::issues::delete_reply))
+        .route("/issues", get(crate::issues::list).post(crate::issues::create))
+        .route("/issues/new", get(crate::issues::new_form))
+        .route("/issues/{number}", get(crate::issues::show))
+        .route("/issues/{number}/reply", post(crate::issues::reply))
+        .route("/issues/{number}/edit", post(crate::issues::edit))
+        .route("/issues/{number}/state", post(crate::issues::set_state))
+        .route("/issues/{number}/replies/{id}/edit", post(crate::issues::edit_reply))
+        .route("/issues/{number}/replies/{id}/delete", post(crate::issues::delete_reply))
         .route("/stats", get(crate::stats::stats))
         .route("/packs", get(crate::packs::packs))
         .route("/packs/new", get(crate::packs::new_pack).post(crate::packs::create_pack))
@@ -183,7 +191,6 @@ pub fn router(state: AppState) -> Router {
         .route("/static/htmx.min.js", get(|| async { asset("text/javascript", HTMX_JS) }))
         .route("/static/app.css", get(|| async { asset("text/css", APP_CSS) }))
         .route("/static/view.js", get(|| async { asset("text/javascript", VIEW_JS) }))
-        .route("/static/i18n.js", get(|| async { asset("text/javascript", I18N_JS) }))
         .route("/static/api-docs.js", get(|| async { asset("text/javascript", API_DOCS_JS) }))
         // The launcher's fonts (SIL OFL, licenses next to them in ui/fonts).
         // The launcher's icon, as tab icon and home screen icon.
@@ -221,7 +228,6 @@ fn font(body: &'static [u8]) -> Response {
 const HTMX_JS: &str = include_str!("../static/htmx.min.js");
 const APP_CSS: &str = include_str!("../static/app.css");
 const VIEW_JS: &str = include_str!("../static/view.js");
-const I18N_JS: &str = include_str!("../static/i18n.js");
 const API_DOCS_JS: &str = include_str!("../static/api-docs.js");
 
 tokio::task_local! {
@@ -244,7 +250,7 @@ pub fn in_section(section: &str) -> bool {
 /// deploy reaches browsers that still cache the old files.
 pub fn asset_version() -> &'static str {
     static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        let hash = sha2::Sha256::new().chain_update(HTMX_JS).chain_update(APP_CSS).chain_update(VIEW_JS).chain_update(I18N_JS).chain_update(API_DOCS_JS).finalize();
+        let hash = sha2::Sha256::new().chain_update(HTMX_JS).chain_update(APP_CSS).chain_update(VIEW_JS).chain_update(API_DOCS_JS).finalize();
         hash[..6].iter().map(|b| format!("{b:02x}")).collect()
     });
     &VERSION
@@ -420,11 +426,14 @@ async fn callback(State(state): State<AppState>, jar: PrivateCookieJar, Query(qu
     let message = match (query.code, query.error.as_deref()) {
         (Some(_), None) if !started => "This login was not started here. Please log in again.".into(),
         (Some(code), None) => {
-            let body = json!({ "code": code, "return_to": state.config.callback_url() });
+            let body = json!({ "code": code, "return_to": state.config.callback_url(), "github_token": true });
             match state.api.post("/v1/auth/exchange", None, &body).await {
                 Ok(answer) => {
                     let token = answer["token"].as_str().unwrap_or_default().to_string();
-                    let jar = jar.add(session::cookie(SESSION_COOKIE, token, state.secure_cookies()));
+                    let mut jar = jar.add(session::cookie(SESSION_COOKIE, token, state.secure_cookies()));
+                    if answer["github_token"].is_object() {
+                        jar = jar.add(session::cookie(session::GITHUB_COOKIE, answer["github_token"].to_string(), state.secure_cookies()));
+                    }
                     return (jar, Redirect::to("/")).into_response();
                 }
                 Err(e) => e.message(),
@@ -441,5 +450,6 @@ async fn logout(State(state): State<AppState>, jar: PrivateCookieJar) -> Respons
     if let Some(token) = session::token(&jar) {
         let _ = state.api.post("/v1/auth/logout", Some(&token), &json!({})).await;
     }
-    (jar.remove(session::removal(SESSION_COOKIE)), Redirect::to("/")).into_response()
+    let jar = jar.remove(session::removal(SESSION_COOKIE)).remove(session::removal(session::GITHUB_COOKIE));
+    (jar, Redirect::to("/")).into_response()
 }

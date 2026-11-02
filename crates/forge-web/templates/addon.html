@@ -12,10 +12,11 @@
   {% if let Some(icon) = icon_url %}<img class="icon big" src="{{ icon }}" alt="" width="96" height="96">{% endif %}
   <div>
     <h1>{{ name }}</h1>
-    <p class="muted">by <a href="/addons?author={{ author|urlencode }}">{{ author }}</a>{% if !claimed && user.is_some() %} (not claimed on this site yet){% endif %} · <a href="/addons?category={{ category|urlencode }}">{{ category }}</a> · <a href="https://github.com/{{ repo }}" rel="external noopener">GitHub</a>{% if let Some(u) = user %}{% if u.staff %} · <a href="/admin/addons/{{ slug }}">Manage as admin</a>{% endif %}{% endif %} · <a href="/addons/{{ slug }}/report">Report</a></p>
+    <p class="muted">by <a href="/addons?author={{ author|urlencode }}">{{ author }}</a>{% if !claimed && user.is_some() %} (not claimed on this site yet){% endif %} · <a href="/addons?category={{ category|urlencode }}">{{ category }}</a> · <a href="https://github.com/{{ repo }}" rel="external noopener">GitHub</a>{% if let Some(u) = user %}{% if u.staff %} · <a href="/admin/addons/{{ slug }}">Manage as admin</a>{% endif %}{% endif %} · <a href="/addons/{{ slug }}/issues/new?kind=bug">Report a bug</a> · <a href="/addons/{{ slug }}/report">Report to the admins</a></p>
     <p>{{ summary }}</p>
   </div>
 </header>
+{% let tab = "overview" %}{% include "addon_tabs.html" %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 {% if can_claim %}
 <form class="notice ok admin-actions" method="post" action="/addons/{{ slug }}/claim">
@@ -59,14 +60,6 @@
   {% endmatch %}
 </section>
 
-<section class="panel">
-  <h2>Community</h2>
-  <p class="muted">Discuss this addon, share feedback and report problems.</p>
-  <div class="actions">
-    <a class="button secondary" href="/addons/{{ slug }}/comments">Comments</a>
-    <a class="button secondary" href="/addons/{{ slug }}/issues">Issues</a>
-  </div>
-</section>
 {% if !shots.is_empty() %}
 <section class="shots" aria-label="Screenshots">
   {% for shot in shots %}

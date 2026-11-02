@@ -1,0 +1,14 @@
+{# Why the visitor cannot write here, with the way that works; nothing when they can. #}
+{% match frame.write %}
+{% when Write::Off %}
+<div class="notice">The creator has not turned on issues on SurvivorsForge for this addon. Report bugs and ideas on GitHub directly. <a class="button secondary" href="{{ frame.new_issue_url }}" rel="external noopener">Report on GitHub</a></div>
+{% when Write::Disabled %}
+<div class="notice">Issues are switched off for <a href="https://github.com/{{ frame.repo }}" rel="external noopener">{{ frame.repo }}</a> on GitHub.</div>
+{% when Write::OnGitHub %}
+<div class="notice">New issues and replies here go through GitHub directly. <a class="button secondary" href="{{ frame.new_issue_url }}" rel="external noopener">Report on GitHub</a></div>
+{% when Write::Login %}
+<div class="notice"><a href="/login">Log in with GitHub</a> to report a bug or reply. It is posted on GitHub under your account.</div>
+{% when Write::Relogin %}
+<div class="notice warn"><a href="/login">Log in again</a> to post on GitHub. It takes a moment and keeps everything else.</div>
+{% when Write::Ok %}
+{% endmatch %}

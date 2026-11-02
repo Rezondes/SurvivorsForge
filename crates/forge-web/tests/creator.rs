@@ -93,6 +93,25 @@ async fn contributor_sees_only_allowed_sections() {
 }
 
 #[tokio::test]
+async fn only_the_owner_switches_issues_and_comments() {
+    let mut web = logged_in(owner()).await;
+    let page = web.get("/addons/lucky/edit").await;
+    assert!(page.body.contains(r#"name="comments" value="1">"#) && page.body.contains(r#"name="issues" value="1">"#), "both off until turned on: {}", page.body);
+    Mock::given(method("PATCH"))
+        .and(path("/v1/addons/lucky"))
+        .and(body_partial_json(json!({ "comments_enabled": false, "issues_enabled": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let saved = web.post_form("/addons/lucky/edit", &[("tabs_form", "1"), ("issues", "1")]).await;
+    assert!(saved.body.contains("Saved."), "an unticked box turns its tab off: {}", saved.body);
+
+    let mut contributor = logged_in(json!({ "owner": false, "edit_description": true, "edit_images": false })).await;
+    assert!(!contributor.get("/addons/lucky/edit").await.body.contains(r#"name="tabs_form""#));
+}
+
+#[tokio::test]
 async fn owner_manages_members() {
     let mut web = logged_in(owner()).await;
     get_json(&web, "/v1/addons/lucky/members", json!([{ "github_id": 2, "login": "bob", "can_edit_description": true, "can_edit_images": false }])).await;
@@ -149,7 +168,6 @@ async fn the_edit_toolbar_stays_on_every_edit_page() {
     let mut web = logged_in(owner()).await;
     get_json(&web, "/v1/addons/lucky/members", json!([])).await;
     get_json(&web, "/v1/addons/lucky/versions", json!([{ "tag": "v1", "game_min": null, "game_max": null }])).await;
-    get_json(&web, "/v1/addons/lucky/versions/page", json!({ "versions": [{ "tag": "v1", "game_min": null, "game_max": null }], "total": 1, "page": 1, "per_page": 20 })).await;
     get_json(&web, "/v1/game-versions", json!([{ "name": "0.69.0" }])).await;
     let toolbar = r#"<nav class="subnav" aria-label="Edit addon">"#;
     for page in ["/addons/lucky/edit", "/addons/lucky/images", "/addons/lucky/members", "/addons/lucky/dependencies", "/addons/lucky/versions", "/addons/lucky/versions/v1/edit", "/addons/lucky/delete"] {
@@ -159,7 +177,6 @@ async fn the_edit_toolbar_stays_on_every_edit_page() {
     let mut anonymous = TestWeb::new().await;
     get_json(&anonymous, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky", "blocked": false, "verified_author": false })).await;
     get_json(&anonymous, "/v1/addons/lucky/versions", json!([])).await;
-    get_json(&anonymous, "/v1/addons/lucky/versions/page", json!({ "versions": [], "total": 0, "page": 1, "per_page": 20 })).await;
     assert!(!anonymous.get("/addons/lucky/versions").await.body.contains(toolbar), "only for those who may edit");
 }
 

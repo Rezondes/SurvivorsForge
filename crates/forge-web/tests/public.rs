@@ -45,7 +45,6 @@ async fn with_addon(trust: &str, source: &str) -> TestWeb {
     let web = TestWeb::new().await;
     mock(&web, "/v1/addons/lucky", addon(trust)).await;
     mock(&web, "/v1/addons/lucky/versions", versions(trust, source)).await;
-    mock(&web, "/v1/addons/lucky/versions/page", json!({ "versions": versions(trust, source), "total": 2, "page": 1, "per_page": 20 })).await;
     mock(&web, "/v1/addons/lucky/versions/v1/findings", findings()).await;
     web
 }
@@ -930,7 +929,7 @@ async fn every_version_shows_its_downloads() {
     let mut list = versions("scanned", "available");
     list[0]["downloads"] = json!(12345);
     list[1]["downloads"] = json!(0);
-    mock(&web, "/v1/addons/lucky/versions/page", json!({ "versions": list, "total": 2, "page": 1, "per_page": 20 })).await;
+    mock(&web, "/v1/addons/lucky/versions", list).await;
     let page = web.get("/addons/lucky/versions").await;
     assert!(page.body.contains("<th>Downloads</th>"), "{}", page.body);
     assert!(page.body.contains("<td>12,345</td>") && page.body.contains("<td>0</td>"), "a version nobody downloaded says 0: {}", page.body);
@@ -939,7 +938,7 @@ async fn every_version_shows_its_downloads() {
     tag_addon["source_type"] = json!("tag");
     let mut web = TestWeb::new().await;
     mock(&web, "/v1/addons/lucky", tag_addon).await;
-    mock(&web, "/v1/addons/lucky/versions/page", json!({ "versions": versions("scanned", "available"), "total": 2, "page": 1, "per_page": 20 })).await;
+    mock(&web, "/v1/addons/lucky/versions", versions("scanned", "available")).await;
     let page = web.get("/addons/lucky/versions").await;
     assert!(page.body.contains("not counted"), "GitHub counts no source zips: {}", page.body);
 }
@@ -974,44 +973,4 @@ async fn one_page_of_addons_still_shows_the_pager() {
     let pager = body.split(r#"<nav class="pager""#).nth(1).expect("a pager").split("</nav>").next().unwrap();
     assert!(pager.contains("1–3 of 3 addons") && pager.contains(r#"aria-current="page">1<"#), "{pager}");
     assert!(!pager.contains(r#"rel="prev""#) && !pager.contains(r#"rel="next""#), "{pager}");
-}
-
-#[tokio::test]
-async fn multilingual_navigation_and_catalog_are_served() {
-    let mut web = TestWeb::new().await;
-    let page = web.get("/").await;
-    assert_eq!(page.status, StatusCode::OK);
-    assert!(page.body.contains("id=\"forge-locale\""), "language picker is missing");
-    assert!(page.body.contains("value=\"fr\""), "French language option is missing");
-    assert!(page.body.contains("data-i18n=\"addons\""), "navigation is not marked for translation");
-    assert!(page.body.contains("/static/i18n.js"), "translation runtime is not loaded");
-    let script = web.get("/static/i18n.js").await;
-    assert_eq!(script.status, StatusCode::OK);
-    assert!(script.body.contains("forge-locale"), "language persistence is missing");
-}
-
-#[tokio::test]
-async fn addon_detail_links_to_community_sections() {
-    let mut web = with_addon("scanned", "available").await;
-    let page = web.get("/addons/lucky").await;
-    assert_eq!(page.status, StatusCode::OK);
-    assert!(page.body.contains("href=\"/addons/lucky/comments\""), "comments link missing");
-    assert!(page.body.contains("href=\"/addons/lucky/issues\""), "issues link missing");
-}
-
-#[tokio::test]
-async fn version_history_pagination_keeps_page_links_and_boundaries() {
-    let mut web = TestWeb::new().await;
-    mock(&web, "/v1/addons/lucky", addon("scanned")).await;
-    mock(&web, "/v1/addons/lucky/versions/page", json!({
-        "versions": versions("scanned", "available"),
-        "total": 45, "page": 2, "per_page": 20, "has_more": true
-    })).await;
-    let body = web.get("/addons/lucky/versions?page=2").await.body;
-    let pager = body.split(r#"<nav class="pager""#).nth(1).expect("version pager").split("</nav>").next().unwrap();
-    assert!(pager.contains("21–40 of 45 versions"), "{pager}");
-    assert!(pager.contains(r#"aria-current="page">2<"#), "{pager}");
-    assert!(pager.contains(r#"href="/addons/lucky/versions?page=1""#), "{pager}");
-    assert!(pager.contains(r#"href="/addons/lucky/versions?page=3""#), "{pager}");
-    assert!(pager.contains(r#"rel="prev""#) && pager.contains(r#"rel="next""#), "{pager}");
 }

@@ -1,195 +1,195 @@
-//! Public addon discussions, distinct from issue-specific comments.
+//! `/v1/addons/{slug}/comments`: the public discussion under an addon, apart from the GitHub issues
+//! of its repo. Replies point at their parent. Deleting only marks a comment, so a thread keeps its
+//! shape; deleting someone else's goes into the audit log. Comments are reported through
+//! `/v1/reports`. They are off until the owner turns them on (`comments_enabled`).
+
+use super::addons::{AddonRow, load_addon, not_blocked, user_permissions};
 use crate::app::AppState;
+use crate::audit::{self, Entry};
 use crate::auth::CurrentUser;
 use crate::error::{ApiError, ApiResult};
-use crate::routes::addons::{load_addon, user_permissions, not_blocked};
-use axum::{Json, extract::{Path, Query, State}, http::StatusCode};
+use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use chrono::Duration;
+use forge_core::roles::Permission;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+
+/// Comments on one page, newest first; the API sends one more to show that older ones exist.
+pub const PER_PAGE: i64 = 30;
+pub const MAX_BODY: usize = 5_000;
+pub const MAX_PER_HOUR: i64 = 20;
 
 #[derive(Deserialize)]
-pub struct Page { pub before: Option<i64> }
-#[derive(Deserialize)]
-pub struct Body { pub body: String, #[serde(default)] pub parent_id: Option<i64>, #[serde(default)] pub quote_id: Option<i64> }
-#[derive(Deserialize)]
-pub struct ReportBody { pub reason: String, #[serde(default)] pub details: String }
-
-fn invalid() -> ApiError {
-    ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_comment", "Comment must contain 1-10000 characters")
+pub struct Page {
+    /// Comments older than this id.
+    pub before: Option<i64>,
 }
+
+#[derive(Deserialize)]
+pub struct NewComment {
+    body: String,
+    #[serde(default)]
+    parent_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct Changes {
+    body: String,
+}
+
+/// The trimmed text, or `422 invalid_comment`.
+fn text(body: &str) -> ApiResult<&str> {
+    let body = body.trim();
+    if (1..=MAX_BODY).contains(&body.chars().count()) {
+        Ok(body)
+    } else {
+        Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_comment", "A comment has 1 to 5000 characters"))
+    }
+}
+
 fn forbidden() -> ApiError {
-    ApiError::new(StatusCode::FORBIDDEN, "forbidden", "You cannot modify this comment")
-}
-fn may_edit(author: i64, actor: i64, admin: bool) -> bool {
-    author == actor || admin
-}
-fn may_delete(author: i64, actor: i64, admin: bool, addon_moderator: bool) -> bool {
-    may_edit(author, actor, admin) || addon_moderator
-}
-fn valid(text: &str) -> bool {
-    let n = text.trim().chars().count();
-    (1..=10000).contains(&n)
+    ApiError::new(StatusCode::FORBIDDEN, "forbidden", "You cannot change this comment")
 }
 
-pub async fn list(State(state): State<AppState>, Path(slug): Path<String>, Query(page): Query<Page>)
-    -> ApiResult<Json<Value>> {
+/// Not blocked, and the owner turned the comments on.
+fn open(addon: &AddonRow) -> ApiResult<()> {
+    not_blocked(addon)?;
+    if addon.comments_enabled {
+        Ok(())
+    } else {
+        Err(ApiError::new(StatusCode::FORBIDDEN, "comments_off", "The creator has not turned on comments for this addon"))
+    }
+}
+
+/// The author of a comment of this addon that is not deleted.
+async fn author_of(state: &AppState, addon_id: i64, id: i64) -> ApiResult<i64> {
+    let author: Option<i64> = sqlx::query_scalar("SELECT author_id FROM addon_comments WHERE id = $1 AND addon_id = $2 AND deleted_at IS NULL")
+        .bind(id)
+        .bind(addon_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    author.ok_or_else(ApiError::not_found)
+}
+
+pub async fn list(State(state): State<AppState>, Path(slug): Path<String>, Query(page): Query<Page>) -> ApiResult<Json<Value>> {
     let addon = load_addon(&state.pool, &slug).await?;
-    not_blocked(&addon)?;
-    let before = page.before.unwrap_or(i64::MAX);
+    open(&addon)?;
     let comments: Value = sqlx::query_scalar(
         "SELECT coalesce(json_agg(json_build_object(
-            'id', c.id, 'body', CASE WHEN c.deleted_at IS NULL THEN c.body ELSE '[deleted]' END, 'deleted', c.deleted_at IS NOT NULL, 'author_id', c.author_id, 'author', u.login,
-            'avatar_url', u.avatar_url, 'created_at', c.created_at, 'edited_at', c.edited_at, 'parent_id', c.parent_id, 'quote_id', c.quote_id
-        ) ORDER BY c.id DESC), '[]'::json)
-        FROM (SELECT * FROM addon_comments
-              WHERE addon_id=$1 AND id<$2
-              ORDER BY id DESC LIMIT 31) c
-        JOIN users u ON u.id=c.author_id"
-    ).bind(addon.id).bind(before).fetch_one(&state.pool).await?;
+                    'id', c.id, 'deleted', c.deleted_at IS NOT NULL,
+                    'body', CASE WHEN c.deleted_at IS NULL THEN c.body ELSE '' END,
+                    'author_id', c.author_id, 'author', u.login, 'avatar_url', u.avatar_url,
+                    'created_at', c.created_at, 'edited_at', c.edited_at, 'parent_id', c.parent_id)
+                ORDER BY c.id DESC), '[]')
+         FROM (SELECT * FROM addon_comments WHERE addon_id = $1 AND id < $2 ORDER BY id DESC LIMIT $3) c
+         JOIN users u ON u.id = c.author_id",
+    )
+    .bind(addon.id)
+    .bind(page.before.unwrap_or(i64::MAX))
+    .bind(PER_PAGE + 1)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(comments))
 }
 
-pub async fn create(State(state): State<AppState>, user: CurrentUser,
-    Path(slug): Path<String>, Json(body): Json<Body>)
-    -> ApiResult<(StatusCode, Json<Value>)> {
-    if !valid(&body.body) { return Err(invalid()); }
+pub async fn create(State(state): State<AppState>, user: CurrentUser, Path(slug): Path<String>, Json(body): Json<NewComment>) -> ApiResult<(StatusCode, Json<Value>)> {
+    let text = text(&body.body)?;
     let addon = load_addon(&state.pool, &slug).await?;
-    not_blocked(&addon)?;
+    open(&addon)?;
     let now = (state.clock)();
-    // Serialize writes per author so concurrent requests cannot bypass the daily cap.
-    // Transaction-scoped advisory locks release automatically on commit or rollback.
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+    // One write per author at a time, so a burst of requests cannot pass the limit.
+    sqlx::query("SELECT pg_advisory_xact_lock($1)").bind(user.id).execute(&mut *tx).await?;
+    let recent: i64 = sqlx::query_scalar("SELECT count(*) FROM addon_comments WHERE author_id = $1 AND created_at > $2")
         .bind(user.id)
-        .execute(&mut *tx).await?;
-    let recent: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM addon_comments WHERE author_id=$1 AND created_at>$2"
-    ).bind(user.id).bind(now - chrono::Duration::hours(24)).fetch_one(&mut *tx).await?;
-    if recent >= 100 {
-        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "comment_limit", "Daily comment limit reached"));
+        .bind(now - Duration::hours(1))
+        .fetch_one(&mut *tx)
+        .await?;
+    if recent >= MAX_PER_HOUR {
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "comment_limit", "At most 20 comments an hour, try again later"));
     }
+    // A reply may also go under a deleted comment, but not under one of another addon.
     if let Some(parent) = body.parent_id {
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM addon_comments WHERE id=$1 AND addon_id=$2)")
-            .bind(parent).bind(addon.id).fetch_one(&mut *tx).await?;
-        if !exists { return Err(ApiError::not_found()); }
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM addon_comments WHERE id = $1 AND addon_id = $2)")
+            .bind(parent)
+            .bind(addon.id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if !exists {
+            return Err(ApiError::not_found());
+        }
     }
-    if let Some(quote) = body.quote_id {
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM addon_comments WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL)")
-            .bind(quote).bind(addon.id).fetch_one(&mut *tx).await?;
-        if !exists { return Err(ApiError::not_found()); }
-    }
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO addon_comments(addon_id,author_id,body,created_at,parent_id,quote_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id"
-    ).bind(addon.id).bind(user.id).bind(body.body.trim()).bind(now).bind(body.parent_id).bind(body.quote_id).fetch_one(&mut *tx).await?;
+    let id: i64 = sqlx::query_scalar("INSERT INTO addon_comments (addon_id, author_id, body, parent_id, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id")
+        .bind(addon.id)
+        .bind(user.id)
+        .bind(text)
+        .bind(body.parent_id)
+        .bind(now)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(json!({"id":id}))))
+    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
 }
 
-pub async fn edit(State(state): State<AppState>, user: CurrentUser,
-    Path((slug,id)): Path<(String,i64)>, Json(body): Json<Body>) -> ApiResult<Json<Value>> {
-    if !valid(&body.body) { return Err(invalid()); }
+/// Only the author changes the text: nobody puts words in someone else's mouth.
+pub async fn edit(State(state): State<AppState>, user: CurrentUser, Path((slug, id)): Path<(String, i64)>, Json(body): Json<Changes>) -> ApiResult<StatusCode> {
+    let text = text(&body.body)?;
     let addon = load_addon(&state.pool, &slug).await?;
     not_blocked(&addon)?;
-    let author: Option<i64> = sqlx::query_scalar(
-        "SELECT author_id FROM addon_comments WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL"
-    ).bind(id).bind(addon.id).fetch_optional(&state.pool).await?;
-    let author = author.ok_or_else(ApiError::not_found)?;
-    if !may_edit(author, user.id, user.can(forge_core::roles::Permission::Moderate, &state.config)) { return Err(forbidden()); }
-    let updated = sqlx::query("UPDATE addon_comments SET body=$3,edited_at=$4 WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL AND author_id=$5")
-        .bind(id).bind(addon.id).bind(body.body.trim()).bind((state.clock)()).bind(author).execute(&state.pool).await?;
-    if updated.rows_affected() == 0 { return Err(ApiError::not_found()); }
-    Ok(Json(json!({"id":id,"edited":true})))
-}
-
-pub async fn remove(State(state): State<AppState>, user: CurrentUser,
-    Path((slug,id)): Path<(String,i64)>) -> ApiResult<Json<Value>> {
-    let addon = load_addon(&state.pool, &slug).await?;
-    not_blocked(&addon)?;
-    let author: Option<i64> = sqlx::query_scalar(
-        "SELECT author_id FROM addon_comments WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL"
-    ).bind(id).bind(addon.id).fetch_optional(&state.pool).await?;
-    let author = author.ok_or_else(ApiError::not_found)?;
-    let rights = user_permissions(&state.pool, &addon, &user).await?;
-    if !may_delete(author, user.id, user.can(forge_core::roles::Permission::Moderate, &state.config), rights.owner || rights.admin || rights.edit_description) {
+    if author_of(&state, addon.id, id).await? != user.id {
         return Err(forbidden());
     }
-    let removed = sqlx::query("UPDATE addon_comments SET deleted_at=$3,deleted_by=$4 WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL")
-        .bind(id).bind(addon.id).bind((state.clock)()).bind(user.id).execute(&state.pool).await?;
-    if removed.rows_affected() == 0 { return Err(ApiError::not_found()); }
-    Ok(Json(json!({"id":id,"deleted":true})))
+    sqlx::query("UPDATE addon_comments SET body = $2, edited_at = $3 WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .bind(text)
+        .bind((state.clock)())
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
-
-pub async fn report(State(state): State<AppState>, user: CurrentUser,
-    Path((slug,id)): Path<(String,i64)>, Json(body): Json<ReportBody>) -> ApiResult<(StatusCode, Json<Value>)> {
-    if !matches!(body.reason.as_str(), "spam"|"harassment"|"hate"|"unsafe"|"other")
-        || body.details.chars().count() > 2000 {
-        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_report", "Invalid report reason or details"));
-    }
+/// The author, moderators, and the addon's owner and editors delete a comment; deleting someone
+/// else's lands in the audit log with its text.
+pub async fn remove(State(state): State<AppState>, user: CurrentUser, Path((slug, id)): Path<(String, i64)>) -> ApiResult<StatusCode> {
     let addon = load_addon(&state.pool, &slug).await?;
     not_blocked(&addon)?;
-    let author: Option<i64> = sqlx::query_scalar(
-        "SELECT author_id FROM addon_comments WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL"
-    ).bind(id).bind(addon.id).fetch_optional(&state.pool).await?;
-    let author = author.ok_or_else(ApiError::not_found)?;
-    if author == user.id {
-        return Err(ApiError::new(StatusCode::FORBIDDEN, "own_comment", "Cannot report your own comment"));
+    let author = author_of(&state, addon.id, id).await?;
+    if author != user.id && !user.can(Permission::Moderate, &state.config) {
+        let rights = user_permissions(&state.pool, &addon, &user).await?;
+        if !(rights.owner || rights.admin || rights.edit_description) {
+            return Err(forbidden());
+        }
     }
+    let now = (state.clock)();
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)").bind(user.id).execute(&mut *tx).await?;
-    let recent: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM addon_comment_reports WHERE reporter_id=$1 AND created_at > $2"
-    ).bind(user.id).bind((state.clock)() - chrono::Duration::days(1))
-        .fetch_one(&mut *tx).await?;
-    if recent >= 10 {
-        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "report_limit", "At most 10 reports a day"));
-    }
-    let inserted: Option<i64> = sqlx::query_scalar(
-        "INSERT INTO addon_comment_reports(comment_id,reporter_id,reason,details)
-         VALUES($1,$2,$3,$4) ON CONFLICT(comment_id,reporter_id) DO NOTHING RETURNING id"
-    ).bind(id).bind(user.id).bind(&body.reason).bind(body.details.trim())
-        .fetch_optional(&mut *tx).await?;
-    if inserted.is_none() {
-        return Err(ApiError::new(StatusCode::CONFLICT, "already_reported", "You already reported this comment"));
+    let body: Option<String> = sqlx::query_scalar("UPDATE addon_comments SET deleted_at = $2, deleted_by = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING body")
+        .bind(id)
+        .bind(now)
+        .bind(user.id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let body = body.ok_or_else(ApiError::not_found)?;
+    if author != user.id {
+        let details = json!({ "addon": addon.slug, "author_id": author, "body": body });
+        let entry = Entry { admin_id: user.id, action: "delete_comment", target_type: "comment", target_id: id.to_string(), note: "", details };
+        audit::record(&mut tx, entry, now).await?;
     }
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(json!({"reported":true}))))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{valid, may_edit, may_delete};
+    use super::text;
 
     #[test]
-    fn author_admin_and_moderator_permissions() {
-        assert!(may_edit(1, 1, false));
-        assert!(may_edit(1, 2, true));
-        assert!(!may_edit(1, 2, false));
-        assert!(may_delete(1, 1, false, false));
-        assert!(may_delete(1, 2, true, false));
-        assert!(may_delete(1, 2, false, true));
-        assert!(!may_delete(1, 2, false, false));
-        // Addon moderators can remove other users comments but cannot edit them.
-        assert!(!may_edit(1, 2, false));
-    }
-
-
-    #[test]
-    fn rejects_blank_and_whitespace_only_comments() {
-        assert!(!valid(""));
-        assert!(!valid("  \n\t "));
-    }
-
-    #[test]
-    fn accepts_unicode_and_boundary_lengths() {
-        assert!(valid("Merci pour cet addon ! 🎮"));
-        assert!(valid(&"é".repeat(10_000)));
-        assert!(!valid(&"é".repeat(10_001)));
-    }
-
-    #[test]
-    fn counts_unicode_scalars_not_utf8_bytes() {
-        assert!(valid(&"界".repeat(10_000)));
-        assert!(!valid(&"界".repeat(10_001)));
+    fn a_comment_counts_characters_not_bytes_and_ignores_outer_space() {
+        assert!(text("").is_err());
+        assert!(text("  \n\t ").is_err());
+        assert_eq!(text("  Merci ! 🎮 ").unwrap(), "Merci ! 🎮");
+        assert!(text(&"界".repeat(5_000)).is_ok());
+        assert!(text(&"界".repeat(5_001)).is_err());
     }
 }

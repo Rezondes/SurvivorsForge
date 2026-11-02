@@ -1,6 +1,7 @@
 //! In-memory cache of public answers: anonymous `GET`s of public routes are answered from memory
 //! until their time runs out. Any successful write through the API empties the cache, so a visitor
-//! sees their own change at once; changes by the worker show after at most one TTL.
+//! sees their own change at once; changes by the worker, and issues written on GitHub itself, show
+//! after at most one TTL.
 
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::{Request, State};
@@ -47,6 +48,8 @@ impl ResponseCache {
             ["v1", "registry"] | ["v1", "addons"] | ["v1", "addons", _] | ["v1", "addons", _, "versions"] => Some(self.ttl),
             ["v1", "addons", _, "versions", _, "findings"] | ["v1", "game-versions"] | ["v1", "categories"] => Some(self.ttl * 5),
             ["v1", "stats"] => Some(self.ttl),
+            // Read from GitHub on every miss: the cache spares the round trip, not only the limit.
+            ["v1", "addons", _, "issues", ..] | ["v1", "platform", "issues", ..] => Some(self.ttl),
             _ => None,
         }
     }
@@ -139,11 +142,11 @@ mod tests {
     #[test]
     fn only_public_routes_are_cached() {
         let cache = ResponseCache::new(Duration::from_secs(60));
-        for path in ["/v1/registry", "/v1/addons", "/v1/addons/lucky", "/v1/addons/lucky/versions", "/v1/categories"] {
+        for path in ["/v1/registry", "/v1/addons", "/v1/addons/lucky", "/v1/addons/lucky/versions", "/v1/categories", "/v1/addons/lucky/issues", "/v1/addons/lucky/issues/6", "/v1/platform/issues"] {
             assert!(cache.ttl_for(path).is_some(), "{path}");
         }
         assert_eq!(cache.ttl_for("/v1/github/o/r/refs"), Some(GITHUB_TTL));
-        for path in ["/v1/me", "/v1/me/addons", "/v1/addons/lucky/permissions", "/v1/addons/lucky/members", "/v1/admin/audit", "/healthz"] {
+        for path in ["/v1/me", "/v1/me/addons", "/v1/addons/lucky/permissions", "/v1/addons/lucky/members", "/v1/addons/lucky/comments", "/v1/admin/audit", "/healthz"] {
             assert_eq!(cache.ttl_for(path), None, "{path}");
         }
         assert_eq!(ResponseCache::new(Duration::ZERO).ttl_for("/v1/registry"), None);

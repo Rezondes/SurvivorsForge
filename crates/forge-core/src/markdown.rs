@@ -13,6 +13,14 @@ const TAGS: &[&str] = &[
 /// A single line break stays one, as in GitHub comments; authors paste text, not prose. Headings go
 /// one level down: the page around a description has its own h1.
 pub fn render(md: &str, image_base: &str) -> String {
+    render_with_images(md, &[image_base])
+}
+
+/// Where GitHub keeps pictures pasted into issues and comments.
+pub const GITHUB_ATTACHMENTS: &[&str] = &["https://github.com/user-attachments/assets", "https://user-images.githubusercontent.com"];
+
+/// Like `render`, with images allowed from each of `image_bases`.
+pub fn render_with_images(md: &str, image_bases: &[&str]) -> String {
     let events = Parser::new_ext(md, Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH).map(|e| match e {
         Event::SoftBreak => Event::HardBreak,
         Event::Start(Tag::Heading { level, id, classes, attrs }) => Event::Start(Tag::Heading { level: lower(level), id, classes, attrs }),
@@ -22,7 +30,7 @@ pub fn render(md: &str, image_base: &str) -> String {
     let mut raw = String::new();
     html::push_html(&mut raw, events);
 
-    let image_base = format!("{}/", image_base.trim_end_matches('/'));
+    let image_bases: Vec<String> = image_bases.iter().map(|b| format!("{}/", b.trim_end_matches('/'))).collect();
     ammonia::Builder::default()
         .tags(TAGS.iter().copied().collect::<HashSet<_>>())
         .generic_attributes(HashSet::new())
@@ -37,7 +45,7 @@ pub fn render(md: &str, image_base: &str) -> String {
         .url_relative(ammonia::UrlRelative::Deny)
         .link_rel(Some("nofollow noopener noreferrer ugc"))
         .attribute_filter(move |element, attribute, value| {
-            if element == "img" && attribute == "src" && !value.starts_with(&image_base) {
+            if element == "img" && attribute == "src" && !image_bases.iter().any(|b| value.starts_with(b.as_str())) {
                 return None;
             }
             Some(value.into())
@@ -269,6 +277,15 @@ mod tests {
         let all = blocks(md, "https://img.test");
         assert!(all.iter().all(|b| !format!("{b:?}").contains("\\r")), "{all:?}");
         assert!(all.contains(&Block::Paragraph("Records each drop.\nDrops are also heard.".into())), "{all:?}");
+    }
+
+    #[test]
+    fn issue_texts_show_github_attachments_only() {
+        let md = r#"<img alt="Shot" src="https://github.com/user-attachments/assets/464df043"> ![x](https://evil.test/a.png) ![y](https://github.com/user-attachments/assetsX/b.png)"#;
+        let html = render_with_images(md, GITHUB_ATTACHMENTS);
+        assert!(html.contains(r#"src="https://github.com/user-attachments/assets/464df043""#), "{html}");
+        assert!(!html.contains("evil.test") && !html.contains("assetsX"), "{html}");
+        assert!(!render(md, "https://img.test").contains("user-attachments"), "descriptions stay on the platform's images");
     }
 
 }

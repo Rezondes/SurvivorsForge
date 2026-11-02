@@ -92,6 +92,31 @@ async fn permitted(parts: &mut Parts, state: &AppState, permission: Permission, 
     Ok(user)
 }
 
+/// The header the website sends the user's GitHub token in, for writes on GitHub as them.
+pub const GITHUB_TOKEN_HEADER: &str = "x-github-token";
+
+/// A logged-in user who sent their own GitHub token: the platform may act as them on GitHub.
+pub struct GitHubUser {
+    pub user: CurrentUser,
+    pub token: String,
+}
+
+impl FromRequestParts<AppState> for GitHubUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        let user = CurrentUser::from_request_parts(parts, state).await?;
+        let reauth = || ApiError::new(StatusCode::FORBIDDEN, "github_reauth", "Log in again to post on GitHub");
+        let token = parts.headers.get(GITHUB_TOKEN_HEADER).and_then(|v| v.to_str().ok()).map(str::trim).filter(|t| !t.is_empty()).ok_or_else(reauth)?;
+        // The token must be this user's: someone else's would post in their name.
+        match state.github.token_user(token).await {
+            Ok(owner) if owner.id == user.github_id => Ok(GitHubUser { user, token: token.to_string() }),
+            Ok(_) | Err(crate::github::GitHubError::Http(401)) => Err(reauth()),
+            Err(e) => Err(crate::routes::addons::github_error(e)),
+        }
+    }
+}
+
 /// A logged-in moderator or admin: everything under `/admin` except roles.
 pub struct StaffUser(pub CurrentUser);
 

@@ -298,7 +298,6 @@ pub struct VersionsPage {
     pub perms: Option<Perms>,
     /// GitHub counts the downloads (release files, not the source zips of tags).
     pub counted: bool,
-    pub pager: Option<Pager>,
 }
 
 #[derive(Template)]
@@ -451,6 +450,15 @@ pub struct EditAddonPage {
     pub perms: Perms,
     pub errors: Errors,
     pub saved: bool,
+    /// Whether players can post issues from the Issues tab: (they can, text); `None` when GitHub
+    /// did not answer.
+    pub issues_note: Option<(bool, String)>,
+    /// The App's page on GitHub, where owners accept its permissions.
+    pub install_url: String,
+    /// Whether the Comments tab takes comments and the Issues tab shows the repo's issues; only
+    /// the owner switches them.
+    pub comments_enabled: bool,
+    pub issues_enabled: bool,
 }
 
 pub struct ImageRow {
@@ -677,6 +685,10 @@ pub struct ReportRow {
     pub id: i64,
     pub target: String,
     pub addon: String,
+    /// Where the reported thing is shown: the addon page, or the comment in its discussion.
+    pub link: String,
+    /// The text of a reported comment, as it is now.
+    pub comment: Option<String>,
     pub reason: String,
     pub text: String,
     pub reporter: String,
@@ -1140,23 +1152,6 @@ mod pager_tests {
     }
 
     #[test]
-    fn version_pager_covers_first_middle_last_and_empty_pages() {
-        assert!(Pager::new(1, 20, 0, "versions", |n| format!("/versions?page={n}")).is_none());
-        let first = Pager::new(1, 20, 41, "versions", |n| format!("/versions?page={n}")).unwrap();
-        assert_eq!(first.summary, "1–20 of 41 versions");
-        assert!(first.prev.is_none());
-        assert_eq!(first.next.as_deref(), Some("/versions?page=2"));
-        let middle = Pager::new(2, 20, 41, "versions", |n| format!("/versions?page={n}")).unwrap();
-        assert_eq!(middle.summary, "21–40 of 41 versions");
-        assert_eq!(middle.prev.as_deref(), Some("/versions?page=1"));
-        assert_eq!(middle.next.as_deref(), Some("/versions?page=3"));
-        let last = Pager::new(3, 20, 41, "versions", |n| format!("/versions?page={n}")).unwrap();
-        assert_eq!(last.summary, "41–41 of 41 versions");
-        assert!(last.next.is_none());
-        assert_eq!(last.prev.as_deref(), Some("/versions?page=2"));
-    }
-
-    #[test]
     fn the_summary_counts_what_the_page_shows() {
         let pager = Pager::new(10, 20, 195, "addons", |n| n.to_string()).unwrap();
         assert_eq!(pager.summary, "181–195 of 195 addons");
@@ -1164,49 +1159,3 @@ mod pager_tests {
         assert_eq!(Pager::new(1, 20, 1, "addons", |n| n.to_string()).unwrap().summary, "1–1 of 1 addon");
     }
 }
-
-pub struct IssueItem {
-    pub id: i64,
-    pub title: String,
-    pub kind: String,
-    pub status: String,
-    pub author: String,
-}
-
-pub struct IssueComment {
-    pub id: i64,
-    pub can_edit: bool,
-    pub author: String,
-    pub body: String,
-}
-
-#[derive(Template)]
-#[template(path = "issues.html")]
-pub struct IssuesPage {
-    pub user: Option<Visitor>,
-    pub csrf: String,
-    pub slug: String,
-    pub name: String,
-    pub issues: Vec<IssueItem>,
-    pub next: Option<i64>,
-}
-
-#[derive(Template)]
-#[template(path = "issue.html")]
-pub struct IssuePage {
-    pub user: Option<Visitor>,
-    pub csrf: String,
-    pub slug: String,
-    pub name: String,
-    pub id: i64,
-    pub title: String,
-    pub body: String,
-    pub kind: String,
-    pub status: String,
-    pub author: String,
-    pub comments: Vec<IssueComment>,
-    pub can_manage: bool,
-    pub can_edit_issue: bool,
-    pub can_delete_issue: bool,
-}
-

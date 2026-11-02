@@ -38,6 +38,21 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/github/start", get(oauth::start))
         .route("/v1/auth/github/callback", get(oauth::callback))
         .route("/v1/auth/exchange", post(oauth::exchange))
+        .route("/v1/auth/github/refresh", post(oauth::refresh_github_token))
+        .route("/v1/addons/{slug}/issues", get(routes::issues::list).post(routes::issues::create))
+        .route("/v1/addons/{slug}/issues/{number}", get(routes::issues::show).patch(routes::issues::update))
+        .route("/v1/addons/{slug}/issues/{number}/comments", post(routes::issues::reply))
+        .route(
+            "/v1/addons/{slug}/issues/{number}/comments/{id}",
+            axum::routing::patch(routes::issues::edit_reply).delete(routes::issues::delete_reply),
+        )
+        .route("/v1/platform/issues", get(routes::issues::list).post(routes::issues::create))
+        .route("/v1/platform/issues/{number}", get(routes::issues::show).patch(routes::issues::update))
+        .route("/v1/platform/issues/{number}/comments", post(routes::issues::reply))
+        .route(
+            "/v1/platform/issues/{number}/comments/{id}",
+            axum::routing::patch(routes::issues::edit_reply).delete(routes::issues::delete_reply),
+        )
         .route("/v1/auth/logout", post(routes::me::logout))
         .route("/v1/me", get(routes::me::me))
         .route("/v1/me/addons", get(routes::creator::my_addons))
@@ -53,14 +68,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/addons/{slug}/comments", get(routes::comments::list).post(routes::comments::create))
         .route("/v1/addons/{slug}/comments/{id}", axum::routing::patch(routes::comments::edit).delete(routes::comments::remove))
-        .route("/v1/addons/{slug}/comments/{id}/reports", post(routes::comments::report))
-        .route("/v1/addons/{slug}/issues", get(routes::issues::list).post(routes::issues::create))
-        .route("/v1/addons/{slug}/issues/{id}", get(routes::issues::show).patch(routes::issues::set_status).delete(routes::issues::remove))
-        .route("/v1/addons/{slug}/issues/{id}/edit", axum::routing::patch(routes::issues::edit))
-        .route("/v1/addons/{slug}/issues/{id}/comments", post(routes::issues::comment))
-        .route("/v1/addons/{slug}/issues/{id}/comments/{comment_id}", axum::routing::patch(routes::issues::edit_comment).delete(routes::issues::remove_comment))
         .route("/v1/addons/{slug}/versions", get(routes::versions::list))
-        .route("/v1/addons/{slug}/versions/page", get(routes::versions::paged))
         .route("/v1/addons/{slug}/downloads", post(routes::versions::count_download))
         .route(
             "/v1/addons/{slug}/images",

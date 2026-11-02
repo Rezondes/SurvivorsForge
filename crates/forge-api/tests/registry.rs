@@ -17,7 +17,7 @@ fn known_repos(app: &TestApp) {
     let mut data = app.github.data();
     for (i, addon) in registry.addons.iter().enumerate() {
         let owner = addon.repo.split('/').next().unwrap().to_string();
-        data.repos.insert(5000 + i as i64, Repo { id: 5000 + i as i64, full_name: addon.repo.clone(), private: false, owner: Owner { id: 0, login: owner }, description: None });
+        data.repos.insert(5000 + i as i64, Repo { id: 5000 + i as i64, full_name: addon.repo.clone(), private: false, owner: Owner { id: 0, login: owner }, description: None, has_issues: true });
     }
 }
 

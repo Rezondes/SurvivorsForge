@@ -1,234 +1,464 @@
-//! Internal issue tracker for addon bugs, requests and questions.
+//! The issues of an addon's GitHub repo, read live from GitHub and written as the logged-in user.
+//! Nothing is stored here: an issue opened on GitHub shows at once (the ETag cache asks GitHub on
+//! every read, and its `304` costs no request of the limit).
+//!
+//! Writing needs the App installed on the repo with `Issues: Read & write`, which every owner of an
+//! installation confirms on GitHub. Without it the answer names GitHub's own form (`new_issue_url`).
+//!
+//! `/v1/addons/{slug}/issues[/{number}[/comments[/{id}]]]` for an addon's repo, and the same under
+//! `/v1/platform/issues` for SurvivorsForge's own repo (`LAUNCHER_REPO`).
+
+use super::addons::{AddonRow, github_error, load_addon, not_blocked};
 use crate::app::AppState;
-use crate::auth::CurrentUser;
+use crate::auth::GitHubUser;
 use crate::error::{ApiError, ApiResult};
-use crate::routes::addons::{load_addon, user_permissions, not_blocked};
-use axum::{Json, extract::{Path, Query, State}, http::StatusCode};
+use crate::github::GitHubError;
+use crate::github::types::{Issue, IssueComment, User};
+use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::Instant;
 
-fn invalid(message: &str) -> ApiError {
-    ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_issue", message)
-}
-fn forbidden() -> ApiError {
-    ApiError::new(StatusCode::FORBIDDEN, "forbidden", "Only addon maintainers can change issue status")
-}
-fn valid_text(text: &str, min: usize, max: usize) -> bool {
-    let n = text.trim().chars().count();
-    n >= min && n <= max
-}
-#[derive(Deserialize)]
-pub struct NewIssue { title: String, body: String, #[serde(default = "default_kind")] kind: String }
-fn default_kind() -> String { "bug".to_owned() }
-#[derive(Deserialize)]
-pub struct NewComment { body: String }
-#[derive(Deserialize)]
-pub struct ChangeStatus { status: String }
+pub const PER_PAGE: usize = 20;
+pub const MAX_TITLE: usize = 256;
+pub const MAX_BODY: usize = 20_000;
+pub const ISSUES_PER_HOUR: usize = 5;
+pub const REPLIES_PER_HOUR: usize = 30;
 
-#[derive(Deserialize)]
-pub struct IssuePageQuery { pub before: Option<i64> }
-
-pub async fn list(State(state): State<AppState>, Path(slug): Path<String>, Query(page): Query<IssuePageQuery>) -> ApiResult<Json<Value>> {
-    let addon = load_addon(&state.pool, &slug).await?;
-    not_blocked(&addon)?;
-    let items: Value = sqlx::query_scalar(
-        "SELECT coalesce(json_agg(json_build_object('id', i.id, 'title', i.title, 'kind', i.kind,
-          'status', i.status, 'author', u.login, 'author_id', i.author_id, 'created_at', i.created_at, 'updated_at', i.updated_at)
-          ORDER BY i.id DESC), '[]'::json)
-         FROM (SELECT * FROM addon_issues WHERE addon_id = $1 AND deleted_at IS NULL AND id < $2 ORDER BY id DESC LIMIT 31) i
-         JOIN users u ON u.id = i.author_id"
-    ).bind(addon.id).bind(page.before.unwrap_or(i64::MAX)).fetch_one(&state.pool).await?;
-    Ok(Json(items))
-}
-pub async fn create(State(state): State<AppState>, user: CurrentUser, Path(slug): Path<String>, Json(body): Json<NewIssue>)
-    -> ApiResult<(StatusCode, Json<Value>)> {
-    if !valid_text(&body.title, 3, 160) || !valid_text(&body.body, 1, 10000) ||
-        !matches!(body.kind.as_str(), "bug" | "feature" | "question") {
-        return Err(invalid("Title must be 3-160 characters, body 1-10000, kind bug/feature/question"));
+/// The label of each kind; GitHub's default labels.
+fn label(kind: &str) -> Option<&'static str> {
+    match kind {
+        "bug" => Some("bug"),
+        "feature" => Some("enhancement"),
+        "question" => Some("question"),
+        _ => None,
     }
-    let addon = load_addon(&state.pool, &slug).await?;
-    if addon.blocked_at.is_some() { return Err(forbidden()); }
-    let now = (state.clock)();
-    // Serialize submissions by author: simultaneous double-clicks must not create duplicates.
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(user.id).execute(&mut *tx).await?;
-    let duplicate: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM addon_issues WHERE addon_id=$1 AND author_id=$2
-         AND kind=$3 AND lower(btrim(title))=lower($4) AND btrim(body)=$5
-         AND deleted_at IS NULL AND created_at > $6)"
-    ).bind(addon.id).bind(user.id).bind(&body.kind).bind(body.title.trim())
-     .bind(body.body.trim()).bind(now - chrono::Duration::hours(24))
-     .fetch_one(&mut *tx).await?;
-    if duplicate {
-        return Err(ApiError::new(StatusCode::CONFLICT, "duplicate_issue",
-            "You already submitted this exact issue in the last 24 hours"));
-    }
-    let recent: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM addon_issues WHERE author_id = $1 AND created_at > $2"
-    ).bind(user.id).bind(now - chrono::Duration::hours(24))
-     .fetch_one(&mut *tx).await?;
-    if recent >= 20 { return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "issue_limit", "Daily issue limit reached")); }
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO addon_issues (addon_id, author_id, title, body, kind, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING id"
-    ).bind(addon.id).bind(user.id).bind(body.title.trim()).bind(body.body.trim())
-     .bind(&body.kind).bind(now).fetch_one(&mut *tx).await?;
-    tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(json!({"id":id}))))
 }
-pub async fn show(State(state): State<AppState>, Path((slug, id)): Path<(String, i64)>) -> ApiResult<Json<Value>> {
-    let addon = load_addon(&state.pool, &slug).await?;
-    not_blocked(&addon)?;
-    let issue: Option<Value> = sqlx::query_scalar(
-        "SELECT json_build_object('id', i.id, 'title', i.title, 'body', i.body, 'kind', i.kind,
-         'status', i.status, 'author', u.login, 'author_id', i.author_id, 'created_at', i.created_at, 'updated_at', i.updated_at, 'edited_at', i.edited_at, 'acknowledged_at', i.acknowledged_at,
-         'events', (SELECT coalesce(json_agg(json_build_object('action', e.action, 'old_value', e.old_value, 'new_value', e.new_value, 'actor', eu.login, 'created_at', e.created_at) ORDER BY e.created_at, e.id), '[]'::json) FROM addon_issue_events e JOIN users eu ON eu.id=e.actor_id WHERE e.issue_id=i.id), 'comments', (SELECT coalesce(json_agg(json_build_object('id', c.id, 'body', CASE WHEN c.deleted_at IS NULL THEN c.body ELSE '[deleted]' END,
-         'author', cu.login, 'author_id', c.author_id, 'created_at', c.created_at, 'edited_at', c.edited_at, 'deleted', c.deleted_at IS NOT NULL) ORDER BY c.created_at, c.id), '[]'::json)
-         FROM addon_issue_comments c JOIN users cu ON cu.id = c.author_id WHERE c.issue_id = i.id))
-         FROM addon_issues i JOIN users u ON u.id = i.author_id WHERE i.id = $1 AND i.addon_id = $2 AND i.deleted_at IS NULL"
-    ).bind(id).bind(addon.id).fetch_optional(&state.pool).await?;
-    Ok(Json(issue.ok_or_else(ApiError::not_found)?))
-}
-pub async fn comment(State(state): State<AppState>, user: CurrentUser, Path((slug, id)): Path<(String, i64)>,
-    Json(body): Json<NewComment>) -> ApiResult<(StatusCode, Json<Value>)> {
-    if !valid_text(&body.body, 1, 10000) { return Err(invalid("Comment must be 1-10000 characters")); }
-    let addon = load_addon(&state.pool, &slug).await?;
-    if addon.blocked_at.is_some() { return Err(forbidden()); }
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)").bind(user.id).execute(&mut *tx).await?;
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM addon_issues WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL)"
-    ).bind(id).bind(addon.id).fetch_one(&mut *tx).await?;
-    if !exists { return Err(ApiError::not_found()); }
-    let now = (state.clock)();
-    let recent: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM addon_issue_comments WHERE author_id=$1 AND created_at>$2"
-    ).bind(user.id).bind(now - chrono::Duration::hours(24)).fetch_one(&mut *tx).await?;
-    if recent >= 100 { return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "comment_limit", "Daily comment limit reached")); }
-    let comment_id: i64 = sqlx::query_scalar(
-        "INSERT INTO addon_issue_comments(issue_id, author_id, body, created_at) VALUES($1,$2,$3,$4) RETURNING id"
-    ).bind(id).bind(user.id).bind(body.body.trim()).bind(now).fetch_one(&mut *tx).await?;
-    tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(json!({"id":comment_id}))))
-}
-pub async fn set_status(State(state): State<AppState>, user: CurrentUser, Path((slug,id)): Path<(String,i64)>,
-    Json(body): Json<ChangeStatus>) -> ApiResult<Json<Value>> {
-    if !matches!(body.status.as_str(), "open" | "acknowledged" | "in_progress" | "resolved" | "closed") {
-        return Err(invalid("Unknown issue status"));
+
+/// `bug`, `feature`, `question` or `other`, from the labels.
+pub fn kind(issue: &Issue) -> &'static str {
+    let has = |name: &str| issue.labels.iter().any(|l| l.name.eq_ignore_ascii_case(name));
+    if has("bug") {
+        "bug"
+    } else if has("enhancement") || has("feature") {
+        "feature"
+    } else if has("question") {
+        "question"
+    } else {
+        "other"
     }
-    let addon = load_addon(&state.pool, &slug).await?;
-    let rights = user_permissions(&state.pool, &addon, &user).await?;
-    if !rights.owner && !rights.admin && !rights.edit_description { return Err(forbidden()); }
-    if addon.blocked_at.is_some() { return Err(forbidden()); }
-    let mut tx = state.pool.begin().await?;
-    let previous: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM addon_issues WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL FOR UPDATE"
-    ).bind(id).bind(addon.id).fetch_optional(&mut *tx).await?;
-    let previous = previous.ok_or_else(ApiError::not_found)?;
-    if previous != body.status {
-        sqlx::query("UPDATE addon_issues SET status=$3, updated_at=$4, acknowledged_at=CASE WHEN $3 IN ('acknowledged','in_progress','resolved') THEN COALESCE(acknowledged_at,$4) ELSE acknowledged_at END WHERE id=$1 AND addon_id=$2")
-            .bind(id).bind(addon.id).bind(&body.status).bind((state.clock)()).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO addon_issue_events(issue_id,actor_id,action,old_value,new_value) VALUES($1,$2,'status',$3,$4)")
-            .bind(id).bind(user.id).bind(&previous).bind(&body.status).execute(&mut *tx).await?;
+}
+
+/// `open`, `in_progress` (label `in progress`), `closed` or `not_planned`.
+pub fn status(issue: &Issue) -> &'static str {
+    let in_progress = issue.labels.iter().any(|l| l.name.eq_ignore_ascii_case("in progress"));
+    match (issue.state.as_str(), issue.state_reason.as_deref()) {
+        ("open", _) if in_progress => "in_progress",
+        ("open", _) => "open",
+        (_, Some("not_planned")) => "not_planned",
+        _ => "closed",
     }
-    tx.commit().await?;
-    Ok(Json(json!({"id":id,"status":body.status})))
+}
+
+fn author(user: &Option<User>) -> Value {
+    match user {
+        Some(u) => json!({ "login": u.login, "avatar_url": u.avatar_url }),
+        // GitHub's name for deleted accounts.
+        None => json!({ "login": "ghost", "avatar_url": "" }),
+    }
+}
+
+/// GitHub marks an edit only by a later `updated_at`; a second of slack for the write itself.
+fn edited(created: DateTime<Utc>, updated: DateTime<Utc>) -> bool {
+    updated - created > Duration::seconds(1)
+}
+
+fn summary(issue: &Issue) -> Value {
+    json!({
+        "number": issue.number,
+        "title": issue.title,
+        "kind": kind(issue),
+        "status": status(issue),
+        "author": author(&issue.user),
+        "comments": issue.comments,
+        "created_at": issue.created_at,
+        "updated_at": issue.updated_at,
+        "html_url": issue.html_url,
+    })
+}
+
+fn markdown(body: &Option<String>) -> String {
+    forge_core::markdown::render_with_images(body.as_deref().unwrap_or_default(), forge_core::markdown::GITHUB_ATTACHMENTS)
+}
+
+fn reply_json(c: &IssueComment) -> Value {
+    json!({
+        "id": c.id,
+        "author": author(&c.user),
+        "body": c.body.clone().unwrap_or_default(),
+        "body_html": markdown(&c.body),
+        "created_at": c.created_at,
+        "edited": edited(c.created_at, c.updated_at),
+        "html_url": c.html_url,
+    })
+}
+
+pub fn new_issue_url(repo: &str) -> String {
+    format!("https://github.com/{repo}/issues/new")
+}
+
+/// The repo whose issues a route works on: an addon's, or the platform's own.
+pub struct Target {
+    pub repo: String,
+    pub installation: Option<i64>,
+    /// The addon's owner turned the Issues tab on; always for the platform.
+    pub enabled: bool,
+}
+
+/// The App installation on the platform's repo, asked of GitHub at most once a minute.
+// ponytail: per-process; one API instance.
+/// The installation (or none) and when GitHub was asked.
+type Asked = Option<(Option<i64>, Instant)>;
+static PLATFORM_INSTALLATION: LazyLock<Mutex<Asked>> = LazyLock::new(Default::default);
+
+async fn platform_installation(state: &AppState) -> Option<i64> {
+    let cached = *PLATFORM_INSTALLATION.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((installation, at)) = cached
+        && at.elapsed() < std::time::Duration::from_secs(60)
+    {
+        return installation;
+    }
+    let installation = state.github.installation_for_repo(&state.config.launcher_repo).await.ok().flatten();
+    *PLATFORM_INSTALLATION.lock().unwrap_or_else(|e| e.into_inner()) = Some((installation, Instant::now()));
+    installation
+}
+
+/// `slug` in the path: that addon's repo, unless the addon is blocked; none: the platform's.
+async fn target(state: &AppState, path: &HashMap<String, String>) -> ApiResult<Target> {
+    match path.get("slug") {
+        Some(slug) => {
+            let addon: AddonRow = load_addon(&state.pool, slug).await?;
+            not_blocked(&addon)?;
+            Ok(Target { repo: addon.repo_full_name, installation: addon.installation_id, enabled: addon.issues_enabled })
+        }
+        None => Ok(Target { repo: state.config.launcher_repo.clone(), installation: platform_installation(state).await, enabled: true }),
+    }
+}
+
+/// Like `target`, for everything but the list: a tab the owner did not turn on reads and writes
+/// nothing on GitHub.
+async fn open_target(state: &AppState, path: &HashMap<String, String>) -> ApiResult<Target> {
+    let target = target(state, path).await?;
+    if target.enabled {
+        Ok(target)
+    } else {
+        Err(ApiError::new(StatusCode::FORBIDDEN, "issues_off", "The creator did not turn on issues on SurvivorsForge"))
+    }
+}
+
+/// A number from the path; anything else is not a page here.
+fn number(path: &HashMap<String, String>, key: &str) -> ApiResult<i64> {
+    path.get(key).and_then(|n| n.parse().ok()).ok_or_else(ApiError::not_found)
+}
+
+/// Whether issues written here reach GitHub: App installed with `Issues: Read & write`.
+async fn writable(state: &AppState, target: &Target) -> bool {
+    match target.installation {
+        Some(installation) => state.github.issues_writable(installation).await.unwrap_or(false),
+        None => false,
+    }
+}
+
+/// What the pages need besides the issues themselves.
+async fn frame(state: &AppState, target: &Target) -> ApiResult<Value> {
+    let repo = state.github.repo_by_name(target.installation, &target.repo).await.map_err(github_error)?;
+    Ok(json!({
+        "repo": target.repo,
+        "issues_enabled": repo.has_issues,
+        "can_write": repo.has_issues && writable(state, target).await,
+        "issues_url": format!("https://github.com/{}/issues", target.repo),
+        "new_issue_url": new_issue_url(&target.repo),
+    }))
 }
 
 #[derive(Deserialize)]
-pub struct EditIssue { title: String, body: String, kind: String }
+pub struct ListQuery {
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    page: Option<usize>,
+}
+
+/// Matches the title, the author or `#number`.
+fn matches(issue: &Issue, query: &str) -> bool {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+    if let Some(n) = query.strip_prefix('#') {
+        return n.parse() == Ok(issue.number);
+    }
+    issue.title.to_lowercase().contains(&query) || issue.user.as_ref().is_some_and(|u| u.login.to_lowercase().contains(&query))
+}
+
+pub async fn list(State(state): State<AppState>, Path(path): Path<HashMap<String, String>>, Query(query): Query<ListQuery>) -> ApiResult<Json<Value>> {
+    let target = target(&state, &path).await?;
+    if !target.enabled {
+        // Only the way to GitHub, without asking GitHub anything.
+        return Ok(Json(json!({
+            "repo": target.repo,
+            "issues_here": false,
+            "issues_url": format!("https://github.com/{}/issues", target.repo),
+            "new_issue_url": new_issue_url(&target.repo),
+        })));
+    }
+    let mut answer = frame(&state, &target).await?;
+    if answer["issues_enabled"] == false {
+        return Ok(Json(answer));
+    }
+    let all = state.github.issues(target.installation, &target.repo).await.map_err(github_error)?;
+    let truncated = all.len() >= 100;
+    let issues: Vec<Issue> = all.into_iter().filter(|i| i.pull_request.is_none()).collect();
+    let open = issues.iter().filter(|i| i.state == "open").count();
+    let state_filter = match query.state.as_deref() {
+        Some("closed") => "closed",
+        Some("all") => "all",
+        _ => "open",
+    };
+    let shown: Vec<&Issue> = issues
+        .iter()
+        .filter(|i| state_filter == "all" || i.state == state_filter)
+        .filter(|i| matches(i, query.q.as_deref().unwrap_or_default()))
+        .collect();
+    let pages = shown.len().div_ceil(PER_PAGE).max(1);
+    let page = query.page.unwrap_or(1).clamp(1, pages);
+    answer["state"] = json!(state_filter);
+    answer["counts"] = json!({ "open": open, "closed": issues.len() - open, "all": issues.len() });
+    answer["matching"] = json!(shown.len());
+    answer["page"] = json!(page);
+    answer["pages"] = json!(pages);
+    answer["truncated"] = json!(truncated);
+    answer["issues"] = shown.iter().skip((page - 1) * PER_PAGE).take(PER_PAGE).map(|i| summary(i)).collect();
+    Ok(Json(answer))
+}
+
+pub async fn show(State(state): State<AppState>, Path(path): Path<HashMap<String, String>>) -> ApiResult<Json<Value>> {
+    let number = number(&path, "number")?;
+    let target = open_target(&state, &path).await?;
+    let issue = state
+        .github
+        .issue(target.installation, &target.repo, number)
+        .await
+        .map_err(github_error)?
+        .filter(|i| i.pull_request.is_none())
+        .ok_or_else(ApiError::not_found)?;
+    let replies = if issue.comments > 0 {
+        state.github.issue_comments(target.installation, &target.repo, number).await.map_err(github_error)?
+    } else {
+        Vec::new()
+    };
+    let mut answer = frame(&state, &target).await?;
+    let mut item = summary(&issue);
+    item["body"] = json!(issue.body.clone().unwrap_or_default());
+    item["body_html"] = json!(markdown(&issue.body));
+    item["state"] = json!(issue.state);
+    item["locked"] = json!(issue.locked);
+    item["edited"] = json!(edited(issue.created_at, issue.updated_at) && issue.comments == 0);
+    answer["issue"] = item;
+    answer["replies"] = replies.iter().map(reply_json).collect();
+    Ok(Json(answer))
+}
+
+/// Writes per user and kind within the last hour.
+// ponytail: per-process; the API runs once. GitHub limits content creation on its side too.
+type Writes = HashMap<(i64, &'static str), Vec<DateTime<Utc>>>;
+static WRITES: LazyLock<Mutex<Writes>> = LazyLock::new(Default::default);
+
+fn within_limit(user_id: i64, what: &'static str, max: usize, now: DateTime<Utc>) -> ApiResult<()> {
+    let mut writes = WRITES.lock().unwrap_or_else(|e| e.into_inner());
+    let times = writes.entry((user_id, what)).or_default();
+    times.retain(|t| now - *t < Duration::hours(1));
+    if times.len() >= max {
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "too_many", format!("At most {max} per hour, try again later")));
+    }
+    times.push(now);
+    Ok(())
+}
+
+fn text(value: &str, field: &str, max: usize, required: bool) -> ApiResult<String> {
+    let value = value.trim();
+    if required && value.is_empty() {
+        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", format!("The {field} is empty")));
+    }
+    if value.chars().count() > max {
+        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", format!("The {field} is longer than {max} characters")));
+    }
+    Ok(value.to_string())
+}
+
+/// What GitHub's refusal of a write means here; `denied` for a `403`/`404` on what exists.
+fn write_error(e: GitHubError, denied: ApiError) -> ApiError {
+    match e {
+        GitHubError::Http(401) => ApiError::new(StatusCode::FORBIDDEN, "github_reauth", "Log in again to post on GitHub"),
+        GitHubError::Http(403 | 404 | 410) => denied,
+        GitHubError::Http(422) => ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", "GitHub did not accept this text"),
+        GitHubError::RateLimited { .. } => ApiError::new(StatusCode::TOO_MANY_REQUESTS, "github_rate_limited", "GitHub asks to slow down, try again in a few minutes"),
+        e => github_error(e),
+    }
+}
+
+fn not_enabled(target: &Target) -> ApiError {
+    ApiError::new(
+        StatusCode::CONFLICT,
+        "issues_not_enabled",
+        format!("Issues cannot be written here for this repo yet; open one on GitHub: {}", new_issue_url(&target.repo)),
+    )
+}
+
+fn not_allowed() -> ApiError {
+    ApiError::new(StatusCode::FORBIDDEN, "forbidden", "GitHub allows this only to the author and the repo's team")
+}
+
 #[derive(Deserialize)]
-pub struct EditComment { body: String }
-
-pub async fn edit(State(state): State<AppState>, user: CurrentUser, Path((slug,id)): Path<(String,i64)>,
-    Json(body): Json<EditIssue>) -> ApiResult<Json<Value>> {
-    if !valid_text(&body.title,3,160) || !valid_text(&body.body,1,10000) ||
-        !matches!(body.kind.as_str(),"bug"|"feature"|"question") { return Err(invalid("Invalid issue content")); }
-    let addon=load_addon(&state.pool,&slug).await?;
-    not_blocked(&addon)?;
-    let rights=user_permissions(&state.pool,&addon,&user).await?;
-    let privileged=user.can(forge_core::roles::Permission::Moderate, &state.config) || rights.owner;
-    let mut tx=state.pool.begin().await?;
-    let owner: Option<(i64,Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as("SELECT author_id,acknowledged_at FROM addon_issues WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL FOR UPDATE")
-        .bind(id).bind(addon.id).fetch_optional(&mut *tx).await?;
-    let (author,ack)=owner.ok_or_else(ApiError::not_found)?;
-    if !(privileged || (author==user.id && ack.is_none())) { return Err(forbidden()); }
-    sqlx::query("UPDATE addon_issues SET title=$3,body=$4,kind=$5,edited_at=now(),updated_at=now() WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL")
-        .bind(id).bind(addon.id).bind(body.title.trim()).bind(body.body.trim()).bind(&body.kind)
-        .execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO addon_issue_events(issue_id,actor_id,action) VALUES($1,$2,'issue_edited')")
-        .bind(id).bind(user.id).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(Json(json!({"id":id,"edited":true})))
+pub struct NewIssue {
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    body: String,
 }
 
-pub async fn remove(State(state): State<AppState>, user: CurrentUser, Path((slug,id)): Path<(String,i64)>)
-    -> ApiResult<Json<Value>> {
-    let addon=load_addon(&state.pool,&slug).await?;
-    not_blocked(&addon)?;
-    let mut tx=state.pool.begin().await?;
-    let owner: Option<(i64,Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as("SELECT author_id,acknowledged_at FROM addon_issues WHERE id=$1 AND addon_id=$2 AND deleted_at IS NULL FOR UPDATE")
-        .bind(id).bind(addon.id).fetch_optional(&mut *tx).await?;
-    let (author,ack)=owner.ok_or_else(ApiError::not_found)?;
-    if !(user.can(forge_core::roles::Permission::Moderate, &state.config) || (author==user.id && ack.is_none())) { return Err(forbidden()); }
-    sqlx::query("UPDATE addon_issues SET deleted_at=now(),updated_at=now() WHERE id=$1")
-        .bind(id).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO addon_issue_events(issue_id,actor_id,action) VALUES($1,$2,'issue_deleted')")
-        .bind(id).bind(user.id).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(Json(json!({"id":id,"deleted":true})))
+pub async fn create(State(state): State<AppState>, github: GitHubUser, Path(path): Path<HashMap<String, String>>, Json(body): Json<NewIssue>) -> ApiResult<(StatusCode, Json<Value>)> {
+    let target = open_target(&state, &path).await?;
+    let label = label(&body.kind).ok_or_else(|| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", "Choose a bug report, a feature request or a question"))?;
+    let title = text(&body.title, "title", MAX_TITLE, true)?;
+    let text_body = text(&body.body, "description", MAX_BODY, true)?;
+    let installation = target.installation.ok_or_else(|| not_enabled(&target))?;
+    within_limit(github.user.id, "issue", ISSUES_PER_HOUR, (state.clock)())?;
+    let issue = state.github.create_issue(&github.token, &target.repo, &title, &text_body).await.map_err(|e| write_error(e, not_enabled(&target)))?;
+    // The issue stands without its label; the repo's team can still add it.
+    if let Err(e) = state.github.add_labels(installation, &target.repo, issue.number, &[label]).await {
+        tracing::warn!(error = %e, issue = issue.number, "cannot label the issue");
+    }
+    Ok((StatusCode::CREATED, Json(json!({ "number": issue.number, "html_url": issue.html_url }))))
 }
 
-pub async fn edit_comment(State(state): State<AppState>, user: CurrentUser,
-    Path((slug,id,comment_id)): Path<(String,i64,i64)>, Json(body): Json<EditComment>) -> ApiResult<Json<Value>> {
-    if !valid_text(&body.body,1,10000) { return Err(invalid("Invalid comment")); }
-    let addon=load_addon(&state.pool,&slug).await?;
-    not_blocked(&addon)?;
-    let mut tx=state.pool.begin().await?;
-    let author: Option<i64>=sqlx::query_scalar(
-        "SELECT c.author_id FROM addon_issue_comments c JOIN addon_issues i ON i.id=c.issue_id WHERE i.addon_id=$1 AND i.id=$2 AND c.id=$3 AND c.deleted_at IS NULL AND i.deleted_at IS NULL FOR UPDATE OF c")
-        .bind(addon.id).bind(id).bind(comment_id).fetch_optional(&mut *tx).await?;
-    let author=author.ok_or_else(ApiError::not_found)?;
-    if author!=user.id && !user.can(forge_core::roles::Permission::Moderate, &state.config) { return Err(forbidden()); }
-    let updated=sqlx::query("UPDATE addon_issue_comments SET body=$2,edited_at=now() WHERE id=$1 AND issue_id=$3 AND deleted_at IS NULL")
-        .bind(comment_id).bind(body.body.trim()).bind(id).execute(&mut *tx).await?;
-    if updated.rows_affected()!=1 { return Err(ApiError::not_found()); }
-    sqlx::query("INSERT INTO addon_issue_events(issue_id,actor_id,action,new_value) VALUES($1,$2,'comment_edited',$3)")
-        .bind(id).bind(user.id).bind(comment_id.to_string()).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(Json(json!({"id":comment_id,"edited":true})))
+#[derive(Deserialize)]
+pub struct IssueChanges {
+    title: Option<String>,
+    body: Option<String>,
+    /// `open` or `closed`.
+    state: Option<String>,
 }
 
-pub async fn remove_comment(State(state): State<AppState>, user: CurrentUser,
-    Path((slug,id,comment_id)): Path<(String,i64,i64)>) -> ApiResult<Json<Value>> {
-    let addon=load_addon(&state.pool,&slug).await?;
-    not_blocked(&addon)?;
-    let mut tx=state.pool.begin().await?;
-    let author: Option<i64>=sqlx::query_scalar(
-        "SELECT c.author_id FROM addon_issue_comments c JOIN addon_issues i ON i.id=c.issue_id WHERE i.addon_id=$1 AND i.id=$2 AND c.id=$3 AND c.deleted_at IS NULL AND i.deleted_at IS NULL FOR UPDATE OF c")
-        .bind(addon.id).bind(id).bind(comment_id).fetch_optional(&mut *tx).await?;
-    let author=author.ok_or_else(ApiError::not_found)?;
-    if author!=user.id && !user.can(forge_core::roles::Permission::Moderate, &state.config) { return Err(forbidden()); }
-    let updated=sqlx::query("UPDATE addon_issue_comments SET deleted_at=now(),body='[deleted]' WHERE id=$1 AND issue_id=$2 AND deleted_at IS NULL")
-        .bind(comment_id).bind(id).execute(&mut *tx).await?;
-    if updated.rows_affected()!=1 { return Err(ApiError::not_found()); }
-    sqlx::query("INSERT INTO addon_issue_events(issue_id,actor_id,action,new_value) VALUES($1,$2,'comment_deleted',$3)")
-        .bind(id).bind(user.id).bind(comment_id.to_string()).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(Json(json!({"id":comment_id,"deleted":true})))
+pub async fn update(State(state): State<AppState>, github: GitHubUser, Path(path): Path<HashMap<String, String>>, Json(body): Json<IssueChanges>) -> ApiResult<Json<Value>> {
+    let number = number(&path, "number")?;
+    let target = open_target(&state, &path).await?;
+    let mut changes = serde_json::Map::new();
+    if let Some(title) = &body.title {
+        changes.insert("title".into(), json!(text(title, "title", MAX_TITLE, true)?));
+    }
+    if let Some(text_body) = &body.body {
+        changes.insert("body".into(), json!(text(text_body, "description", MAX_BODY, true)?));
+    }
+    match body.state.as_deref() {
+        Some(open_or_closed @ ("open" | "closed")) => {
+            changes.insert("state".into(), json!(open_or_closed));
+        }
+        Some(_) => return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", "state is open or closed")),
+        None => {}
+    }
+    if changes.is_empty() {
+        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", "Nothing to change"));
+    }
+    within_limit(github.user.id, "reply", REPLIES_PER_HOUR, (state.clock)())?;
+    let issue = state.github.update_issue(&github.token, &target.repo, number, &Value::Object(changes)).await.map_err(|e| write_error(e, not_allowed()))?;
+    Ok(Json(summary(&issue)))
+}
+
+#[derive(Deserialize)]
+pub struct ReplyBody {
+    #[serde(default)]
+    body: String,
+}
+
+pub async fn reply(State(state): State<AppState>, github: GitHubUser, Path(path): Path<HashMap<String, String>>, Json(body): Json<ReplyBody>) -> ApiResult<(StatusCode, Json<Value>)> {
+    let number = number(&path, "number")?;
+    let target = open_target(&state, &path).await?;
+    let text_body = text(&body.body, "reply", MAX_BODY, true)?;
+    if target.installation.is_none() {
+        return Err(not_enabled(&target));
+    }
+    within_limit(github.user.id, "reply", REPLIES_PER_HOUR, (state.clock)())?;
+    let reply = state.github.create_comment(&github.token, &target.repo, number, &text_body).await.map_err(|e| write_error(e, not_enabled(&target)))?;
+    Ok((StatusCode::CREATED, Json(reply_json(&reply))))
+}
+
+pub async fn edit_reply(State(state): State<AppState>, github: GitHubUser, Path(path): Path<HashMap<String, String>>, Json(body): Json<ReplyBody>) -> ApiResult<Json<Value>> {
+    let id = number(&path, "id")?;
+    let target = open_target(&state, &path).await?;
+    let text_body = text(&body.body, "reply", MAX_BODY, true)?;
+    within_limit(github.user.id, "reply", REPLIES_PER_HOUR, (state.clock)())?;
+    let reply = state.github.update_comment(&github.token, &target.repo, id, &text_body).await.map_err(|e| write_error(e, not_allowed()))?;
+    Ok(Json(reply_json(&reply)))
+}
+
+pub async fn delete_reply(State(state): State<AppState>, github: GitHubUser, Path(path): Path<HashMap<String, String>>) -> ApiResult<StatusCode> {
+    let id = number(&path, "id")?;
+    let target = open_target(&state, &path).await?;
+    state.github.delete_comment(&github.token, &target.repo, id).await.map_err(|e| write_error(e, not_allowed()))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn issue(state: &str, reason: Option<&str>, labels: &[&str]) -> Issue {
+        serde_json::from_value(json!({
+            "number": 1, "title": "Crash", "state": state, "state_reason": reason,
+            "labels": labels.iter().map(|l| json!({ "name": l })).collect::<Vec<_>>(),
+            "created_at": "2026-11-01T00:00:00Z", "updated_at": "2026-11-01T00:00:00Z", "html_url": "https://github.com/o/r/issues/1",
+        }))
+        .unwrap()
+    }
+
     #[test]
-    fn text_bounds() {
-        assert!(!valid_text("  ",1,100));
-        assert!(valid_text("a",1,100));
-        assert!(!valid_text("ab",3,160));
-        assert!(!valid_text(&"a".repeat(10001),1,10000));
+    fn kind_and_status_come_from_labels_and_state() {
+        assert_eq!((kind(&issue("open", None, &["bug"])), status(&issue("open", None, &["bug"]))), ("bug", "open"));
+        assert_eq!(kind(&issue("open", None, &["Enhancement"])), "feature");
+        assert_eq!(kind(&issue("open", None, &["question"])), "question");
+        assert_eq!(kind(&issue("open", None, &["question", "bug"])), "bug", "a question that turned out a bug");
+        assert_eq!(kind(&issue("open", None, &[])), "other");
+        assert_eq!(status(&issue("open", None, &["in progress"])), "in_progress");
+        assert_eq!(status(&issue("closed", Some("completed"), &["in progress"])), "closed");
+        assert_eq!(status(&issue("closed", Some("not_planned"), &[])), "not_planned");
+    }
+
+    #[test]
+    fn search_matches_title_author_and_number() {
+        let mut i = issue("open", None, &[]);
+        i.user = Some(User { id: 1, login: "Maiden".into(), avatar_url: String::new() });
+        assert!(matches(&i, "crash") && matches(&i, "maid") && matches(&i, "#1") && matches(&i, " "));
+        assert!(!matches(&i, "#2") && !matches(&i, "freeze"));
+    }
+
+    #[test]
+    fn writes_are_limited_per_user_and_hour() {
+        let now = Utc::now();
+        for _ in 0..ISSUES_PER_HOUR {
+            within_limit(-7, "issue", ISSUES_PER_HOUR, now).unwrap();
+        }
+        assert_eq!(within_limit(-7, "issue", ISSUES_PER_HOUR, now).unwrap_err().code, "too_many");
+        within_limit(-7, "reply", REPLIES_PER_HOUR, now).unwrap();
+        within_limit(-7, "issue", ISSUES_PER_HOUR, now + Duration::hours(1)).unwrap();
     }
 }
