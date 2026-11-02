@@ -998,3 +998,20 @@ async fn addon_detail_links_to_community_sections() {
     assert!(page.body.contains("href=\"/addons/lucky/comments\""), "comments link missing");
     assert!(page.body.contains("href=\"/addons/lucky/issues\""), "issues link missing");
 }
+
+#[tokio::test]
+async fn version_history_pagination_keeps_page_links_and_boundaries() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/addons/lucky", addon("scanned")).await;
+    mock(&web, "/v1/addons/lucky/versions/page", json!({
+        "versions": versions("scanned", "available"),
+        "total": 45, "page": 2, "per_page": 20, "has_more": true
+    })).await;
+    let body = web.get("/addons/lucky/versions?page=2").await.body;
+    let pager = body.split(r#"<nav class="pager""#).nth(1).expect("version pager").split("</nav>").next().unwrap();
+    assert!(pager.contains("21–40 of 45 versions"), "{pager}");
+    assert!(pager.contains(r#"aria-current="page">2<"#), "{pager}");
+    assert!(pager.contains(r#"href="/addons/lucky/versions?page=1""#), "{pager}");
+    assert!(pager.contains(r#"href="/addons/lucky/versions?page=3""#), "{pager}");
+    assert!(pager.contains(r#"rel="prev""#) && pager.contains(r#"rel="next""#), "{pager}");
+}
