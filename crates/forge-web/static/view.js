@@ -655,3 +655,159 @@
     if (event.target && event.target.id === "issue-search") update(shellOf(event.target));
   });
 })();
+
+/* Comments update in place. A failed request leaves the server form usable on the next try. */
+(function () {
+  var busy = false;
+  var controller = null;
+  var sequence = 0;
+  function root() { return document.querySelector("[data-dynamic-comments]"); }
+  function t(key, fallback) {
+    return window.ForgeI18n ? window.ForgeI18n.t(key) : fallback;
+  }
+  function errorMessage(container, key, fallback) {
+    var notice = container.querySelector("[data-comment-error]");
+    if (!notice) {
+      notice = document.createElement("p");
+      notice.className = "notice bad";
+      notice.setAttribute("role", "alert");
+      notice.dataset.commentError = "";
+      container.prepend(notice);
+    }
+    notice.textContent = t(key, fallback);
+  }
+  async function load(url, options) {
+    var old = root();
+    if (!old || busy) return;
+    var requestId = ++sequence;
+    busy = true;
+    controller = new AbortController();
+    var current = controller;
+    old.setAttribute("aria-busy", "true");
+    try {
+      var response = await fetch(url, Object.assign({
+        credentials: "same-origin",
+        redirect: "follow",
+        headers: { "Accept": "text/html" },
+        signal: current.signal
+      }, options || {}));
+      if (!response.ok || new URL(response.url).pathname === "/login") {
+        if (new URL(response.url).pathname === "/login") {
+          window.location.assign("/login");
+          return;
+        }
+        throw new Error("Comment request rejected");
+      }
+      var html = new DOMParser().parseFromString(await response.text(), "text/html");
+      var next = html.querySelector("[data-dynamic-comments]");
+      if (!next || requestId !== sequence || old !== root()) throw new Error("Unexpected response");
+      old.replaceWith(next);
+      if (options && new URL(response.url).origin === location.origin) history.replaceState({ comments: true }, "", response.url);
+      else if (!options) history.pushState({ comments: true }, "", response.url);
+      if (window.ForgeI18n) window.ForgeI18n.apply();
+      document.dispatchEvent(new Event("htmx:afterSwap"));
+      var heading = next.querySelector("h1, h2");
+      if (heading) {
+        heading.setAttribute("tabindex", "-1");
+        heading.focus();
+      }
+    } catch (err) {
+      if (requestId === sequence && err.name !== "AbortError" && old.isConnected) {
+        errorMessage(old, "comment_update_error", "Could not update comments. Check your connection and try again.");
+      }
+    } finally {
+      if (requestId === sequence) {
+        if (old.isConnected) old.setAttribute("aria-busy", "false");
+        var active = root();
+        if (active) active.setAttribute("aria-busy", "false");
+        busy = false;
+        controller = null;
+      }
+    }
+  }
+  document.addEventListener("submit", function (event) {
+    var form = event.target.closest("[data-dynamic-comments] form");
+    if (!form || event.defaultPrevented) return;
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    var submit = event.submitter || form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    load(form.action, {
+      method: "POST",
+      body: new URLSearchParams(new FormData(form, event.submitter)),
+      headers: { "Accept": "text/html", "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" }
+    }).finally(function () {
+      if (submit && submit.isConnected) submit.disabled = false;
+    });
+  });
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest("[data-dynamic-comments] a[href]");
+    if (!link || !new URL(link.href).searchParams.has("before")) return;
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (new URL(link.href).origin !== location.origin) return;
+    event.preventDefault();
+    load(link.href, null);
+  });
+  window.addEventListener("popstate", function () {
+    if (root() && location.pathname.endsWith("/comments")) load(location.href, null);
+  });
+})();
+
+/* Nest replies under their parent and fill the composer for reply or quote. */
+(function () {
+  function init() {
+    var root = document.querySelector(".addon-comments");
+    if (!root) return;
+    var list = root.querySelector(".issue-discussion");
+    if (!list) return;
+    var articles = Array.prototype.slice.call(list.querySelectorAll(".threaded-comment"));
+    var byId = new Map(articles.map(function (el) { return [el.dataset.commentId, el]; }));
+    var children = new Map();
+    articles.forEach(function (el) {
+      var parent = el.dataset.parentId;
+      if (parent && byId.has(parent) && parent !== el.dataset.commentId) {
+        if (!children.has(parent)) children.set(parent, []);
+        children.get(parent).push(el);
+      }
+    });
+    var visited = new Set();
+    function place(el, depth, ancestors) {
+      var id = el.dataset.commentId;
+      if (visited.has(id) || ancestors.has(id)) return;
+      visited.add(id);
+      el.style.setProperty("--comment-depth", String(Math.min(depth, 3)));
+      list.appendChild(el);
+      var next = new Set(ancestors);
+      next.add(id);
+      (children.get(id) || []).forEach(function (child) { place(child, depth + 1, next); });
+    }
+    articles.forEach(function (el) { if (!byId.has(el.dataset.parentId)) place(el, 0, new Set()); });
+    articles.forEach(function (el) { place(el, 0, new Set()); });
+  }
+  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("htmx:afterSwap", init);
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-comment-reply], [data-comment-quote]");
+    if (!button) return;
+    var form = document.querySelector(".addon-comments form.issue-reply");
+    if (!form) return;
+    var id = button.getAttribute("data-comment-reply") || button.getAttribute("data-comment-quote");
+    form.querySelector("#comment-parent-id").value = id;
+    form.querySelector("#comment-quote-id").value = button.hasAttribute("data-comment-quote") ? id : "";
+    var context = form.querySelector("#comment-context");
+    context.hidden = false;
+    context.textContent = (button.hasAttribute("data-comment-quote") ? "↳ " : "↪ ") + (button.getAttribute("data-comment-author") || "");
+    form.querySelector("#comment-clear-context").hidden = false;
+    form.querySelector("textarea[name=body]").focus();
+  });
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest("#comment-clear-context")) return;
+    var form = document.querySelector(".addon-comments form.issue-reply");
+    if (!form) return;
+    form.querySelector("#comment-parent-id").value = "";
+    form.querySelector("#comment-quote-id").value = "";
+    form.querySelector("#comment-context").hidden = true;
+    form.querySelector("#comment-clear-context").hidden = true;
+  });
+})();
+
