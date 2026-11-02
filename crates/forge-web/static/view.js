@@ -614,3 +614,44 @@
     });
   });
 })();
+
+// Issue filters cannot live in the page: the content security policy only allows scripts from this file.
+(function () {
+  function shellOf(node) {
+    return (node && node.closest && node.closest(".issues-shell")) || document;
+  }
+  function update(shell) {
+    var search = shell.querySelector("#issue-search");
+    if (!search) return;
+    var rows = Array.prototype.slice.call(shell.querySelectorAll(".issue-row"));
+    var buttons = Array.prototype.slice.call(shell.querySelectorAll("[data-issue-filter]"));
+    var empty = shell.querySelector("#issues-empty");
+    var active = buttons.filter(function (button) { return button.getAttribute("aria-pressed") === "true"; })[0];
+    var filter = active ? active.getAttribute("data-issue-filter") : "open";
+    var term = search.value.trim().toLocaleLowerCase();
+    var visible = 0;
+    rows.forEach(function (row) {
+      var status = row.dataset.status;
+      var matches = filter === "all" || (filter === "open" ? status === "open" || status === "acknowledged" || status === "in_progress" : status === "closed" || status === "resolved");
+      var show = matches && (row.dataset.search || "").toLocaleLowerCase().includes(term);
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    if (empty) empty.hidden = visible > 0 || rows.length === 0;
+  }
+  document.addEventListener("DOMContentLoaded", function () { update(document); });
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-issue-filter]");
+    if (!button) return;
+    var shell = shellOf(button);
+    Array.prototype.forEach.call(shell.querySelectorAll("[data-issue-filter]"), function (candidate) {
+      var on = candidate === button;
+      candidate.classList.toggle("active", on);
+      candidate.setAttribute("aria-pressed", String(on));
+    });
+    update(shell);
+  });
+  document.addEventListener("input", function (event) {
+    if (event.target && event.target.id === "issue-search") update(shellOf(event.target));
+  });
+})();
