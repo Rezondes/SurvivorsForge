@@ -404,7 +404,7 @@ async fn moderator_sees_admin_pages() {
     get_json(&web, "/v1/admin/verification-requests", json!([])).await;
     get_json(&web, "/v1/admin/admins", json!([])).await;
     let home = web.get("/").await;
-    assert!(home.body.contains(r#"<a href="/admin">Admin</a>"#), "the navigation links the admin pages");
+    assert!(home.body.contains(r#"<a href="/admin""#) && home.body.contains(r#"data-i18n="admin">Admin</span>"#), "the navigation links the admin pages");
     for page in ["/admin", "/admin/review", "/admin/reports", "/admin/users"] {
         assert_eq!(web.get(page).await.status, StatusCode::OK, "{page}");
     }
