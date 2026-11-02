@@ -184,7 +184,8 @@ async fn store(
                     "UPDATE versions SET github_release_id = $2, name = $3, prerelease = $4, asset_id = $5, asset_name = $6,
                             asset_url = $7, asset_size = $8, github_digest = $9, download_count = $10, deleted_on_github_at = NULL,
                             sha256 = CASE WHEN $11 THEN NULL ELSE sha256 END,
-                            scan_status = CASE WHEN $11 THEN 'pending' ELSE scan_status END
+                            scan_status = CASE WHEN $11 THEN 'pending' ELSE scan_status END,
+                            published_at = $12
                      WHERE id = $1",
                 )
                 .bind(id)
@@ -198,6 +199,7 @@ async fn store(
                 .bind(&v.github_digest)
                 .bind(v.download_count)
                 .bind(replaced)
+                .bind(v.published_at)
                 .execute(&state.pool)
                 .await?;
                 if replaced {
