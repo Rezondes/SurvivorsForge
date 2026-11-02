@@ -179,3 +179,38 @@ async fn existing_release_refreshes_published_date_without_rescanning(pool: PgPo
     assert_eq!(scan_status, "done");
     assert_eq!(scan_jobs(&app).await, 1, "date-only updates must not enqueue another scan");
 }
+
+#[sqlx::test]
+async fn paged_versions_keep_order_and_handle_boundaries(pool: PgPool) {
+    let app = TestApp::new(pool);
+    app.publish(1, "alice", "lucky").await;
+    let id = addon_id(&app, "lucky").await;
+    let at = chrono::Utc::now();
+    let releases: Vec<Release> = (1..=41).rev().map(|n| Release {
+        published_at: Some(at),
+        ..release(n, &format!("v1.{n}.0"), &[(n * 10, &format!("lucky-v1.{n}.0.zip"))])
+    }).collect();
+    app.github.data().releases.insert(100, releases);
+    sync_addon(&app.state(), id).await.unwrap();
+
+    let mut tags = Vec::new();
+    for (page, expected_count, has_more) in [(1, 20, true), (2, 20, true), (3, 1, false), (4, 0, false)] {
+        let response = app.get(&format!("/v1/addons/lucky/versions/page?page={page}&per_page=20"), None).await;
+        assert_eq!(response.status, axum::http::StatusCode::OK);
+        let data = response.json();
+        assert_eq!(data["total"], 41);
+        assert_eq!(data["page"], page);
+        assert_eq!(data["per_page"], 20);
+        assert_eq!(data["has_more"], has_more);
+        let rows = data["versions"].as_array().unwrap();
+        assert_eq!(rows.len(), expected_count, "page {page}");
+        tags.extend(rows.iter().map(|v| v["tag"].as_str().unwrap().to_string()));
+    }
+    let expected: Vec<String> = (1..=41).rev().map(|n| format!("v1.{n}.0")).collect();
+    assert_eq!(tags, expected, "no duplicates or missing versions across page boundaries");
+
+    let first = app.get("/v1/addons/lucky/versions/page?page=-5&per_page=500", None).await.json();
+    assert_eq!(first["page"], 1);
+    assert_eq!(first["per_page"], 100);
+    assert_eq!(first["versions"].as_array().unwrap().len(), 41);
+}
