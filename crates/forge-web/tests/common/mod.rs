@@ -71,6 +71,12 @@ impl TestWeb {
         self.request(request).await
     }
 
+    /// Like `get`, as htmx asks for the part of a page that loads after it.
+    pub async fn get_htmx(&mut self, uri: &str) -> Page {
+        let request = Request::get(uri).header("cookie", self.cookie_header()).header("hx-request", "true").body(Body::empty()).unwrap();
+        self.request(request).await
+    }
+
     /// A form post from our own origin with the visitor's CSRF token.
     pub async fn post_form(&mut self, uri: &str, fields: &[(&str, &str)]) -> Page {
         let token = self.csrf().await;

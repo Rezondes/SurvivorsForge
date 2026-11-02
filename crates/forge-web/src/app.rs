@@ -141,6 +141,7 @@ pub fn router(state: AppState) -> Router {
         .route("/addons/new/repos", get(crate::creator::repo_suggestions))
         .route("/addons/new/repo", get(crate::creator::repo_pick))
         .route("/addons/{slug}/edit", get(crate::creator::edit_addon).post(crate::creator::save_addon))
+        .route("/addons/{slug}/edit/issues-note", get(crate::creator::issues_note_part))
         .route("/addons/{slug}/preview", post(crate::creator::preview))
         .route("/addons/{slug}/claim", post(crate::creator::claim))
         .route("/addons/{slug}/sync", post(crate::creator::sync))

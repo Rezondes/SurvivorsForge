@@ -5,6 +5,7 @@
 <h1>{{ place.name }}</h1>
 {% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
 
+<div id="lazy-content">
 <header class="issues-head">
   <div>
     <h2>Community issues</h2>
@@ -53,4 +54,5 @@
   {% if truncated %}<p class="muted">Showing the 100 issues updated last. <a href="{{ frame.issues_url }}" rel="external noopener">All issues on GitHub</a></p>{% endif %}
 </section>
 {% endif %}
+</div>
 {% endblock %}

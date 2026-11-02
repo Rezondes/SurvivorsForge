@@ -4,7 +4,7 @@
 <h1>Edit {{ name }}</h1>
 {% let section = "details" %}{% include "creator/nav.html" %}
 {% if saved %}<div class="notice ok" role="status">Saved.</div>{% endif %}
-{% if let Some((ok, text)) = issues_note %}<div class="notice {% if *ok %}ok{% else %}warn{% endif %}"><strong>Issues.</strong> {{ text }}{% if !ok %} <a href="{{ install_url }}" rel="noopener">SurvivorsForge App on GitHub</a>{% endif %} <a href="/addons/{{ slug }}/issues">Issues tab</a></div>{% endif %}
+{% if issues_enabled %}<div data-lazy hx-get="/addons/{{ slug }}/edit/issues-note" hx-trigger="load" hx-select="#lazy-content" hx-swap="outerHTML" hx-request='{"timeout": 15000}'></div>{% endif %}
 {% if errors.get("form") != "" %}<div class="notice bad" role="alert">{{ errors.get("form") }}</div>{% endif %}
 
 {% if perms.owner %}

@@ -8,6 +8,7 @@
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 {% if let Some(d) = done %}<div class="notice ok" role="status">{{ d }}</div>{% endif %}
 
+<div id="lazy-content">
 {% let badge = issue.badge() %}
 <header class="issue-head">
   <h2>{{ issue.title }} <span class="muted">#{{ issue.number }}</span></h2>
@@ -94,4 +95,5 @@
   </div>
 </form>
 {% endif %}
+</div>
 {% endblock %}

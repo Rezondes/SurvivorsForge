@@ -493,11 +493,30 @@ async fn edit_page(state: &AppState, user: Visitor, token: &str, csrf: String, s
         perms: p,
         errors,
         saved,
-        issues_note: issues_note(state, slug).await,
-        install_url: state.install_url(),
         comments_enabled: a["comments_enabled"] == true,
         issues_enabled: a["issues_enabled"] == true,
     }))
+}
+
+/// What the Issues tab offers players, for the edit page; loaded after it, as it asks GitHub.
+#[derive(askama::Template)]
+#[template(path = "creator/issues_note.html")]
+pub struct IssuesNote {
+    pub slug: String,
+    pub ok: bool,
+    pub text: String,
+    /// The App's page on GitHub, where owners accept its permissions.
+    pub install_url: String,
+}
+
+/// `GET /addons/{slug}/edit/issues-note`: the note, or nothing while the tab is off or GitHub is
+/// silent.
+pub async fn issues_note_part(State(state): State<AppState>, jar: PrivateCookieJar, Path(slug): Path<String>) -> WebResult<Html<String>> {
+    me(&state, &jar).await?;
+    Ok(match issues_note(&state, &slug).await {
+        Some((ok, text)) => render(&IssuesNote { slug, ok, text, install_url: state.install_url() }),
+        None => Html(String::new()),
+    })
 }
 
 /// What the Issues tab offers players of this addon, for its owner; nothing while it is off.

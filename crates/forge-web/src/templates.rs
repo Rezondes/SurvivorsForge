@@ -450,11 +450,6 @@ pub struct EditAddonPage {
     pub perms: Perms,
     pub errors: Errors,
     pub saved: bool,
-    /// Whether players can post issues from the Issues tab: (they can, text); `None` when GitHub
-    /// did not answer.
-    pub issues_note: Option<(bool, String)>,
-    /// The App's page on GitHub, where owners accept its permissions.
-    pub install_url: String,
     /// Whether the Comments tab takes comments and the Issues tab shows the repo's issues; only
     /// the owner switches them.
     pub comments_enabled: bool,

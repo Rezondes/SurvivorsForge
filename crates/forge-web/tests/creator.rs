@@ -112,6 +112,23 @@ async fn only_the_owner_switches_issues_and_comments() {
 }
 
 #[tokio::test]
+async fn the_issues_note_loads_after_the_edit_page() {
+    let mut web = logged_in(owner()).await;
+    assert!(!web.get("/addons/lucky/edit").await.body.contains("/edit/issues-note"), "no note while the tab is off");
+    Mock::given(method("GET"))
+        .and(path("/v1/addons/lucky"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "slug": "lucky", "name": "Lucky", "issues_enabled": true })))
+        .with_priority(1)
+        .mount(&web.api)
+        .await;
+    let page = web.get("/addons/lucky/edit").await;
+    assert!(page.body.contains(r#"hx-get="/addons/lucky/edit/issues-note""#) && !page.body.contains("<strong>Issues.</strong>"), "{}", page.body);
+    get_json(&web, "/v1/addons/lucky/issues", json!({ "issues_enabled": true, "can_write": false })).await;
+    let note = web.get("/addons/lucky/edit/issues-note").await.body;
+    assert!(note.trim_start().starts_with(r#"<div id="lazy-content" class="notice warn"><strong>Issues.</strong> Players can read"#), "{note}");
+}
+
+#[tokio::test]
 async fn owner_manages_members() {
     let mut web = logged_in(owner()).await;
     get_json(&web, "/v1/addons/lucky/members", json!([{ "github_id": 2, "login": "bob", "can_edit_description": true, "can_edit_images": false }])).await;

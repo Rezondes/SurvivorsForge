@@ -11,7 +11,8 @@ use crate::session;
 use crate::templates::{Pager, Visitor, render};
 use askama::Template;
 use axum::Extension;
-use axum::extract::{Form, Path, Query, State};
+use axum::extract::{Form, OriginalUri, Path, Query, State};
+use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::PrivateCookieJar;
 use chrono::{DateTime, Duration, Utc};
@@ -43,6 +44,8 @@ pub struct Place {
     pub api: String,
     /// The addon's owner turned the Issues tab on; always for the platform.
     pub enabled: bool,
+    /// The addon's repo (`owner/name`); empty for the platform.
+    pub repo: String,
 }
 
 impl Place {
@@ -57,9 +60,16 @@ async fn place(state: &AppState, path: &HashMap<String, String>) -> WebResult<Pl
         Some(slug) => {
             let a = state.api.get(&format!("/v1/addons/{}", seg(slug)), None).await?;
             let enabled = a["issues_enabled"] == true;
-            Place { slug: slug.clone(), name: s(&a["name"]), base: format!("/addons/{slug}"), api: format!("/v1/addons/{}", seg(slug)), enabled }
+            Place { slug: slug.clone(), name: s(&a["name"]), base: format!("/addons/{slug}"), api: format!("/v1/addons/{}", seg(slug)), enabled, repo: s(&a["repo"]) }
         }
-        None => Place { slug: String::new(), name: "SurvivorsForge".into(), base: String::new(), api: "/v1/platform".into(), enabled: true },
+        None => Place {
+            slug: String::new(),
+            name: "SurvivorsForge".into(),
+            base: String::new(),
+            api: "/v1/platform".into(),
+            enabled: true,
+            repo: String::new(),
+        },
     })
 }
 
@@ -190,6 +200,45 @@ pub struct IssuesPage {
     pub truncated: bool,
 }
 
+/// What a page shows at once when its content comes from GitHub: its frame and a skeleton that
+/// loads the rest (the same URL, asked by htmx), so the visitor never waits on GitHub for a page.
+#[derive(Template)]
+#[template(path = "lazy.html")]
+pub struct LazyPage {
+    pub user: Option<Visitor>,
+    pub csrf: String,
+    pub place: Place,
+    pub title: String,
+    pub back: Option<(String, String)>,
+    pub error: Option<String>,
+    pub done: Option<String>,
+    /// `list`, `post` or `form`: the shape of what is coming.
+    pub skeleton: &'static str,
+    pub url: String,
+    /// The same page in one go, for browsers without JavaScript.
+    pub full_url: String,
+}
+
+/// Whether to answer with the `LazyPage` first: a browser's own request, unless it asked for the
+/// full page. htmx asking for the content gets the full page, of which it keeps `#lazy-content`.
+fn shell_first(headers: &HeaderMap, full: &Option<String>) -> bool {
+    !headers.contains_key("hx-request") && full.is_none()
+}
+
+fn full_url(uri: &axum::http::Uri) -> String {
+    let joiner = if uri.query().is_some() { '&' } else { '?' };
+    format!("{uri}{joiner}full=1")
+}
+
+/// A redirect htmx follows as a whole page; a plain one would land inside the skeleton.
+fn hx_redirect(to: &str) -> Response {
+    let mut response = axum::http::StatusCode::NO_CONTENT.into_response();
+    if let Ok(value) = HeaderValue::from_str(to) {
+        response.headers_mut().insert("hx-redirect", value);
+    }
+    response
+}
+
 pub struct Reply {
     pub id: i64,
     pub author: Person,
@@ -289,6 +338,8 @@ pub struct ListQuery {
     q: String,
     #[serde(default)]
     page: Option<i64>,
+    #[serde(default)]
+    full: Option<String>,
 }
 
 /// `GET /addons/{slug}/issues` and `GET /issues`.
@@ -298,9 +349,18 @@ pub async fn list(
     Extension(csrf): Extension<CsrfToken>,
     Path(path): Path<HashMap<String, String>>,
     Query(q): Query<ListQuery>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
 ) -> WebResult<Response> {
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
     let place = place(&state, &path).await?;
+    // A tab that is off asks GitHub nothing and comes at once.
+    if place.enabled && shell_first(&headers, &q.full) {
+        let back = place.addon().then(|| (place.base.clone(), place.name.clone()));
+        let title = format!("Issues of {}", place.name);
+        let page = LazyPage { user, csrf: csrf.0, title, back, error: None, done: None, skeleton: "list", url: uri.to_string(), full_url: full_url(&uri), place };
+        return Ok(render(&page).into_response());
+    }
     let filter = match q.state.as_str() {
         "closed" | "all" => q.state.clone(),
         _ => "open".to_string(),
@@ -380,6 +440,8 @@ pub struct Flash {
     error: Option<String>,
     #[serde(default)]
     done: Option<String>,
+    #[serde(default)]
+    full: Option<String>,
 }
 
 /// `GET .../issues/{number}`; `error`/`done` say how the last action went.
@@ -389,12 +451,22 @@ pub async fn show(
     Extension(csrf): Extension<CsrfToken>,
     Path(path): Path<HashMap<String, String>>,
     Query(flash): Query<Flash>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
 ) -> WebResult<Response> {
     let number = number(&path, "number")?;
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
     let place = place(&state, &path).await?;
     if !place.enabled {
         return Ok(Redirect::to(&format!("{}/issues", place.base)).into_response());
+    }
+    if shell_first(&headers, &flash.full) {
+        let back = Some((format!("{}/issues", place.base), format!("Issues of {}", place.name)));
+        let title = format!("#{number} · {}", place.name);
+        let error = flash.error.filter(|e| !e.is_empty());
+        let done = flash.done.filter(|d| !d.is_empty());
+        let page = LazyPage { user, csrf: csrf.0, title, back, error, done, skeleton: "post", url: uri.to_string(), full_url: full_url(&uri), place };
+        return Ok(render(&page).into_response());
     }
     let mut page = issue_page(&state, &jar, csrf.0, user, place, number).await?;
     page.error = flash.error.filter(|e| !e.is_empty());
@@ -446,6 +518,8 @@ async fn new_page(state: &AppState, jar: &PrivateCookieJar, csrf: String, user: 
 pub struct NewQuery {
     #[serde(default)]
     kind: String,
+    #[serde(default)]
+    full: Option<String>,
 }
 
 /// `GET .../issues/new`, behind every "Report a bug": the form here when the App is installed on
@@ -456,13 +530,29 @@ pub async fn new_form(
     Extension(csrf): Extension<CsrfToken>,
     Path(path): Path<HashMap<String, String>>,
     Query(q): Query<NewQuery>,
+    headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
 ) -> WebResult<Response> {
     let place = place(&state, &path).await?;
+    if !place.enabled {
+        return Ok(Redirect::to(&format!("https://github.com/{}/issues/new", place.repo)).into_response());
+    }
+    let htmx = headers.contains_key("hx-request");
+    if shell_first(&headers, &q.full) {
+        let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+        let back = Some((format!("{}/issues", place.base), format!("Issues of {}", place.name)));
+        let title = format!("New issue · {}", place.name);
+        let page = LazyPage { user, csrf: csrf.0, title, back, error: None, done: None, skeleton: "form", url: uri.to_string(), full_url: full_url(&uri), place };
+        return Ok(render(&page).into_response());
+    }
     let answer = state.api.get(&format!("{}/issues?state=open", place.api), None).await?;
     if answer["issues_here"] == false || (answer["issues_enabled"] != false && answer["can_write"] != true) {
-        return Ok(Redirect::to(&s(&answer["new_issue_url"])).into_response());
+        let github = s(&answer["new_issue_url"]);
+        return Ok(if htmx { hx_redirect(&github) } else { Redirect::to(&github).into_response() });
     }
-    let (user, _) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
+    let Some((user, _)) = visitor(&state, &jar).await? else {
+        return if htmx { Ok(hx_redirect("/login")) } else { Err(WebError::LoginRequired) };
+    };
     let form = NewIssueForm { kind: q.kind, ..NewIssueForm::default() };
     Ok(render(&new_page(&state, &jar, csrf.0, user, place, form, None).await?).into_response())
 }

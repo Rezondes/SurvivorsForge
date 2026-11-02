@@ -668,3 +668,21 @@ p.issue-badges { margin: 4px 0 0; justify-content: flex-start; }
 @media (max-width: 560px) {
   .comment.depth-1, .comment.depth-2, .comment.depth-3 { margin-left: 12px; }
 }
+
+/* Skeletons stand where GitHub's answer will be. They show only after 150 ms, so a fast answer
+   does not flash them; they pulse unless the visitor asks for less motion. */
+.skeleton { display: grid; gap: 12px; opacity: 0; animation: skeleton-in 0s linear 150ms forwards; }
+.skeleton .panel { display: grid; gap: 10px; margin: 0; }
+.skeleton-rows { padding-top: 4px; }
+.skeleton-row { display: grid; gap: 6px; padding: 10px 8px; }
+.skeleton-row + .skeleton-row { border-top: 1px solid var(--line); }
+.skeleton-line, .skeleton-block { display: block; border-radius: var(--radius); background: var(--line); animation: skeleton-pulse 1.4s ease-in-out infinite; }
+.skeleton-line { height: 12px; }
+.skeleton-line.tall { height: 22px; }
+.skeleton-block.bar { height: 44px; }
+.skeleton-block.field { height: 40px; }
+.skeleton-block.area { height: 160px; }
+.w-25 { width: 25%; } .w-35 { width: 35%; } .w-50 { width: 50%; } .w-60 { width: 60%; } .w-70 { width: 70%; } .w-80 { width: 80%; } .w-90 { width: 90%; }
+@keyframes skeleton-in { to { opacity: 1; } }
+@keyframes skeleton-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-line, .skeleton-block { animation: none; } }
