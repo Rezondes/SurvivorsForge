@@ -1140,6 +1140,23 @@ mod pager_tests {
     }
 
     #[test]
+    fn version_pager_covers_first_middle_last_and_empty_pages() {
+        assert!(Pager::new(1, 20, 0, "versions", |n| format!("/versions?page={n}")).is_none());
+        let first = Pager::new(1, 20, 41, "versions", |n| format!("/versions?page={n}")).unwrap();
+        assert_eq!(first.summary, "1–20 of 41 versions");
+        assert!(first.prev.is_none());
+        assert_eq!(first.next.as_deref(), Some("/versions?page=2"));
+        let middle = Pager::new(2, 20, 41, "versions", |n| format!("/versions?page={n}")).unwrap();
+        assert_eq!(middle.summary, "21–40 of 41 versions");
+        assert_eq!(middle.prev.as_deref(), Some("/versions?page=1"));
+        assert_eq!(middle.next.as_deref(), Some("/versions?page=3"));
+        let last = Pager::new(3, 20, 41, "versions", |n| format!("/versions?page={n}")).unwrap();
+        assert_eq!(last.summary, "41–41 of 41 versions");
+        assert!(last.next.is_none());
+        assert_eq!(last.prev.as_deref(), Some("/versions?page=2"));
+    }
+
+    #[test]
     fn the_summary_counts_what_the_page_shows() {
         let pager = Pager::new(10, 20, 195, "addons", |n| n.to_string()).unwrap();
         assert_eq!(pager.summary, "181–195 of 195 addons");
