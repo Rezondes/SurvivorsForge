@@ -68,6 +68,63 @@ fn newest_first(mut versions: Value) -> Value {
     versions
 }
 
+/// Paginated version history. The legacy endpoint remains an array for existing clients.
+/// Pages are bounded to avoid unbounded JSON aggregation on large histories.
+#[derive(Deserialize)]
+pub struct VersionPageQuery {
+    pub game: Option<String>,
+    pub page: Option<i64>,
+    pub per_page: Option<i64>,
+}
+
+pub async fn paged(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Query(query): Query<VersionPageQuery>,
+) -> ApiResult<Json<Value>> {
+    let addon = load_addon(&state.pool, &slug).await?;
+    let game = game_of(&state, &GameQuery { game: query.game }).await?;
+    let page = query.page.unwrap_or(1).clamp(1, 1_000_000);
+    let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
+    // Read lightweight ordering keys for all versions, then apply the exact legacy
+    // date + semantic-version ordering before selecting a bounded page.
+    // This avoids page-boundary discrepancies for releases sharing a timestamp.
+    let keys: Vec<Value> = sqlx::query_scalar(
+        "SELECT json_build_object('id', id, 'tag', tag, 'published_at', published_at)
+         FROM versions WHERE addon_id = $1"
+    )
+    .bind(addon.id).fetch_all(&state.pool).await?;
+    let total = keys.len() as i64;
+    let sorted = newest_first(Value::Array(keys));
+    let ids: Vec<i64> = sorted.as_array().into_iter().flatten()
+        .skip(((page - 1) * per_page) as usize)
+        .take(per_page as usize)
+        .filter_map(|v| v["id"].as_i64())
+        .collect();
+    let rows: Vec<Value> = sqlx::query_scalar(
+        "SELECT json_build_object(
+            'id', v.id, 'tag', v.tag, 'name', v.name, 'prerelease', v.prerelease,
+            'published_at', v.published_at, 'asset_name', v.asset_name,
+            'asset_url', v.asset_url, 'size', v.asset_size, 'sha256', v.sha256,
+            'downloads', v.download_count, 'scan_status', v.scan_status,
+            'source', v.source_status,
+            'deleted_on_github', v.deleted_on_github_at IS NOT NULL,
+            'trust', t.trust,
+            'findings', json_build_object('critical', t.critical, 'warn', t.warn, 'info', t.info),
+            'game_min', (SELECT name FROM game_versions WHERE id = v.game_min_id),
+            'game_max', (SELECT name FROM game_versions WHERE id = v.game_max_id),
+            'compatible', CASE WHEN $2::int IS NULL THEN NULL ELSE game_compatible(v.id, $2) END)
+         FROM versions v JOIN version_trust t ON t.version_id = v.id
+         WHERE v.addon_id = $1 AND v.id = ANY($3::bigint[])
+         ORDER BY array_position($3::bigint[], v.id)"
+    )
+    .bind(addon.id).bind(game).bind(&ids).fetch_all(&state.pool).await?;
+    Ok(Json(serde_json::json!({
+        "versions": rows, "total": total, "page": page, "per_page": per_page,
+        "has_more": page * per_page < total
+    })))
+}
+
 /// The latest scan of a version with all its findings.
 pub async fn findings(State(state): State<AppState>, Path((slug, tag)): Path<(String, String)>) -> ApiResult<Json<Value>> {
     let addon = load_addon(&state.pool, &slug).await?;

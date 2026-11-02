@@ -52,6 +52,7 @@ pub fn router(state: AppState) -> Router {
             get(routes::addons::show).patch(routes::addons::update).delete(routes::addons::delete),
         )
         .route("/v1/addons/{slug}/versions", get(routes::versions::list))
+        .route("/v1/addons/{slug}/versions/page", get(routes::versions::paged))
         .route("/v1/addons/{slug}/downloads", post(routes::versions::count_download))
         .route(
             "/v1/addons/{slug}/images",
