@@ -250,6 +250,9 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--gold); font-weight: 400; }
 .table-wrap { overflow-x: auto; }
+/* The column names stay at the top while the rows scroll beneath them (a .list scrolls on its own).
+   Opaque, and the line drawn as a shadow: a collapsed border does not stay with a sticky cell. */
+.table-wrap thead th { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 0; box-shadow: inset 0 -1px 0 var(--line); }
 code { word-break: break-all; color: var(--gold-bright); }
 
 .search { margin-bottom: 16px; }
