@@ -40,6 +40,7 @@
             code before it reaches your AddOns folder.</p>
           <div class="actions">
             <a class="button large" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-windows-x86_64.zip" data-download="windows">Download for Windows</a>
+            <a class="button secondary" href="https://apps.microsoft.com/detail/9NRR8S6KD64B">Microsoft Store</a>
             <a class="button secondary" href="https://github.com/Rezondes/SurvivorsForge/releases/latest/download/SurvivorsForge-linux-x86_64.AppImage" data-download="linux">Linux and Steam Deck</a>
           </div>
           <p class="small" id="release" hidden></p>
@@ -168,6 +169,7 @@
         <a href="https://forge.rezondes.net/addons">Addons</a>
         <a href="https://github.com/Rezondes/SurvivorsForge">GitHub</a>
         <a href="https://github.com/Rezondes/SurvivorsForge/blob/main/SECURITY.md">Security</a>
+        <a href="dataprotection">Privacy</a>
       </nav>
       <p>SurvivorsForge is a community project. It is not made by or affiliated with the team of Azeroth Survivors or with
         Blizzard Entertainment.</p>
@@ -223,10 +225,9 @@
     }
 
     // Show the current release and link its exact files. Pre-releases are skipped, as by the launcher.
-    // A release from before the fixed names has only the versioned files, so those are the fallback.
     const files = {
-      windows: [/^SurvivorsForge-windows-x86_64\.zip$/, /-x86_64-pc-windows-msvc\.zip$/],
-      linux: [/^SurvivorsForge-linux-x86_64\.AppImage$/, /\.AppImage$/],
+      windows: [/^SurvivorsForge-windows-x86_64\.zip$/],
+      linux: [/^SurvivorsForge-linux-x86_64\.AppImage$/],
     };
     fetch("https://api.github.com/repos/Rezondes/SurvivorsForge/releases/latest")
       .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))

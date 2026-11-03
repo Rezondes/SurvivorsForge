@@ -18,6 +18,7 @@ The links to the platform website point at the official instance, `https://forge
 | File | What |
 |---|---|
 | `index.html` | The page |
+| `dataprotection.html` | Privacy policy, served at `/dataprotection` (the Microsoft Store listing links there) |
 | `style.css` | The launcher's look: colours, fonts, buttons, headings |
 | `assets/icon.png` | App icon, also the favicon |
 | `assets/fonts/` | Morpheus (shareware by Kiwi Media, `README-morpheus.txt`) and Marcellus (SIL Open Font License) |

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy - SurvivorsForge</title>
+  <meta name="description" content="What the SurvivorsForge launcher, its website and this homepage do with your data.">
+  <link rel="canonical" href="https://rezondes.github.io/SurvivorsForge/dataprotection">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="./">
+        <img src="assets/icon.png" alt="" width="40" height="40">
+        <span class="gold-text">SurvivorsForge</span>
+      </a>
+      <nav aria-label="Sections">
+        <a href="./">Home</a>
+        <a href="https://github.com/Rezondes/SurvivorsForge">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="legal">
+    <div class="wrap">
+      <h1 class="gold-text">Privacy policy</h1>
+      <p class="muted">Last updated: 3 November 2026</p>
+
+      <p>SurvivorsForge has three parts: the launcher (the desktop app, also in the Microsoft Store), the
+        platform with its website <a href="https://forge.rezondes.net">forge.rezondes.net</a> and its API
+        forgeapi.rezondes.net, and this homepage. This page says which personal data each part processes,
+        why, and for how long. SurvivorsForge shows no ads, uses no tracking or analytics services and sells
+        no data.</p>
+
+      <h2>Who is responsible</h2>
+      <p>Rezondes<br>Email: <a href="mailto:dev@rezondes.net">dev@rezondes.net</a></p>
+      <p>Questions about this policy can also go to the
+        <a href="https://github.com/Rezondes/SurvivorsForge/issues">issue tracker</a>; anything private, please by email.</p>
+
+      <h2>The launcher</h2>
+      <h3>On your computer</h3>
+      <p>Settings, the install state of your addons and a cache of the addon list and its images stay on your
+        computer, in <code>%APPDATA%\SurvivorsForge</code> (Linux: <code>~/.config/SurvivorsForge</code>; the
+        Microsoft Store version keeps them in its own app folder). They are not sent anywhere. Uninstalling
+        the Store version removes them; otherwise delete the folder.</p>
+
+      <h3>Talking to the platform</h3>
+      <p>The launcher loads the addon list, release details, icons and screenshots from the platform API. Like
+        every server, the API sees your IP address with each request. It uses the address only in memory, to
+        limit how many requests one sender can make, and does not write it to its database or logs.</p>
+
+      <h3>Anonymous statistics</h3>
+      <p>After each install or update of an addon from the platform, the launcher sends one event: whether
+        it was an install or an update, whether it failed and with which fixed error code, the addon and its
+        version, the launcher version and the operating system (Windows or Linux). No file paths, names or
+        error texts are sent.</p>
+      <p>With the events comes a random installation ID, made on the first start. It contains nothing about
+        you or your computer and is sent only to the platform, never to GitHub. It lets us count active
+        launchers and find the requests of one installation when something goes wrong. Events without the ID
+        are told apart for one day by a hash of the IP address with a key that changes every day and is never
+        stored; these hashes are deleted after two days.</p>
+      <p>You can turn off the events, or only the installation ID, in the launcher under <em>Settings,
+        Statistics</em>. The events are kept for the statistics without a time limit; they contain no IP
+        address. Totals are public on the website's statistics page.</p>
+      <p>Legal basis: our legitimate interest in knowing which addons are used and in finding errors
+        (Art. 6(1)(f) GDPR). You can object at any time by turning the statistics off.</p>
+
+      <h3>Downloads from GitHub</h3>
+      <p>Addon files and launcher updates come straight from GitHub (github.com, codeload.github.com and
+        GitHub's download hosts). When the platform cannot be reached, the launcher also reads release pages
+        on github.com itself. GitHub then sees your IP address; see the
+        <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub
+        privacy statement</a>.</p>
+
+      <h3>Microsoft Store</h3>
+      <p>If you install SurvivorsForge from the Microsoft Store, Microsoft processes the data of the purchase,
+        installation and updates under the <a href="https://privacy.microsoft.com/privacystatement">Microsoft
+        privacy statement</a>. We only receive Microsoft's aggregated reports, such as the number of installs.</p>
+
+      <h2>The website</h2>
+      <h3>Browsing</h3>
+      <p>You can browse addons without an account. Every visitor gets one cookie, <code>forge_csrf</code>, a
+        random value that protects forms against forgery; it says nothing about you. Avatars and images in addon descriptions load from GitHub's servers, which then see your IP
+        address. Downloads of addon packs are counted with the same daily hash as above.</p>
+
+      <h3>Logging in with GitHub</h3>
+      <p>To publish addons, write comments or report problems you log in with your GitHub account. We then
+        store your GitHub user ID, your GitHub username, the address of your avatar, your role, and when you
+        joined and last logged in. Sessions are stored only as a hash of their token.</p>
+      <p>The website uses only cookies it needs to work, all encrypted and not readable by scripts:
+        <code>forge_session</code> (your login), <code>forge_csrf</code> (see above),
+        <code>forge_login</code> (only during a login) and <code>forge_github</code>. The last one holds the
+        token GitHub hands over at login, so the website can post issue reports and replies on GitHub in your
+        name. It stays in your browser; the platform does not store it. Logging out removes the cookies.</p>
+
+      <h3>What you write</h3>
+      <p>Comments, addon pages and reports to the admins are stored on the platform and shown with your GitHub
+        username. Bug reports and replies to them are posted to the addon's GitHub repository under your
+        GitHub account and are then subject to GitHub's terms. You can edit or delete your comments; a deleted
+        comment is no longer shown. To have its text removed from the database as well, write to the address
+        above.</p>
+      <p>Legal basis: providing the service you asked for (Art. 6(1)(b) GDPR), and our legitimate interest
+        in keeping the platform safe, for example in moderation (Art. 6(1)(f) GDPR). Your account data is kept
+        while you use the platform. To have your account deleted, write to the address above.</p>
+
+      <h2>This homepage</h2>
+      <p>This homepage is hosted by GitHub Pages and sets no cookies. GitHub logs the IP address of each visit
+        to run the service. To show the current version, the page asks api.github.com for the latest release
+        from your browser.</p>
+
+      <h2>Your rights</h2>
+      <p>Under the GDPR you have the right to access your data, to have it corrected or deleted, to restrict
+        its processing, to receive it in a portable format, and to object to processing based on our
+        legitimate interest. Write to the address above. You also have the right to complain to a data
+        protection supervisory authority.</p>
+
+      <h2>Changes</h2>
+      <p>When SurvivorsForge starts to process data differently, this page changes first. The date at the top
+        shows the last change.</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <nav aria-label="Links">
+        <a href="./">Home</a>
+        <a href="https://forge.rezondes.net/addons">Addons</a>
+        <a href="https://github.com/Rezondes/SurvivorsForge">GitHub</a>
+        <a href="dataprotection">Privacy</a>
+      </nav>
+      <p>SurvivorsForge is a community project. It is not made by or affiliated with the team of Azeroth Survivors or with
+        Blizzard Entertainment.</p>
+    </div>
+  </footer>
+</body>
+</html>
