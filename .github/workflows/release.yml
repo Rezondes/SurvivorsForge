@@ -202,3 +202,60 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "SurvivorsForge ${{ needs.version.outputs.version }}" \
             --generate-notes
+
+  # The Microsoft Store version: the same exe as an MSIX package, which the Store signs. Final
+  # releases only, once the repository variables are set (README, "Microsoft Store"). It runs after
+  # the GitHub release, so a Store problem never holds that back; re-run this job alone to retry.
+  store:
+    needs: [version, publish]
+    if: needs.version.outputs.prerelease == 'false' && vars.MSSTORE_PRODUCT_ID != ''
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: build
+      - name: Pack the MSIX
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME }}
+          PUBLISHER: ${{ vars.MSSTORE_PUBLISHER }}
+          PUBLISHER_DISPLAY_NAME: ${{ vars.MSSTORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          Expand-Archive "build/SurvivorsForge-$env:VERSION-x86_64-pc-windows-msvc.zip" -DestinationPath msix
+          Copy-Item -Recurse packaging/windows/Assets msix/Assets
+          # The Store wants four numbers with 0 last: 0.6.0 becomes 0.6.0.0.
+          (Get-Content packaging/windows/AppxManifest.xml -Raw).
+            Replace('${IDENTITY_NAME}', $env:IDENTITY_NAME).
+            Replace('${PUBLISHER}', $env:PUBLISHER).
+            Replace('${PUBLISHER_DISPLAY_NAME}', $env:PUBLISHER_DISPLAY_NAME).
+            Replace('${VERSION}', "$env:VERSION.0") | Set-Content msix/AppxManifest.xml -Encoding utf8
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" | Sort-Object FullName | Select-Object -Last 1
+          & $makeappx.FullName pack /d msix /p SurvivorsForge.msix /o
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      # For the first submission, which is made by hand in Partner Center.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msix
+          path: SurvivorsForge.msix
+      - uses: microsoft/setup-msstore-cli@v1
+        if: vars.MSSTORE_TENANT_ID != ''
+      # Fails while an earlier submission is still in certification.
+      - name: Submit to the Store
+        if: vars.MSSTORE_TENANT_ID != ''
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ vars.MSSTORE_TENANT_ID }}
+          SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+          CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          PRODUCT_ID: ${{ vars.MSSTORE_PRODUCT_ID }}
+        run: |
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          msstore publish SurvivorsForge.msix -id $env:PRODUCT_ID
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

@@ -3,8 +3,10 @@
 //! Release assets per platform, under the same name in every release:
 //! - Windows: `SurvivorsForge-windows-x86_64.zip` holding the `.exe`, which replaces the running
 //!   executable.
-//! - Linux: `SurvivorsForge-linux-x86_64.AppImage`, which replaces the AppImage file itself (`$APPIMAGE`). A bare binary outside an AppImage is
-//!   not updated in place.
+//! - Linux: `SurvivorsForge-linux-x86_64.AppImage`, which replaces the AppImage file itself
+//!   (`$APPIMAGE`). A bare binary outside an AppImage is not updated in place.
+//!
+//! The Microsoft Store version is not updated here: the Store updates it.
 
 use crate::github::{Client, Release};
 use crate::{Error, Result};
@@ -27,6 +29,25 @@ pub fn asset_name() -> String {
 /// The AppImage file to replace: `$APPIMAGE`, set by the AppImage runtime, if it points at a file.
 pub fn appimage_path(appimage_env: Option<std::ffi::OsString>) -> Option<PathBuf> {
     appimage_env.map(PathBuf::from).filter(|p| p.is_file())
+}
+
+/// Whether this is the Microsoft Store version (an MSIX package), which the Store updates and
+/// whose link scheme its manifest registers.
+#[cfg(windows)]
+pub fn from_store() -> bool {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentPackageFullName(length: *mut u32, name: *mut u16) -> i32;
+    }
+    const APPMODEL_ERROR_NO_PACKAGE: i32 = 15700;
+    let mut length = 0;
+    // Without a buffer a packaged process gets ERROR_INSUFFICIENT_BUFFER, any other the error below.
+    unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) != APPMODEL_ERROR_NO_PACKAGE }
+}
+
+#[cfg(not(windows))]
+pub fn from_store() -> bool {
+    false
 }
 
 /// Whether this process can replace itself; otherwise the update banner links to the release.
@@ -251,6 +272,11 @@ mod tests {
     fn asset_name_per_platform() {
         assert_eq!(asset_name_for(true), "SurvivorsForge-windows-x86_64.zip");
         assert_eq!(asset_name_for(false), "SurvivorsForge-linux-x86_64.AppImage");
+    }
+
+    #[test]
+    fn a_test_run_is_not_the_store_version() {
+        assert!(!from_store());
     }
 
     #[test]

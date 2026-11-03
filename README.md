@@ -124,6 +124,7 @@ To approximate a Steam Deck in Game Mode, set `XDG_CURRENT_DESKTOP=gamescope` (f
 | `assets/icon.png`, `assets/icon.ico` | App icon: window and taskbar (PNG via Slint), `.exe` icon (ICO via `winresource` in `build.rs`) |
 | `assets/survivorsforge.desktop` | Linux desktop entry: name, icon and app id for the AppImage |
 | `packaging/linux/` | `AppRun` and `build-appimage.sh` for the Linux AppImage |
+| `packaging/windows/` | `AppxManifest.xml` and tile icons for the Microsoft Store package |
 | `docker/` | Linux build and runtime containers for testing the launcher on Windows (see Tests), the platform images (`forge-api`, `forge-web`, `forge-grafana`), the monitoring configuration |
 | `ui/fonts/` | Morpheus (headings, shareware by Kiwi Media, `README-morpheus.txt`) and Marcellus (text, SIL Open Font License, `OFL-marcellus.txt`), embedded at build time |
 | `registry/verified.json` | Built-in copy of the verified addons (see Verified addon list) |
@@ -370,6 +371,20 @@ On startup the app checks the latest SurvivorsForge release. If its version is h
 
 - Windows downloads the zip, writes the new exe next to the running one (`SurvivorsForge.exe.new`), moves the running one aside (`.old`) and the new one into its place, then starts it. Each rename is tried again for about ten seconds while a virus scanner holds the fresh file; if the new exe cannot take the name, the old one moves back. The next start removes `.old`, `.new` and the leftovers of the self-update before 0.5.2 (`.SurvivorsForge.<random>.__relocated__.exe`, `__temp__.exe`).
 - Linux downloads the new AppImage next to the running one (`$APPIMAGE`), makes it executable and renames it over the old file. A bare binary outside an AppImage can't replace itself; its banner opens the download page instead.
+
+### Microsoft Store
+
+The release workflow's `store` job packs the Windows exe into `SurvivorsForge.msix` and submits it to the Microsoft Store, which signs it. A Store install shows no SmartScreen warning. Pre-releases skip it, and it runs after the GitHub release, so a Store failure never holds that back (re-run the job alone).
+
+The Store version notices it runs as a package (`self_update::from_store`): it does not update itself, since the Store does, and it leaves the `survivorsforge://` link to its manifest instead of writing it to the registry. Its settings in `%APPDATA%\SurvivorsForge` are kept apart from a zip install's by Windows.
+
+Setup, once (Settings, Secrets and variables, Actions):
+
+1. In Partner Center, reserve the name and open *Product identity*. Set these repository variables from it: `MSSTORE_IDENTITY_NAME` (Package/Identity/Name), `MSSTORE_PUBLISHER` (Package/Identity/Publisher, `CN=...`), `MSSTORE_PUBLISHER_DISPLAY_NAME`, and `MSSTORE_PRODUCT_ID` (Store ID, `9N...`). From now on every final release packs the MSIX and keeps it as the `msix` artifact of the run.
+2. Make the first submission by hand in Partner Center with that artifact: listing, screenshots, age rating, privacy policy URL (the launcher sends anonymous statistics). The `runFullTrust` capability needs a short reason, for example "Manages addon files in the game folder".
+3. For automatic submissions, register an app in Microsoft Entra ID and add it in Partner Center under *Account settings, User management, Microsoft Entra applications* as Manager. Set the variable `MSSTORE_TENANT_ID` and the secrets `MSSTORE_SELLER_ID`, `MSSTORE_CLIENT_ID` and `MSSTORE_CLIENT_SECRET`. Without `MSSTORE_TENANT_ID` the job only packs.
+
+A submission fails while the previous one is still in certification; re-run the job once it is through.
 
 ## Steam Deck
 

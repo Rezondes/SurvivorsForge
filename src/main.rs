@@ -1211,9 +1211,11 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             });
         });
         let results = Some(results);
-        let self_update = match github.latest_release(APP_REPO) {
-            Ok(Some(release)) => self_update::available(APP_VERSION, &release),
-            _ => None,
+        // The Store updates its version itself.
+        let self_update = if self_update::from_store() {
+            None
+        } else {
+            github.latest_release(APP_REPO).ok().flatten().and_then(|release| self_update::available(APP_VERSION, &release))
         };
         let game_versions = if offline { Vec::new() } else { fetch_game_versions(&client, &api) };
         let categories = if offline { Vec::new() } else { client.get_text(&format!("{api}/v1/categories")).map(|t| controller::parse_categories(&t)).unwrap_or_default() };
@@ -1779,8 +1781,8 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         return Ok(());
     }
-    // Debug builds leave the links to the installed launcher.
-    if !cfg!(debug_assertions) {
+    // Debug builds leave the links to the installed launcher; the Store version has them from its manifest.
+    if !cfg!(debug_assertions) && !self_update::from_store() {
         deep_link::register();
     }
     // The exe an update set aside, which may still run for a moment after the restart.
