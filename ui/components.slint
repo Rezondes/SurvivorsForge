@@ -76,6 +76,24 @@ export struct AddonDetail {
     auto-update: bool,
     // Switched on for all addons in the settings; the box here cannot turn it off.
     auto-update-all: bool,
+    // "Report a bug" (the platform's form) or "Report on GitHub", as on the website.
+    bug-label: string,
+    // The platform takes bug reports: its Issues tab is worth a button.
+    issues-ready: bool,
+    // The owner turned the Comments tab on.
+    comments-on: bool,
+}
+
+// One comment of an addon's discussion, in reading order; `depth` indents replies (0 to 3).
+export struct CommentRow {
+    author: string,
+    avatar: image,
+    initial: string,
+    date: string,
+    edited: bool,
+    deleted: bool,
+    depth: int,
+    body: string,
 }
 
 // Outlined gold button; `primary` is the deep red one with the gold rim.
@@ -959,7 +977,11 @@ export component DetailView inherits VerticalLayout {
     callback remove();
     callback open();
     callback website();
-    callback report();
+    // A page of the addon on the website or GitHub: "bug", "issues", "abuse".
+    callback link(string);
+    callback comments();
+    // The browser cannot open here (Game Mode): the website buttons are greyed out.
+    in property <bool> links-enabled: true;
     // Scan the installed folders with forge-scan on this computer.
     callback scan();
     // Switch updating on its own on or off for this addon.
@@ -1047,16 +1069,13 @@ export component DetailView inherits VerticalLayout {
         spacing: 12px;
         if root.detail.on-website : ActionButton {
             text: "Open on the website";
+            enabled: root.links-enabled;
             clicked => { root.website(); }
         }
         if root.detail.row.can-open : ActionButton {
             text: "GitHub";
+            enabled: root.links-enabled;
             clicked => { root.open(); }
-        }
-        // The website asks for a login; the launcher has none.
-        if root.detail.on-website : ActionButton {
-            text: "Report";
-            clicked => { root.report(); }
         }
         if root.detail.row.can-remove && !root.detail.row.busy : ActionButton {
             text: "Scan locally";
@@ -1065,6 +1084,40 @@ export component DetailView inherits VerticalLayout {
         if root.detail.row.can-remove && !root.detail.row.busy : RemoveButton {
             label: "Remove " + root.detail.row.name;
             clicked => { root.remove(); }
+        }
+    }
+
+    // As on the website: bugs, the discussion and a report to the admins. Writing needs the
+    // website's GitHub login; the launcher has none.
+    if root.detail.on-website : HorizontalLayout {
+        alignment: start;
+        spacing: 12px;
+        ActionButton {
+            text: root.detail.bug-label;
+            enabled: root.links-enabled;
+            clicked => { root.link("bug"); }
+        }
+        if root.detail.issues-ready : ActionButton {
+            text: "Issues";
+            enabled: root.links-enabled;
+            clicked => { root.link("issues"); }
+        }
+        if root.detail.comments-on : ActionButton {
+            text: "Comments";
+            clicked => { root.comments(); }
+        }
+        ActionButton {
+            text: "Report abuse";
+            enabled: root.links-enabled;
+            clicked => { root.link("abuse"); }
+        }
+        if !root.links-enabled : VerticalLayout {
+            alignment: center;
+            Text {
+                text: "The website opens in Desktop Mode.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
         }
     }
 
@@ -1694,4 +1747,173 @@ export component ResizeEdges {
     ResizeGrip { x: 0; y: 0; width: root.grip; height: root.grip; direction: 5; mouse-cursor: nwse-resize; start(d) => { root.start-resize(d); } }
     ResizeGrip { x: root.width - root.grip; y: root.height - root.grip; width: root.grip; height: root.grip; direction: 6; mouse-cursor: nwse-resize; start(d) => { root.start-resize(d); } }
     ResizeGrip { x: 0; y: root.height - root.grip; width: root.grip; height: root.grip; direction: 7; mouse-cursor: nesw-resize; start(d) => { root.start-resize(d); } }
+}
+
+// The comments of an addon, read only: writing and replying need the website's GitHub login.
+// While the platform answers, placeholders show (after 150 ms, `waiting` 1) and from 5 s a word
+// that the connection is slow (`waiting` 2).
+export component CommentsView inherits VerticalLayout {
+    in property <string> name;
+    in property <[CommentRow]> rows;
+    in property <int> waiting;
+    in property <bool> failed;
+    in property <bool> off;
+    in property <bool> more;
+    in property <bool> loading-more;
+    in property <bool> links-enabled: true;
+    callback back();
+    callback write();
+    callback older();
+    callback retry();
+
+    spacing: 14px;
+
+    HorizontalLayout {
+        alignment: start;
+        LinkButton {
+            text: "< Back to " + root.name;
+            clicked => { root.back(); }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: "Comments";
+                font-size: 26px;
+                color: Theme.gold-heading;
+            }
+            Text {
+                text: root.links-enabled ? "Write and reply on the website, with your GitHub login." : "Write and reply on the website in Desktop Mode.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            ActionButton {
+                text: "Write a comment";
+                primary: true;
+                enabled: root.links-enabled;
+                clicked => { root.write(); }
+            }
+        }
+    }
+
+    ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 12px;
+        if root.off : Text {
+            text: "The creator has not turned on comments.";
+            font-size: Theme.body;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+        }
+        if root.failed : HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: root.rows.length > 0 ? "Older comments could not be loaded." : "Comments could not be loaded. Check the connection.";
+                font-size: Theme.body;
+                color: Theme.danger;
+                wrap: word-wrap;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            ActionButton {
+                text: "Try again";
+                clicked => { root.retry(); }
+            }
+        }
+        if !root.off && !root.failed && root.waiting == 0 && root.rows.length == 0 && !root.loading-more : Text {
+            text: "No comments yet.";
+            font-size: Theme.body;
+            color: Theme.text-muted;
+        }
+        for row in root.rows : HorizontalLayout {
+            padding-left: row.depth * 24px;
+            Rectangle {
+                background: Theme.field;
+                border-width: 1px;
+                border-color: Theme.line;
+                border-radius: Theme.radius;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    if row.deleted : Text {
+                        text: "Deleted comment.";
+                        font-size: Theme.body;
+                        color: Theme.text-muted;
+                    }
+                    if !row.deleted : HorizontalLayout {
+                        spacing: 8px;
+                        AddonIcon {
+                            width: 24px;
+                            height: 24px;
+                            icon: row.avatar;
+                            initial: row.initial;
+                        }
+                        Text {
+                            text: row.author;
+                            font-size: Theme.body;
+                            color: Theme.gold;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: row.date + (row.edited ? " · edited" : "");
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    // A Rectangle around the wrapping text: a HorizontalLayout would measure it as one line.
+                    if !row.deleted : Rectangle {
+                        height: body.preferred-height;
+                        body := Text {
+                            width: parent.width;
+                            text: row.body;
+                            font-size: Theme.body;
+                            color: Theme.text;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+        // Comments on their way: three placeholder cards in the shape of a comment.
+        if root.waiting > 0 : VerticalLayout {
+            spacing: 12px;
+            accessible-role: text;
+            accessible-label: "Loading the comments";
+            if root.waiting == 2 : Text {
+                text: "Still loading. The connection seems slow.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
+            for i in 3 : VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    Placeholder { height: 14px; horizontal-stretch: 3; }
+                    Rectangle { horizontal-stretch: 7; }
+                }
+                Placeholder { height: 12px; }
+                HorizontalLayout {
+                    Placeholder { height: 12px; horizontal-stretch: 6; }
+                    Rectangle { horizontal-stretch: 4; }
+                }
+            }
+        }
+        if root.more && !root.failed : HorizontalLayout {
+            alignment: start;
+            ActionButton {
+                text: root.loading-more ? "Loading" : "Older comments";
+                enabled: !root.loading-more;
+                clicked => { root.older(); }
+            }
+        }
+    }
 }

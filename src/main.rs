@@ -78,6 +78,23 @@ struct Core {
     refreshed: HashSet<String>,
     /// Downloaded icons and screenshots by URL; `None` while loading or when it failed.
     pictures: HashMap<String, Option<Pixels>>,
+    /// The comments page of the detail view, while it is open.
+    comments: Option<Comments>,
+}
+
+/// The comments of one addon loaded so far, and how the next page is coming.
+struct Comments {
+    slug: String,
+    /// Newest first, as the platform sent them; `comment_threads` orders them for reading.
+    loaded: Vec<controller::Comment>,
+    /// The id to ask older comments before, while there are more.
+    older: Option<i64>,
+    /// When the page now asked for was asked for; `None` while nothing loads.
+    asked: Option<std::time::Instant>,
+    failed: bool,
+    off: bool,
+    /// Counts the requests: an answer for an older one (another addon, a closed page) is dropped.
+    request: u64,
 }
 
 type Pixels = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
@@ -132,6 +149,7 @@ impl Core {
             fetching: HashSet::new(),
             refreshed: HashSet::new(),
             pictures: HashMap::new(),
+            comments: None,
         };
         if let Some(config) = config {
             core.switch_config(config);
@@ -368,6 +386,9 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         shots: ModelRc::new(VecModel::from(shots)),
         about_loading,
         on_website: entry.is_some(),
+        bug_label: entry.map(|a| controller::bug_report("", &a.id, &a.repo, loaded.issues_on, core.platform.issues_ready.get(&a.id).copied()).0).unwrap_or_default().into(),
+        issues_ready: loaded.issues_on && entry.is_some_and(|a| core.platform.issues_ready.get(&a.id) == Some(&true)),
+        comments_on: loaded.comments_on,
         can_auto_update: !*browse && matches!(core.state.get(id).map(|e| &e.source), Some(Source::Verified { .. })),
         auto_update: core.config.auto_updates(id),
         auto_update_all: core.config.auto_update_all,
@@ -467,8 +488,10 @@ fn detail_pictures(info: &controller::AddonInfo) -> (Vec<String>, Vec<String>) {
 /// Opens the detail view of a row. What was stored shows at once, its pictures from the disk; the
 /// platform is asked once per start in the background and replaces it when it answers.
 fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
+    ui.set_comments_open(false);
     let job = {
         let mut core = lock(shared);
+        core.comments = None;
         core.detail = Some((id.clone(), ui.get_page() == 1));
         registry_entry(&core, &id).map(|a| a.id.clone()).map(|rid| {
             let ask = !core.refreshed.contains(&rid) && core.fetching.insert(rid.clone());
@@ -505,6 +528,18 @@ fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
         }
         let redraw = shared.clone();
         let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+        // Where bugs go: until the platform says it takes them, the button sends them to GitHub.
+        if fresh.as_ref().is_some_and(|i| i.issues_on)
+            && let Some(ready) = client.get_text_quick(&format!("{api}/v1/addons/{rid}/issues/frame")).ok().and_then(|t| controller::issues_ready(&t))
+        {
+            let mut core = lock(&shared);
+            if core.platform.issues_ready.insert(rid.clone(), ready) != Some(ready) {
+                core.save_platform();
+            }
+            drop(core);
+            let redraw = shared.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+        }
         if let Some(info) = fresh {
             let (icon, shots) = detail_pictures(&info);
             load_pictures(&weak, &shared, &client, icon, ICON_EDGE);
@@ -553,6 +588,21 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         Some(detail) => ui.set_detail(detail),
         // Removed meanwhile: back to the list.
         None => ui.set_detail_page(-1),
+    }
+    if let Some(c) = &core.comments {
+        let rows: Vec<CommentRow> = controller::comment_threads(c.loaded.clone()).into_iter().map(|m| comment_row(&core, m)).collect();
+        ui.set_comments_rows(ModelRc::new(VecModel::from(rows)));
+        // Placeholders stand in for the first page only; older ones load under their button.
+        let first = c.loaded.is_empty();
+        ui.set_comments_waiting(match c.asked.filter(|_| first).map(|t| controller::waiting(t.elapsed())) {
+            Some(controller::Waiting::Placeholders) => 1,
+            Some(controller::Waiting::Slow) => 2,
+            _ => 0,
+        });
+        ui.set_comments_loading_more(c.asked.is_some() && !first);
+        ui.set_comments_failed(c.failed);
+        ui.set_comments_off(c.off);
+        ui.set_comments_more(c.older.is_some());
     }
     ui.set_update_count(controller::update_all_ids(&core.statuses).len() as i32);
     ui.set_checking(core.checking);
@@ -1849,17 +1899,13 @@ fn main() -> Result<(), slint::PlatformError> {
         let _ = open::that(format!("https://github.com/{repo}"));
     });
     on!(on_row_details, |ui, shared, id| on_row_details(&ui, shared, id.to_string()));
-    on!(on_detail_website, |_ui, shared| {
-        let core = lock(shared);
-        if let Some(entry) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)) {
-            let _ = open::that(format!("{}/addons/{}", core.web_url(), entry.id));
-        }
-    });
-    on!(on_detail_report, |_ui, shared| {
-        let core = lock(shared);
-        if let Some(entry) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)) {
-            let _ = open::that(format!("{}/addons/{}/report", core.web_url(), entry.id));
-        }
+    on!(on_detail_website, |ui, shared| on_detail_link(&ui, shared, "website"));
+    on!(on_detail_link, |ui, shared, page| on_detail_link(&ui, shared, &page));
+    on!(on_comments_show, |ui, shared| on_comments_show(&ui, shared));
+    on!(on_comments_older, |ui, shared| load_comments(&ui, shared, true));
+    on!(on_comments_retry, |ui, shared| {
+        let older = lock(shared).comments.as_ref().is_some_and(|c| !c.loaded.is_empty());
+        load_comments(&ui, shared, older);
     });
     on!(on_confirm_accept, |ui, _shared| {
         ui.set_confirm_open(false);
@@ -1973,6 +2019,130 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.run()
 }
 
+/// One comment for the comments page; its avatar shows once it is loaded.
+fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {
+    let avatar = (!c.avatar_url.is_empty()).then_some(c.avatar_url.as_str());
+    CommentRow {
+        avatar: picture(core, avatar),
+        initial: c.author.chars().next().map(|ch| ch.to_uppercase().to_string()).unwrap_or_default().into(),
+        author: c.author.into(),
+        date: c.date.into(),
+        edited: c.edited,
+        deleted: c.deleted,
+        depth: c.depth as i32,
+        body: c.body.into(),
+    }
+}
+
+/// Opens a page of the detail view's addon in the browser. On a thread, so a slow browser start
+/// does not hold up the window; the status line says it is coming, and where to go if it fails.
+fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
+    let url = {
+        let core = lock(shared);
+        let Some(entry) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)) else { return };
+        if page == "bug" {
+            let issues_on = core.platform.info.get(&entry.id).is_some_and(|i| i.issues_on);
+            controller::bug_report(&core.web_url(), &entry.id, &entry.repo, issues_on, core.platform.issues_ready.get(&entry.id).copied()).1
+        } else {
+            let Some(url) = controller::addon_link(&core.web_url(), &entry.id, page) else { return };
+            url
+        }
+    };
+    const OPENING: &str = "Opening the browser";
+    lock(shared).set_status(OPENING.into(), false);
+    refresh(ui, shared);
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let failed = open::that(&url).is_err();
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            let mut core = lock(&shared);
+            if failed {
+                core.set_status(format!("Could not open the browser. The page is {url}"), true);
+            } else if core.status == OPENING {
+                core.set_status(String::new(), false);
+            }
+            drop(core);
+            refresh(&ui, &shared);
+        });
+    });
+}
+
+/// Opens the comments page of the detail view's addon and loads its newest comments.
+fn on_comments_show(ui: &AppWindow, shared: &Shared) {
+    let slug = {
+        let core = lock(shared);
+        core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).map(|a| a.id.clone())
+    };
+    let Some(slug) = slug else { return };
+    lock(shared).comments = Some(Comments { slug, loaded: Vec::new(), older: None, asked: None, failed: false, off: false, request: 0 });
+    ui.set_comments_open(true);
+    load_comments(ui, shared, false);
+}
+
+/// Asks the platform for the newest comments, or (`older`) the page before the oldest loaded, on a
+/// thread. The page answers at once: placeholders after 150 ms, a word after 5 s, and after
+/// `QUICK_TIMEOUT` a failure with Try again.
+fn load_comments(ui: &AppWindow, shared: &Shared, older: bool) {
+    let job = {
+        let mut core = lock(shared);
+        let (api, client) = (core.api_url(), core.client());
+        let Some(c) = core.comments.as_mut() else { return };
+        if c.asked.is_some() {
+            return;
+        }
+        let before = if older {
+            let Some(id) = c.older else { return };
+            format!("?before={id}")
+        } else {
+            c.loaded.clear();
+            String::new()
+        };
+        c.request += 1;
+        c.asked = Some(std::time::Instant::now());
+        c.failed = false;
+        (format!("{api}/v1/addons/{}/comments{before}", c.slug), c.request, client)
+    };
+    refresh(ui, shared);
+    for after in [controller::QUIET_FOR, controller::SLOW_AFTER] {
+        let (weak, shared) = (ui.as_weak(), shared.clone());
+        slint::Timer::single_shot(after, move || {
+            if let Some(ui) = weak.upgrade() {
+                refresh(&ui, &shared);
+            }
+        });
+    }
+    let (url, request, client) = job;
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let answer = client.get_text_quick(&url);
+        let avatars: Vec<String> = {
+            let mut core = lock(&shared);
+            // Closed meanwhile, or another addon's page: this answer is for nobody.
+            let Some(c) = core.comments.as_mut().filter(|c| c.request == request) else { return };
+            c.asked = None;
+            match answer.as_ref().ok().and_then(|t| controller::comments_page(t)) {
+                Some((page, more)) => {
+                    c.loaded.extend(page);
+                    c.older = more;
+                    c.loaded.iter().map(|m| m.avatar_url.clone()).filter(|u| !u.is_empty()).collect()
+                }
+                None => {
+                    // The owner turned comments off since the details were loaded.
+                    if matches!(answer, Err(survivorsforge::Error::Http(403))) {
+                        c.off = true;
+                    } else {
+                        c.failed = true;
+                    }
+                    Vec::new()
+                }
+            }
+        };
+        let redraw = shared.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+        load_pictures(&weak, &shared, &client, avatars, ICON_EDGE);
+    });
+}
+
 /// Shows the addon of a website link in Browse, in front of the other windows.
 fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
     if ui.get_needs_setup() {
@@ -2070,6 +2240,40 @@ mod layout_tests {
                 };
                 assert!(gap >= 0.0, "{name} (scroll panel: {scroll}) runs {} px into the facts", -gap);
             }
+        }
+    }
+
+    mod comments {
+        use i_slint_backend_testing::ElementHandle;
+        use slint::{ComponentHandle, ModelRc, VecModel};
+
+        slint::slint! {
+            import { CommentsView, CommentRow } from "ui/components.slint";
+            export component CommentsProbe inherits Window {
+                in property <[CommentRow]> rows;
+                width: 700px;
+                height: 4000px;
+                CommentsView { name: "Lucky"; rows: root.rows; }
+            }
+        }
+
+        #[test]
+        fn a_long_comment_never_runs_into_the_next() {
+            i_slint_backend_testing::init_no_event_loop();
+            let long = "Works great with the Mage, and the loot filter is much faster since the last version. ".repeat(6);
+            let row = |author: &str, body: &str, depth: i32| CommentRow { author: author.into(), initial: "B".into(), date: "2026-11-01".into(), body: body.into(), depth, ..Default::default() };
+            let ui = CommentsProbe::new().unwrap();
+            ui.set_rows(ModelRc::new(VecModel::from(vec![row("bob", &long, 0), row("carol", "Same here.", 1)])));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            let (Some(body), Some(next)) = (find(&long), find("carol")) else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let bottom = body.absolute_position().y + body.size().height;
+            assert!(body.size().height > 40.0, "the long comment wraps onto several lines: {}", body.size().height);
+            assert!(next.absolute_position().y > bottom, "the reply starts {} px into the comment above", bottom - next.absolute_position().y);
+            assert!(next.absolute_position().x > body.absolute_position().x, "the reply is indented");
         }
     }
 }

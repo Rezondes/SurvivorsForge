@@ -2,10 +2,10 @@ import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox,
-    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles
+    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView
 } from "components.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow }
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
 export struct Suggestion {
@@ -409,7 +409,18 @@ export component AppWindow inherits Window {
     property <int> zoom-index;
     callback row-details(string);
     callback detail-website();
-    callback detail-report();
+    callback detail-link(string);
+    // The comments page of the detail view; its rows and how loading them goes.
+    in-out property <bool> comments-open;
+    in property <[CommentRow]> comments-rows;
+    in property <int> comments-waiting;
+    in property <bool> comments-failed;
+    in property <bool> comments-off;
+    in property <bool> comments-more;
+    in property <bool> comments-loading-more;
+    callback comments-show();
+    callback comments-older();
+    callback comments-retry();
     callback detail-scan();
     callback detail-auto-update();
     property <bool> showing-detail: root.detail-page == root.page;
@@ -660,15 +671,33 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if root.showing-detail : DetailView {
+                if root.showing-detail && root.comments-open : CommentsView {
+                    vertical-stretch: 1;
+                    name: root.detail.row.name;
+                    rows: root.comments-rows;
+                    waiting: root.comments-waiting;
+                    failed: root.comments-failed;
+                    off: root.comments-off;
+                    more: root.comments-more;
+                    loading-more: root.comments-loading-more;
+                    links-enabled: !root.game-mode;
+                    back => { root.comments-open = false; }
+                    write => { root.detail-link("comments"); }
+                    older => { root.comments-older(); }
+                    retry => { root.comments-retry(); }
+                }
+
+                if root.showing-detail && !root.comments-open : DetailView {
                     vertical-stretch: 1;
                     detail: root.detail;
+                    links-enabled: !root.game-mode;
                     back => { root.detail-page = -1; }
                     action => { root.row-action(root.detail.row.id); }
                     remove => { root.row-remove(root.detail.row.id); }
                     open => { root.row-open(root.detail.row.id); }
                     website => { root.detail-website(); }
-                    report => { root.detail-report(); }
+                    link(page) => { root.detail-link(page); }
+                    comments => { root.comments-show(); }
                     scan => { root.detail-scan(); }
                     auto-update => { root.detail-auto-update(); }
                     enlarge-shot(i) => {

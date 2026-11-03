@@ -131,7 +131,20 @@ impl Client {
 
     /// A platform request; only these carry the installation ID.
     pub fn get_text(&self, url: &str) -> Result<String> {
+        self.get_text_within(url, None)
+    }
+
+    /// A small platform answer a page waits on (comments, the issues frame): it gives up after
+    /// `controller::QUICK_TIMEOUT` instead of the minute a download may take.
+    pub fn get_text_quick(&self, url: &str) -> Result<String> {
+        self.get_text_within(url, Some(crate::controller::QUICK_TIMEOUT))
+    }
+
+    fn get_text_within(&self, url: &str, timeout: Option<Duration>) -> Result<String> {
         let mut request = self.agent.get(url);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
         if let Some(id) = &self.install_id {
             request = request.set(crate::telemetry::INSTALL_HEADER, id);
         }

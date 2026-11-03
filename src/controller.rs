@@ -449,6 +449,12 @@ pub struct AddonInfo {
     pub icon: Option<String>,
     /// Screenshots as (URL, caption) in display order.
     pub shots: Vec<(String, String)>,
+    /// The owner turned the Issues tab on: bugs may be reported on the platform (see `bug_report`).
+    #[serde(default)]
+    pub issues_on: bool,
+    /// The owner turned the Comments tab on.
+    #[serde(default)]
+    pub comments_on: bool,
 }
 
 impl AddonInfo {
@@ -468,7 +474,129 @@ pub fn addon_info(json: &str) -> Option<AddonInfo> {
         about: text(&v["description_md"]),
         icon: v["icon_url"].as_str().map(str::to_string),
         shots: v["images"].as_array().into_iter().flatten().filter(|i| i["url"].is_string()).map(|i| (text(&i["url"]), text(&i["caption"]))).collect(),
+        issues_on: v["issues_enabled"] == true,
+        comments_on: v["comments_enabled"] == true,
     })
+}
+
+/// Whether the platform takes bug reports for an addon (`/v1/addons/{slug}/issues/frame`): its
+/// Issues tab is on and the App may write issues in the repo.
+pub fn issues_ready(json: &str) -> Option<bool> {
+    serde_json::from_str::<serde_json::Value>(json).ok()?["ready"].as_bool()
+}
+
+/// The bug button of an addon, as on the website: the platform's form once everything works,
+/// GitHub's own form otherwise and while that is not known (offline, or not asked yet).
+pub fn bug_report(web: &str, slug: &str, repo: &str, issues_on: bool, ready: Option<bool>) -> (&'static str, String) {
+    if issues_on && ready == Some(true) {
+        ("Report a bug", format!("{web}/addons/{slug}/issues/new?kind=bug"))
+    } else {
+        ("Report on GitHub", format!("https://github.com/{repo}/issues/new"))
+    }
+}
+
+/// The pages of an addon on the website the detail view links to.
+pub fn addon_link(web: &str, slug: &str, page: &str) -> Option<String> {
+    let path = match page {
+        "website" => String::new(),
+        "issues" => "/issues".into(),
+        "comments" => "/comments".into(),
+        "abuse" => "/report".into(),
+        _ => return None,
+    };
+    Some(format!("{web}/addons/{slug}{path}"))
+}
+
+/// Comments the API sends on one page; it sends one more when older ones exist.
+pub const COMMENTS_PER_PAGE: usize = 30;
+/// Replies deeper than this are drawn at this depth.
+pub const MAX_COMMENT_DEPTH: usize = 3;
+
+/// One comment of an addon's discussion (`/v1/addons/{slug}/comments`), as the launcher shows it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Comment {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub author: String,
+    pub avatar_url: String,
+    /// `2026-11-01`
+    pub date: String,
+    pub edited: bool,
+    pub deleted: bool,
+    pub body: String,
+    /// 0 for a comment of its own, up to `MAX_COMMENT_DEPTH` for replies.
+    pub depth: usize,
+}
+
+/// A page of comments, newest first, and the id to ask older ones `before`, if any.
+pub fn comments_page(json: &str) -> Option<(Vec<Comment>, Option<i64>)> {
+    let list: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
+    let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let comments: Vec<Comment> = list
+        .iter()
+        .take(COMMENTS_PER_PAGE)
+        .map(|c| Comment {
+            id: c["id"].as_i64().unwrap_or_default(),
+            parent_id: c["parent_id"].as_i64(),
+            author: text(&c["author"]),
+            avatar_url: text(&c["avatar_url"]),
+            date: text(&c["created_at"]).chars().take(10).collect(),
+            edited: c["edited_at"].is_string(),
+            deleted: c["deleted"] == true,
+            body: text(&c["body"]),
+            depth: 0,
+        })
+        .collect();
+    let older = (list.len() > COMMENTS_PER_PAGE).then(|| comments.last().map(|c| c.id)).flatten();
+    Some((comments, older))
+}
+
+/// Comments in reading order, as on the website: newest first, each followed by its replies,
+/// oldest first. A reply whose comment is not among `comments` stands on its own.
+pub fn comment_threads(comments: Vec<Comment>) -> Vec<Comment> {
+    let ids: std::collections::HashSet<i64> = comments.iter().map(|c| c.id).collect();
+    let mut replies: HashMap<i64, Vec<usize>> = HashMap::new();
+    let mut roots = Vec::new();
+    for (i, c) in comments.iter().enumerate() {
+        match c.parent_id.filter(|p| ids.contains(p)) {
+            Some(parent) => replies.entry(parent).or_default().push(i),
+            None => roots.push(i),
+        }
+    }
+    let mut order = Vec::with_capacity(comments.len());
+    let mut stack: Vec<(usize, usize)> = roots.into_iter().rev().map(|i| (i, 0)).collect();
+    while let Some((i, depth)) = stack.pop() {
+        order.push((i, depth));
+        if let Some(children) = replies.get(&comments[i].id) {
+            stack.extend(children.iter().map(|&c| (c, depth + 1)));
+        }
+    }
+    let mut slots: Vec<Option<Comment>> = comments.into_iter().map(Some).collect();
+    order.into_iter().filter_map(|(i, depth)| slots[i].take().map(|c| Comment { depth: depth.min(MAX_COMMENT_DEPTH), ..c })).collect()
+}
+
+/// What a page that waits on the platform shows: nothing in the first 150 ms (a quick answer does
+/// not flash a placeholder), placeholders, and from 5 s a word that the connection is slow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Waiting {
+    Quiet,
+    Placeholders,
+    Slow,
+}
+
+pub const QUIET_FOR: std::time::Duration = std::time::Duration::from_millis(150);
+pub const SLOW_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
+/// Small platform answers (comments, the issues frame) give up after this; downloads wait longer.
+pub const QUICK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+pub fn waiting(elapsed: std::time::Duration) -> Waiting {
+    if elapsed < QUIET_FOR {
+        Waiting::Quiet
+    } else if elapsed < SLOW_AFTER {
+        Waiting::Placeholders
+    } else {
+        Waiting::Slow
+    }
 }
 
 /// The version label of an update of a verified addon that the platform did not scan: found on
@@ -487,6 +615,9 @@ pub fn unchecked_update(state: &State, statuses: &HashMap<String, UpdateStatus>,
 pub struct PlatformCache {
     pub icons: HashMap<String, String>,
     pub info: HashMap<String, AddonInfo>,
+    /// Whether the platform takes bug reports, by addon id (`issues_ready`).
+    #[serde(default)]
+    pub issues_ready: HashMap<String, bool>,
 }
 
 impl PlatformCache {
@@ -698,7 +829,7 @@ mod tests {
         assert_eq!(PlatformCache::load(dir.path()), PlatformCache::default(), "nothing stored yet");
         let mut cache = PlatformCache::default();
         cache.icons.insert("lucky".into(), "https://forge.test/img/i.webp".into());
-        cache.info.insert("lucky".into(), AddonInfo { about: "# Hi".into(), icon: None, shots: vec![("https://forge.test/img/1.webp".into(), "Bars".into())] });
+        cache.info.insert("lucky".into(), AddonInfo { about: "# Hi".into(), icon: None, shots: vec![("https://forge.test/img/1.webp".into(), "Bars".into())], ..AddonInfo::default() });
         cache.save(dir.path()).unwrap();
         assert_eq!(PlatformCache::load(dir.path()), cache);
         std::fs::write(dir.path().join("platform.json"), "not json").unwrap();
@@ -1118,5 +1249,69 @@ mod tests {
         // In the open list a parent heads its group and the subcategories sit below it.
         let list = list_entries(&categories);
         assert_eq!(list, [("Classes".to_string(), 1), ("Warrior".to_string(), 2), ("Combat".to_string(), 0)]);
+    }
+
+    #[test]
+    fn bugs_go_to_the_platform_only_when_everything_works() {
+        let here = ("Report a bug", "https://w/addons/lucky/issues/new?kind=bug".to_string());
+        let github = ("Report on GitHub", "https://github.com/alice/lucky/issues/new".to_string());
+        assert_eq!(bug_report("https://w", "lucky", "alice/lucky", true, Some(true)), here);
+        assert_eq!(bug_report("https://w", "lucky", "alice/lucky", true, Some(false)), github, "the App may not write issues");
+        assert_eq!(bug_report("https://w", "lucky", "alice/lucky", true, None), github, "not known yet, or offline");
+        assert_eq!(bug_report("https://w", "lucky", "alice/lucky", false, Some(true)), github, "the Issues tab is off");
+        assert_eq!(issues_ready(r#"{"issues_here":true,"ready":true}"#), Some(true));
+        assert_eq!(issues_ready(r#"{"issues_here":false,"ready":false}"#), Some(false));
+        assert_eq!(issues_ready("not json"), None);
+    }
+
+    #[test]
+    fn the_detail_view_links_the_addon_pages_on_the_website() {
+        assert_eq!(addon_link("https://w", "lucky", "website").as_deref(), Some("https://w/addons/lucky"));
+        assert_eq!(addon_link("https://w", "lucky", "issues").as_deref(), Some("https://w/addons/lucky/issues"));
+        assert_eq!(addon_link("https://w", "lucky", "comments").as_deref(), Some("https://w/addons/lucky/comments"));
+        assert_eq!(addon_link("https://w", "lucky", "abuse").as_deref(), Some("https://w/addons/lucky/report"));
+        assert_eq!(addon_link("https://w", "lucky", "elsewhere"), None);
+        let info = addon_info(r#"{"description_md":"","issues_enabled":true,"comments_enabled":false}"#).unwrap();
+        assert_eq!((info.issues_on, info.comments_on), (true, false));
+        let old: AddonInfo = serde_json::from_str(r#"{"about":"","icon":null,"shots":[]}"#).unwrap();
+        assert_eq!((old.issues_on, old.comments_on), (false, false), "a cache from before reads as off");
+    }
+
+    fn comment(id: i64, parent: Option<i64>) -> Comment {
+        Comment { id, parent_id: parent, author: format!("u{id}"), body: format!("text {id}"), ..Comment::default() }
+    }
+
+    #[test]
+    fn comments_read_newest_first_with_replies_below() {
+        let page = vec![comment(6, Some(1)), comment(5, None), comment(4, Some(2)), comment(3, Some(1)), comment(2, Some(1)), comment(1, None)];
+        let shape: Vec<(i64, usize)> = comment_threads(page).iter().map(|c| (c.id, c.depth)).collect();
+        assert_eq!(shape, [(5, 0), (1, 0), (2, 1), (4, 2), (3, 1), (6, 1)]);
+        let orphan: Vec<(i64, usize)> = comment_threads(vec![comment(9, Some(1)), comment(8, None)]).iter().map(|c| (c.id, c.depth)).collect();
+        assert_eq!(orphan, [(9, 0), (8, 0)], "a reply to an older page stands on its own");
+        let chain: Vec<Comment> = (1..=6).rev().map(|id| comment(id, (id > 1).then(|| id - 1))).collect();
+        assert_eq!(comment_threads(chain).iter().map(|c| c.depth).max(), Some(MAX_COMMENT_DEPTH));
+    }
+
+    #[test]
+    fn a_page_of_comments_says_whether_older_ones_exist() {
+        let one = r#"[{"id":3,"deleted":false,"body":"Hi","author":"bob","avatar_url":"https://a/1","created_at":"2026-11-01T10:00:00Z","edited_at":"2026-11-02T10:00:00Z","parent_id":null},
+                      {"id":2,"deleted":true,"body":"","author":"eve","avatar_url":"","created_at":"2026-10-31T10:00:00Z","edited_at":null,"parent_id":3}]"#;
+        let (comments, older) = comments_page(one).unwrap();
+        assert_eq!(older, None);
+        assert_eq!((comments[0].author.as_str(), comments[0].date.as_str(), comments[0].edited), ("bob", "2026-11-01", true));
+        assert_eq!((comments[1].deleted, comments[1].parent_id), (true, Some(3)));
+        let full: Vec<serde_json::Value> = (1..=31).rev().map(|id| serde_json::json!({ "id": id, "body": "x" })).collect();
+        let (comments, older) = comments_page(&serde_json::to_string(&full).unwrap()).unwrap();
+        assert_eq!((comments.len(), older), (COMMENTS_PER_PAGE, Some(2)), "the extra one only shows that there are more");
+        assert!(comments_page("{}").is_none());
+    }
+
+    #[test]
+    fn waiting_shows_placeholders_after_150_ms_and_a_word_after_5_s() {
+        use std::time::Duration;
+        assert_eq!(waiting(Duration::from_millis(100)), Waiting::Quiet);
+        assert_eq!(waiting(Duration::from_millis(150)), Waiting::Placeholders);
+        assert_eq!(waiting(Duration::from_millis(4_999)), Waiting::Placeholders);
+        assert_eq!(waiting(Duration::from_secs(5)), Waiting::Slow);
     }
 }
