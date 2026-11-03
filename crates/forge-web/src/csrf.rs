@@ -5,7 +5,7 @@
 use crate::app::AppState;
 use crate::session::{CSRF_COOKIE, cookie};
 use axum::body::{Body, to_bytes};
-use axum::extract::{FromRequest, Request, State};
+use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -34,15 +34,19 @@ fn forbidden() -> Response {
     (StatusCode::FORBIDDEN, "The form expired or came from another site. Reload the page and try again.").into_response()
 }
 
+fn too_large() -> Response {
+    (StatusCode::PAYLOAD_TOO_LARGE, "The form is too large. Send fewer or smaller files at once.").into_response()
+}
+
 /// The new addon form with an icon and ten screenshots of at most 5 MB each.
 pub const MAX_UPLOAD_FORM: usize = 60 * 1024 * 1024;
 
 /// The text of field `name` in a multipart body; the browser sends fields in page order, and the
-/// token comes first.
+/// token comes first. Read with multer itself: axum's `Multipart` would stop at its default 2 MB,
+/// as this body is not the route's, which allows `MAX_UPLOAD_FORM`.
 async fn multipart_field(content_type: Option<header::HeaderValue>, body: axum::body::Bytes, name: &str) -> Option<String> {
-    let mut probe = Request::new(Body::from(body));
-    probe.headers_mut().insert(header::CONTENT_TYPE, content_type?);
-    let mut multipart = axum::extract::Multipart::from_request(probe, &()).await.ok()?;
+    let boundary = multer::parse_boundary(content_type?.to_str().ok()?).ok()?;
+    let mut multipart = multer::Multipart::new(Body::from(body).into_data_stream(), boundary);
     while let Ok(Some(field)) = multipart.next_field().await {
         if field.name() == Some(name) {
             return field.text().await.ok();
@@ -79,7 +83,7 @@ pub async fn middleware(State(state): State<AppState>, jar: PrivateCookieJar, mu
                 .is_some_and(|c| c.starts_with("application/x-www-form-urlencoded")) =>
             {
                 let (parts, body) = request.into_parts();
-                let Ok(bytes) = to_bytes(body, MAX_FORM).await else { return forbidden() };
+                let Ok(bytes) = to_bytes(body, MAX_FORM).await else { return too_large() };
                 let field = form_field(&bytes, "csrf");
                 request = Request::from_parts(parts, Body::from(bytes));
                 field
@@ -92,7 +96,7 @@ pub async fn middleware(State(state): State<AppState>, jar: PrivateCookieJar, mu
                 .is_some_and(|c| c.starts_with("multipart/form-data")) =>
             {
                 let (parts, body) = request.into_parts();
-                let Ok(bytes) = to_bytes(body, MAX_UPLOAD_FORM).await else { return forbidden() };
+                let Ok(bytes) = to_bytes(body, MAX_UPLOAD_FORM).await else { return too_large() };
                 let field = multipart_field(parts.headers.get(header::CONTENT_TYPE).cloned(), bytes.clone(), "csrf").await;
                 request = Request::from_parts(parts, Body::from(bytes));
                 field

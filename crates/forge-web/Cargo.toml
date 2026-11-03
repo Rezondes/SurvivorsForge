@@ -11,6 +11,8 @@ forge-core = { path = "../forge-core" }
 forge-trace = { path = "../forge-trace" }
 forge-scan = { path = "../forge-scan" }
 axum = { version = "0.8", features = ["multipart"] }
+# The parser behind axum's Multipart, without its 2 MB limit, for the CSRF check of file forms.
+multer = "3"
 tower-http = { version = "0.6", features = ["set-header"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 serde = { version = "1", features = ["derive"] }

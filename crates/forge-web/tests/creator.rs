@@ -611,6 +611,30 @@ async fn icon_and_screenshots_come_with_the_new_addon() {
 }
 
 #[tokio::test]
+async fn file_forms_over_two_megabytes_pass_the_csrf_check() {
+    let mut web = logged_in(owner()).await;
+    Mock::given(method("POST")).and(path("/v1/addons")).respond_with(ResponseTemplate::new(201).set_body_json(json!({ "slug": "lucky" }))).mount(&web.api).await;
+    Mock::given(method("POST")).and(path("/v1/addons/lucky/images")).respond_with(ResponseTemplate::new(201).set_body_json(json!({ "id": 1 }))).expect(2).mount(&web.api).await;
+    let fields = [("repo", "alice/lucky"), ("slug", "lucky"), ("name", "Lucky"), ("category", "Miscellaneous"), ("source_type", "release"), ("folders", "Lucky")];
+    // Two screenshots of 4 MB: within the 5 MB of one image, far over axum's default 2 MB.
+    let shot = vec![7u8; 4 * 1024 * 1024];
+    let files: [(&str, &str, &[u8]); 2] = [("screenshots", "a.png", &shot), ("screenshots", "b.png", &shot)];
+    let forged = web.post_multipart_with("/addons/new", "wrong", &fields, &files).await;
+    assert_eq!(forged.status, StatusCode::FORBIDDEN, "a large form still needs the right token");
+    let page = web.post_multipart("/addons/new", &fields, &files).await;
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/lucky/images?created=1"), "{}", page.body);
+}
+
+#[tokio::test]
+async fn a_form_over_the_limit_says_it_is_too_large() {
+    let mut web = logged_in(owner()).await;
+    let description = "x".repeat(1024 * 1024 + 1);
+    let page = web.post_form("/addons/lucky/edit", &[("description_md", &description)]).await;
+    assert_eq!(page.status, StatusCode::PAYLOAD_TOO_LARGE, "not the expired-form message");
+    assert!(page.body.contains("too large"), "{}", page.body);
+}
+
+#[tokio::test]
 async fn a_failed_image_upload_still_lands_on_the_new_addon() {
     let mut web = logged_in(owner()).await;
     Mock::given(method("POST")).and(path("/v1/addons")).respond_with(ResponseTemplate::new(201).set_body_json(json!({ "slug": "lucky" }))).mount(&web.api).await;
