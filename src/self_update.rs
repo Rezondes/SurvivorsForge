@@ -50,6 +50,7 @@ pub fn from_store() -> bool {
     false
 }
 
+#[cfg(windows)]
 const STORE_PAGE: &str = "ms-windows-store://pdp/?productid=9NRR8S6KD64B";
 
 /// The newer version the Store has for this package, if any. `url` is the Store page.
