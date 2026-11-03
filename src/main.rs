@@ -1211,9 +1211,8 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             });
         });
         let results = Some(results);
-        // The Store updates its version itself.
         let self_update = if self_update::from_store() {
-            None
+            self_update::store_available()
         } else {
             github.latest_release(APP_REPO).ok().flatten().and_then(|release| self_update::available(APP_VERSION, &release))
         };
@@ -1728,17 +1727,20 @@ fn on_self_update(ui: &AppWindow, shared: &Shared) {
     };
     ui.set_self_update_busy(true);
     let (weak, shared) = (ui.as_weak(), shared.clone());
-    std::thread::spawn(move || match self_update::apply(&client, &update, &work) {
-        Ok(()) => {
-            let _ = weak.upgrade_in_event_loop(|_| self_update::restart());
+    std::thread::spawn(move || {
+        let result = if self_update::from_store() { self_update::apply_store() } else { self_update::apply(&client, &update, &work).map(|()| true) };
+        match result {
+            Ok(true) => {
+                let _ = weak.upgrade_in_event_loop(|_| self_update::restart());
+                return;
+            }
+            Ok(false) => lock(&shared).set_status("Opened SurvivorsForge in the Microsoft Store, update it there.".into(), false),
+            Err(e) => lock(&shared).set_status(format!("Self-update failed: {e}"), true),
         }
-        Err(e) => {
-            lock(&shared).set_status(format!("Self-update failed: {e}"), true);
-            let _ = weak.upgrade_in_event_loop(move |ui| {
-                ui.set_self_update_busy(false);
-                refresh(&ui, &shared);
-            });
-        }
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            ui.set_self_update_busy(false);
+            refresh(&ui, &shared);
+        });
     });
 }
 

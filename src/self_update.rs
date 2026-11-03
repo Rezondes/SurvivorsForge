@@ -6,7 +6,7 @@
 //! - Linux: `SurvivorsForge-linux-x86_64.AppImage`, which replaces the AppImage file itself
 //!   (`$APPIMAGE`). A bare binary outside an AppImage is not updated in place.
 //!
-//! The Microsoft Store version is not updated here: the Store updates it.
+//! The Microsoft Store version asks the Store instead (`store_available`, `apply_store`).
 
 use crate::github::{Client, Release};
 use crate::{Error, Result};
@@ -48,6 +48,52 @@ pub fn from_store() -> bool {
 #[cfg(not(windows))]
 pub fn from_store() -> bool {
     false
+}
+
+const STORE_PAGE: &str = "ms-windows-store://pdp/?productid=9NRR8S6KD64B";
+
+/// The newer version the Store has for this package, if any. `url` is the Store page.
+#[cfg(windows)]
+pub fn store_available() -> Option<Available> {
+    use windows::Services::Store::StoreContext;
+    let updates = StoreContext::GetDefault().ok()?.GetAppAndOptionalStorePackageUpdatesAsync().ok()?.join().ok()?;
+    let v = updates.GetAt(0).ok()?.Package().ok()?.Id().ok()?.Version().ok()?;
+    Some(Available { version: format!("{}.{}.{}", v.Major, v.Minor, v.Build), url: STORE_PAGE.into() })
+}
+
+#[cfg(not(windows))]
+pub fn store_available() -> Option<Available> {
+    None
+}
+
+/// Has the Store install its update in the background: true when it is installed. Windows
+/// before 2004 cannot install silently, so the Store page opens there instead (false).
+#[cfg(windows)]
+pub fn apply_store() -> Result<bool> {
+    use windows::Services::Store::{StoreContext, StorePackageUpdateState};
+    let failed = |e: windows::core::Error| Error::Io(format!("The Store could not install the update: {}", e.message()));
+    let store = StoreContext::GetDefault().map_err(failed)?;
+    if !store.CanSilentlyDownloadStorePackageUpdates().unwrap_or(false) {
+        open::that(STORE_PAGE)?;
+        return Ok(false);
+    }
+    let updates = store.GetAppAndOptionalStorePackageUpdatesAsync().and_then(|op| op.join()).map_err(failed)?;
+    // Windows may close the app to install the update; it starts it again afterwards.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn RegisterApplicationRestart(command_line: *const u16, flags: u32) -> i32;
+    }
+    unsafe { RegisterApplicationRestart(std::ptr::null(), 0) };
+    let result = store.TrySilentDownloadAndInstallStorePackageUpdatesAsync(&updates).and_then(|op| op.join()).map_err(failed)?;
+    match result.OverallState().map_err(failed)? {
+        StorePackageUpdateState::Completed => Ok(true),
+        state => Err(Error::Io(format!("The Store could not install the update ({state:?})."))),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn apply_store() -> Result<bool> {
+    Ok(false)
 }
 
 /// Whether this process can replace itself; otherwise the update banner links to the release.
@@ -180,6 +226,14 @@ pub fn apply(client: &Client, update: &Available, _work_dir: &Path) -> Result<()
 /// Starts the (now replaced) program and ends this process. An AppImage restarts from its file:
 /// `current_exe` points into the AppImage's temporary mount, which goes away with this process.
 pub fn restart() -> ! {
+    // A package starts through its app entry: its exe lives in a folder per version.
+    #[cfg(windows)]
+    if from_store() {
+        if let Ok(family) = windows::ApplicationModel::Package::Current().and_then(|p| p.Id()).and_then(|id| id.FamilyName()) {
+            let _ = std::process::Command::new("explorer.exe").arg(format!("shell:AppsFolder\\{family}!SurvivorsForge")).spawn();
+        }
+        std::process::exit(0)
+    }
     let program = appimage_path(std::env::var_os("APPIMAGE")).or_else(|| std::env::current_exe().ok());
     if let Some(program) = program {
         let _ = std::process::Command::new(program).spawn();

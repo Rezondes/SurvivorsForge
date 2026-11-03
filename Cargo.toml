@@ -31,6 +31,10 @@ sha2 = "0.11"
 flate2 = "1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 
+[target.'cfg(windows)'.dependencies]
+# The Store version asks the Store for its updates (same version the other crates pull in).
+windows = { version = "0.62", features = ["ApplicationModel", "Foundation_Collections", "Services_Store"] }
+
 [build-dependencies]
 slint-build = "1.18"
 

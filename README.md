@@ -376,7 +376,7 @@ On startup the app checks the latest SurvivorsForge release. If its version is h
 
 The release workflow's `store` job packs the Windows exe into `SurvivorsForge.msix` and submits it to the Microsoft Store, which signs it. A Store install shows no SmartScreen warning. Pre-releases skip it, and it runs after the GitHub release, so a Store failure never holds that back (re-run the job alone).
 
-The Store version notices it runs as a package (`self_update::from_store`): it does not update itself, since the Store does, and it leaves the `survivorsforge://` link to its manifest instead of writing it to the registry. Its settings in `%APPDATA%\SurvivorsForge` are kept apart from a zip install's by Windows.
+The Store version notices it runs as a package (`self_update::from_store`): it asks the Store for its update instead of GitHub, has the Store install it in the background and restarts (Windows before 2004 opens the Store page instead), and it leaves the `survivorsforge://` link to its manifest instead of writing it to the registry. Its settings in `%APPDATA%\SurvivorsForge` are kept apart from a zip install's by Windows.
 
 Setup, once (Settings, Secrets and variables, Actions):
 
