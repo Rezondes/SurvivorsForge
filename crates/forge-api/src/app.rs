@@ -40,6 +40,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/exchange", post(oauth::exchange))
         .route("/v1/auth/github/refresh", post(oauth::refresh_github_token))
         .route("/v1/addons/{slug}/issues", get(routes::issues::list).post(routes::issues::create))
+        .route("/v1/addons/{slug}/issues/frame", get(routes::issues::frame_only))
         .route("/v1/addons/{slug}/issues/{number}", get(routes::issues::show).patch(routes::issues::update))
         .route("/v1/addons/{slug}/issues/{number}/comments", post(routes::issues::reply))
         .route(
@@ -47,6 +48,7 @@ pub fn router(state: AppState) -> Router {
             axum::routing::patch(routes::issues::edit_reply).delete(routes::issues::delete_reply),
         )
         .route("/v1/platform/issues", get(routes::issues::list).post(routes::issues::create))
+        .route("/v1/platform/issues/frame", get(routes::issues::frame_only))
         .route("/v1/platform/issues/{number}", get(routes::issues::show).patch(routes::issues::update))
         .route("/v1/platform/issues/{number}/comments", post(routes::issues::reply))
         .route(

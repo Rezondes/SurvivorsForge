@@ -238,3 +238,24 @@ async fn the_platform_has_issues_of_its_own_repo(pool: PgPool) {
     assert_eq!(app.get("/v1/platform/issues/1", None).await.json()["replies"][0]["author"]["login"], "bob");
     assert_eq!(app.get("/v1/platform/issues/x", None).await.status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test]
+async fn the_frame_says_where_bugs_go_without_listing_issues(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let alice = app.publish(1, "alice", "lucky").await;
+    let before = app.github.calls();
+    let off = app.get("/v1/addons/lucky/issues/frame", None).await.json();
+    assert_eq!((off["issues_here"].as_bool(), off["ready"].as_bool()), (Some(false), Some(false)), "{off}");
+    assert_eq!(off["new_issue_url"], "https://github.com/alice/lucky/issues/new");
+    assert_eq!(app.github.calls(), before, "a tab that is off asks GitHub nothing");
+
+    app.patch("/v1/addons/lucky", Some(&alice), json!({ "issues_enabled": true })).await;
+    add_issue(&app, 6, "Crash", &user(2, "bob"));
+    let ready = app.get("/v1/addons/lucky/issues/frame", None).await.json();
+    assert_eq!((ready["issues_here"].as_bool(), ready["ready"].as_bool()), (Some(true), Some(true)), "{ready}");
+    assert!(ready["issues"].is_null(), "no issue list");
+
+    app.github.data().issues_read_only.insert(1);
+    let read_only = app.get("/v1/addons/lucky/issues/frame", None).await.json();
+    assert_eq!((read_only["issues_here"].as_bool(), read_only["ready"].as_bool()), (Some(true), Some(false)), "without the App's issue rights: GitHub's form");
+}

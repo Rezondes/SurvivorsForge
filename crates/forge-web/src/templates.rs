@@ -17,6 +17,8 @@ pub struct AddonHead {
     pub category: String,
     pub repo: String,
     pub summary: String,
+    /// The owner turned the Issues tab on: bugs are reported here, else on GitHub.
+    pub issues_enabled: bool,
 }
 
 impl AddonHead {
@@ -31,6 +33,7 @@ impl AddonHead {
             category: s(&a["category"]),
             repo: s(&a["repo"]),
             summary: s(&a["summary"]),
+            issues_enabled: a["issues_enabled"] == true,
         }
     }
 }

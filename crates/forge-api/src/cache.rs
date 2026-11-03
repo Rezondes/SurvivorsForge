@@ -50,6 +50,8 @@ impl ResponseCache {
             ["v1", "stats"] => Some(self.ttl),
             // Read from GitHub on every miss: the cache spares the round trip, not only the limit.
             ["v1", "addons", _, "issues", ..] | ["v1", "platform", "issues", ..] => Some(self.ttl),
+            // Every launcher showing an addon's comments asks the same; a new comment empties the cache.
+            ["v1", "addons", _, "comments"] => Some(self.ttl),
             _ => None,
         }
     }
@@ -142,11 +144,11 @@ mod tests {
     #[test]
     fn only_public_routes_are_cached() {
         let cache = ResponseCache::new(Duration::from_secs(60));
-        for path in ["/v1/registry", "/v1/addons", "/v1/addons/lucky", "/v1/addons/lucky/versions", "/v1/categories", "/v1/addons/lucky/issues", "/v1/addons/lucky/issues/6", "/v1/platform/issues"] {
+        for path in ["/v1/registry", "/v1/addons", "/v1/addons/lucky", "/v1/addons/lucky/versions", "/v1/categories", "/v1/addons/lucky/issues", "/v1/addons/lucky/issues/6", "/v1/platform/issues", "/v1/addons/lucky/comments"] {
             assert!(cache.ttl_for(path).is_some(), "{path}");
         }
         assert_eq!(cache.ttl_for("/v1/github/o/r/refs"), Some(GITHUB_TTL));
-        for path in ["/v1/me", "/v1/me/addons", "/v1/addons/lucky/permissions", "/v1/addons/lucky/members", "/v1/addons/lucky/comments", "/v1/admin/audit", "/healthz"] {
+        for path in ["/v1/me", "/v1/me/addons", "/v1/addons/lucky/permissions", "/v1/addons/lucky/members", "/v1/admin/audit", "/healthz"] {
             assert_eq!(cache.ttl_for(path), None, "{path}");
         }
         assert_eq!(ResponseCache::new(Duration::ZERO).ttl_for("/v1/registry"), None);

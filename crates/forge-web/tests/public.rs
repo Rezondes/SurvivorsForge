@@ -888,14 +888,16 @@ async fn screenshots_sit_in_visible_tiles() {
 #[tokio::test]
 async fn addons_and_versions_can_be_reported() {
     let mut web = with_addon("scanned", "available").await;
-    assert!(web.get("/addons/lucky").await.body.contains(r#"href="/addons/lucky/report""#), "linked on the addon page");
+    let page = web.get("/addons/lucky").await.body;
+    assert!(page.contains(r#"href="/addons/lucky/report">Report abuse</a>"#), "linked on the addon page");
+    assert!(page.contains(r#"/issues/new" rel="external noopener">Report on GitHub</a>"#), "bugs go to GitHub while the Issues tab is off: {page}");
     assert!(web.get("/addons/lucky/versions/v1").await.body.contains(r#"href="/addons/lucky/report?version=v1""#), "and on the version page");
     assert_eq!(web.get("/addons/lucky/report").await.location(), "/login", "only logged-in users report");
 
     web.login_as("tok", common::me("eve", "user")).await;
     let form = web.get("/addons/lucky/report?version=v1").await;
     assert_eq!(form.status, StatusCode::OK, "{}", form.body);
-    for text in ["Report Lucky Odds", r#"<option value="v1" selected>"#, r#"<option value="">The whole addon</option>"#, r#"value="malware""#, r#"value="other""#, r#"name="text""#] {
+    for text in ["<h1>Report abuse</h1>", r#"<option value="v1" selected>"#, r#"<option value="">The whole addon</option>"#, r#"value="malware""#, r#"value="other""#, r#"name="text""#] {
         assert!(form.body.contains(text), "missing {text}: {}", form.body);
     }
 

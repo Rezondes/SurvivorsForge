@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Report {{ name }} - SurvivorsForge{% endblock %}
+{% block title %}Report abuse · {{ name }} - SurvivorsForge{% endblock %}
 {% block content %}
 <p class="back"><a href="/addons/{{ slug }}">{{ name }}</a></p>
-<h1>Report {{ name }}</h1>
-<p class="muted">An admin reads every report. Harmful versions get blocked, and the launcher stops installing them.</p>
+<h1>Report abuse</h1>
+<p class="muted">For {{ name }} doing harm, being someone else's work or breaking the rules. An admin reads every report. Harmful versions get blocked, and the launcher stops installing them. A bug goes to Report a bug instead.</p>
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 <form class="panel" method="post" action="/addons/{{ slug }}/report">
   <input type="hidden" name="csrf" value="{{ csrf }}">

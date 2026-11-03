@@ -504,7 +504,7 @@ pub struct NewIssueForm {
 }
 
 async fn new_page(state: &AppState, jar: &PrivateCookieJar, csrf: String, user: Visitor, place: Place, form: NewIssueForm, error: Option<String>) -> WebResult<NewIssuePage> {
-    let answer = state.api.get(&format!("{}/issues?state=open", place.api), None).await?;
+    let answer = state.api.get(&format!("{}/issues/frame", place.api), None).await?;
     Ok(NewIssuePage {
         frame: Frame::new(&answer, Some(&user), session::github_token(jar).is_some()),
         user: Some(user),
@@ -548,7 +548,7 @@ pub async fn new_form(
         let page = LazyPage { user, csrf: csrf.0, title, back, error: None, done: None, skeleton: "form", url: uri.to_string(), full_url: full_url(&uri), place };
         return Ok(render(&page).into_response());
     }
-    let answer = state.api.get(&format!("{}/issues?state=open", place.api), None).await?;
+    let answer = state.api.get(&format!("{}/issues/frame", place.api), None).await?;
     if answer["issues_here"] == false || (answer["issues_enabled"] != false && answer["can_write"] != true) {
         let github = s(&answer["new_issue_url"]);
         return Ok(if htmx { hx_redirect(&github) } else { Redirect::to(&github).into_response() });

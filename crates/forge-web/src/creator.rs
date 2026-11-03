@@ -521,7 +521,7 @@ pub async fn issues_note_part(State(state): State<AppState>, jar: PrivateCookieJ
 
 /// What the Issues tab offers players of this addon, for its owner; nothing while it is off.
 async fn issues_note(state: &AppState, slug: &str) -> Option<(bool, String)> {
-    let answer = state.api.get(&format!("/v1/addons/{}/issues?state=open", crate::public::seg(slug)), None).await.ok()?;
+    let answer = state.api.get(&format!("/v1/addons/{}/issues/frame", crate::public::seg(slug)), None).await.ok()?;
     if answer["issues_here"] == false {
         return None;
     }

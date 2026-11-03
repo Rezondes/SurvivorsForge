@@ -177,10 +177,13 @@ async fn writable(state: &AppState, target: &Target) -> bool {
 /// What the pages need besides the issues themselves.
 async fn frame(state: &AppState, target: &Target) -> ApiResult<Value> {
     let repo = state.github.repo_by_name(target.installation, &target.repo).await.map_err(github_error)?;
+    let can_write = repo.has_issues && writable(state, target).await;
     Ok(json!({
         "repo": target.repo,
+        "issues_here": true,
+        "ready": can_write,
         "issues_enabled": repo.has_issues,
-        "can_write": repo.has_issues && writable(state, target).await,
+        "can_write": can_write,
         "issues_url": format!("https://github.com/{}/issues", target.repo),
         "new_issue_url": new_issue_url(&target.repo),
     }))
@@ -208,16 +211,31 @@ fn matches(issue: &Issue, query: &str) -> bool {
     issue.title.to_lowercase().contains(&query) || issue.user.as_ref().is_some_and(|u| u.login.to_lowercase().contains(&query))
 }
 
+/// A tab the owner did not turn on: only the way to GitHub, without asking GitHub anything.
+fn off(target: &Target) -> Value {
+    json!({
+        "repo": target.repo,
+        "issues_here": false,
+        "ready": false,
+        "issues_url": format!("https://github.com/{}/issues", target.repo),
+        "new_issue_url": new_issue_url(&target.repo),
+    })
+}
+
+/// `GET .../issues/frame`: whether bugs are reported here (`ready`) or on GitHub, without the list,
+/// for the launcher and the edit page.
+pub async fn frame_only(State(state): State<AppState>, Path(path): Path<HashMap<String, String>>) -> ApiResult<Json<Value>> {
+    let target = target(&state, &path).await?;
+    if !target.enabled {
+        return Ok(Json(off(&target)));
+    }
+    Ok(Json(frame(&state, &target).await?))
+}
+
 pub async fn list(State(state): State<AppState>, Path(path): Path<HashMap<String, String>>, Query(query): Query<ListQuery>) -> ApiResult<Json<Value>> {
     let target = target(&state, &path).await?;
     if !target.enabled {
-        // Only the way to GitHub, without asking GitHub anything.
-        return Ok(Json(json!({
-            "repo": target.repo,
-            "issues_here": false,
-            "issues_url": format!("https://github.com/{}/issues", target.repo),
-            "new_issue_url": new_issue_url(&target.repo),
-        })));
+        return Ok(Json(off(&target)));
     }
     let mut answer = frame(&state, &target).await?;
     if answer["issues_enabled"] == false {

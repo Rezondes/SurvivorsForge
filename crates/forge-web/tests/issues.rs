@@ -83,6 +83,7 @@ async fn without_write_access_the_page_points_to_github() {
     let mut web = TestWeb::new().await;
     addon(&web).await;
     mock_get(&web, "/v1/addons/lucky/issues", list(false)).await;
+    mock_get(&web, "/v1/addons/lucky/issues/frame", frame(false)).await;
     web.login_with_github("t", me("bob", "user"), github_token("2030-01-01T00:00:00Z")).await;
     let page = web.get_htmx("/addons/lucky/issues").await;
     assert!(page.body.contains(r#"href="https://github.com/alice/lucky/issues/new""#) && page.body.contains("Report on GitHub"), "{}", page.body);
@@ -105,6 +106,7 @@ async fn new_issue_goes_to_github_as_the_visitor() {
     let mut web = TestWeb::new().await;
     addon(&web).await;
     mock_get(&web, "/v1/addons/lucky/issues", list(true)).await;
+    mock_get(&web, "/v1/addons/lucky/issues/frame", frame(true)).await;
     web.login_with_github("t", me("bob", "user"), github_token("2030-01-01T00:00:00Z")).await;
     let form = web.get_htmx("/addons/lucky/issues/new?kind=feature").await;
     assert!(form.body.contains(r#"value="feature" checked"#) && form.body.contains("Posted publicly on GitHub as bob"), "{}", form.body);
@@ -129,6 +131,7 @@ async fn refused_issue_keeps_what_was_typed() {
     let mut web = TestWeb::new().await;
     addon(&web).await;
     mock_get(&web, "/v1/addons/lucky/issues", list(true)).await;
+    mock_get(&web, "/v1/addons/lucky/issues/frame", frame(true)).await;
     web.login_with_github("t", me("bob", "user"), github_token("2030-01-01T00:00:00Z")).await;
     Mock::given(method("POST"))
         .and(path("/v1/addons/lucky/issues"))
@@ -224,6 +227,7 @@ async fn pages_that_ask_github_answer_at_once_and_load_the_rest() {
         assert!(body.contains(shape) && body.contains(r#"aria-busy="true""#), "{uri}: the skeleton of what comes");
         assert!(body.contains(r#"<a href="/addons/lucky/issues" aria-current="page">Issues</a>"#), "{uri}: the tabs at once");
         assert!(body.contains(r#"<img class="icon big" src="https://img.test/lucky.webp""#) && body.contains("<h1>Lucky Odds</h1>"), "{uri}: icon and name");
+        assert!(body.contains(r#"href="/addons/lucky/issues/new?kind=bug">Report a bug</a>"#), "{uri}: with the tab on, bugs are reported here");
         assert!(body.contains("full=1"), "{uri}: a way without JavaScript");
     }
     assert!(web.get("/addons/lucky/issues/6?done=Saved").await.body.contains(r#"role="status">Saved<"#), "notices at once");
@@ -249,6 +253,7 @@ async fn report_a_bug_goes_to_github_unless_the_app_may_post() {
     let mut web = TestWeb::new().await;
     addon(&web).await;
     mock_get(&web, "/v1/addons/lucky/issues", list(false)).await;
+    mock_get(&web, "/v1/addons/lucky/issues/frame", frame(false)).await;
     let page = web.get_htmx("/addons/lucky/issues/new?kind=bug").await;
     assert_eq!((page.status, hx_redirect(&page)), (StatusCode::NO_CONTENT, "https://github.com/alice/lucky/issues/new"), "no login needed for GitHub's form");
     let plain = web.get("/addons/lucky/issues/new?kind=bug&full=1").await;
@@ -257,6 +262,7 @@ async fn report_a_bug_goes_to_github_unless_the_app_may_post() {
     let mut web = TestWeb::new().await;
     addon(&web).await;
     mock_get(&web, "/v1/addons/lucky/issues", list(true)).await;
+    mock_get(&web, "/v1/addons/lucky/issues/frame", frame(true)).await;
     let page = web.get_htmx("/addons/lucky/issues/new?kind=bug").await;
     assert_eq!(hx_redirect(&page), "/login", "the form here needs a login");
     assert_eq!(web.get("/addons/lucky/issues/new?kind=bug&full=1").await.location(), "/login");
@@ -266,6 +272,7 @@ async fn report_a_bug_goes_to_github_unless_the_app_may_post() {
 async fn survivorsforge_has_its_own_issue_pages() {
     let mut web = TestWeb::new().await;
     mock_get(&web, "/v1/platform/issues", list(false)).await;
+    mock_get(&web, "/v1/platform/issues/frame", frame(false)).await;
     let page = web.get_htmx("/issues").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     assert!(page.body.contains("<h1>SurvivorsForge</h1>") && page.body.contains("for the SurvivorsForge launcher and website"), "{}", page.body);

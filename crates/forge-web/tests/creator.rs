@@ -123,7 +123,7 @@ async fn the_issues_note_loads_after_the_edit_page() {
         .await;
     let page = web.get("/addons/lucky/edit").await;
     assert!(page.body.contains(r#"hx-get="/addons/lucky/edit/issues-note""#) && !page.body.contains("<strong>Issues.</strong>"), "{}", page.body);
-    get_json(&web, "/v1/addons/lucky/issues", json!({ "issues_enabled": true, "can_write": false })).await;
+    get_json(&web, "/v1/addons/lucky/issues/frame", json!({ "issues_here": true, "ready": false, "issues_enabled": true, "can_write": false })).await;
     let note = web.get("/addons/lucky/edit/issues-note").await.body;
     assert!(note.trim_start().starts_with(r#"<div id="lazy-content" class="notice warn"><strong>Issues.</strong> Players can read"#), "{note}");
 }
