@@ -47,7 +47,7 @@ async fn mock_get(web: &TestWeb, at: &str, answer: Value) {
 }
 
 async fn addon(web: &TestWeb) {
-    mock_get(web, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky Odds", "repo": "alice/lucky", "issues_enabled": true })).await;
+    mock_get(web, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky Odds", "repo": "alice/lucky", "issues_enabled": true, "icon_url": "https://img.test/lucky.webp" })).await;
 }
 
 fn hx_redirect(page: &common::Page) -> &str {
@@ -75,7 +75,7 @@ async fn issue_list_shows_rows_tabs_and_how_to_join() {
     assert!(body.contains("Crash &#60;on&#62; load") && body.contains("Bug report") && body.contains("2 replies"), "escaped title, kind, replies");
     assert!(body.contains(r#"Closed <span class="count">2</span>"#));
     assert!(body.contains(r#"<a href="/login">Log in with GitHub</a>"#), "a visitor learns how to report");
-    assert!(!body.contains("/addons/lucky/issues/new"), "no form for visitors");
+    assert!(!body.contains(r#"href="/addons/lucky/issues/new">New issue"#), "no form for visitors");
 }
 
 #[tokio::test]
@@ -223,6 +223,7 @@ async fn pages_that_ask_github_answer_at_once_and_load_the_rest() {
         assert!(body.contains(&format!(r#"hx-get="{}""#, uri.replace('&', "&#38;"))) && body.contains(r##"hx-select="#lazy-content""##), "{uri}: {body}");
         assert!(body.contains(shape) && body.contains(r#"aria-busy="true""#), "{uri}: the skeleton of what comes");
         assert!(body.contains(r#"<a href="/addons/lucky/issues" aria-current="page">Issues</a>"#), "{uri}: the tabs at once");
+        assert!(body.contains(r#"<img class="icon big" src="https://img.test/lucky.webp""#) && body.contains("<h1>Lucky Odds</h1>"), "{uri}: icon and name");
         assert!(body.contains("full=1"), "{uri}: a way without JavaScript");
     }
     assert!(web.get("/addons/lucky/issues/6?done=Saved").await.body.contains(r#"role="status">Saved<"#), "notices at once");

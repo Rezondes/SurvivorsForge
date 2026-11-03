@@ -2,7 +2,7 @@
 {% block title %}Comments · {{ name }} - SurvivorsForge{% endblock %}
 {% block content %}
 <p class="back"><a href="/addons/{{ slug }}">{{ name }}</a></p>
-<h1>{{ name }}</h1>
+{% include "addon_head.html" %}
 {% let tab = "comments" %}{% include "addon_tabs.html" %}
 
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}

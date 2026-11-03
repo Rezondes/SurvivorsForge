@@ -27,7 +27,7 @@ async fn mock_get(web: &TestWeb, at: &str, answer: Value) {
 }
 
 async fn addon(web: &TestWeb, comments: Value) {
-    mock_get(web, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky Odds", "comments_enabled": true })).await;
+    mock_get(web, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky Odds", "comments_enabled": true, "icon_url": "https://img.test/lucky.webp" })).await;
     mock_get(web, "/v1/addons/lucky/comments", comments).await;
     mock_get(web, "/v1/addons/lucky/permissions", json!({ "owner": false, "admin": false, "edit_description": false })).await;
 }
@@ -47,6 +47,8 @@ async fn visitors_read_threads_and_learn_how_to_join() {
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     let body = &page.body;
     assert!(body.contains(r#"<a href="/addons/lucky/comments" aria-current="page">Comments</a>"#), "the Comments tab: {body}");
+    assert!(body.contains(r#"<p class="back"><a href="/addons/lucky">Lucky Odds</a></p>"#), "back to the overview");
+    assert!(body.contains(r#"<img class="icon big" src="https://img.test/lucky.webp""#) && body.contains("<h1>Lucky Odds</h1>"), "icon and name as on the overview");
     let order: Vec<usize> = [2, 1, 3].iter().map(|id| body.find(&format!(r#"id="comment-{id}""#)).unwrap()).collect();
     assert!(order.windows(2).all(|w| w[0] < w[1]), "newest comment first, the reply under bob's");
     assert!(article(body, 3).contains("depth-1") && article(body, 1).contains("depth-0"));

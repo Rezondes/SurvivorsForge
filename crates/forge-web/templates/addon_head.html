@@ -1,0 +1,9 @@
+{# The addon's header, the same on every tab so the tabs stay in place. Needs `head` and `user`. #}
+<header class="addon-head">
+  {% if let Some(icon) = head.icon_url %}<img class="icon big" src="{{ icon }}" alt="" width="96" height="96">{% endif %}
+  <div>
+    <h1>{{ head.name }}</h1>
+    <p class="muted">by <a href="/addons?author={{ head.author|urlencode }}">{{ head.author }}</a>{% if !head.claimed && user.is_some() %} (not claimed on this site yet){% endif %} · <a href="/addons?category={{ head.category|urlencode }}">{{ head.category }}</a> · <a href="https://github.com/{{ head.repo }}" rel="external noopener">GitHub</a>{% if let Some(u) = user %}{% if u.staff %} · <a href="/admin/addons/{{ head.slug }}">Manage as admin</a>{% endif %}{% endif %} · <a href="/addons/{{ head.slug }}/issues/new?kind=bug">Report a bug</a> · <a href="/addons/{{ head.slug }}/report">Report to the admins</a></p>
+    <p>{{ head.summary }}</p>
+  </div>
+</header>

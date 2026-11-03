@@ -46,6 +46,8 @@ pub struct Place {
     pub enabled: bool,
     /// The addon's repo (`owner/name`); empty for the platform.
     pub repo: String,
+    /// The addon's header; none for the platform.
+    pub head: Option<crate::templates::AddonHead>,
 }
 
 impl Place {
@@ -60,7 +62,7 @@ async fn place(state: &AppState, path: &HashMap<String, String>) -> WebResult<Pl
         Some(slug) => {
             let a = state.api.get(&format!("/v1/addons/{}", seg(slug)), None).await?;
             let enabled = a["issues_enabled"] == true;
-            Place { slug: slug.clone(), name: s(&a["name"]), base: format!("/addons/{slug}"), api: format!("/v1/addons/{}", seg(slug)), enabled, repo: s(&a["repo"]) }
+            Place { slug: slug.clone(), name: s(&a["name"]), base: format!("/addons/{slug}"), api: format!("/v1/addons/{}", seg(slug)), enabled, repo: s(&a["repo"]), head: Some(crate::templates::AddonHead::from_api(&a)) }
         }
         None => Place {
             slug: String::new(),
@@ -69,6 +71,7 @@ async fn place(state: &AppState, path: &HashMap<String, String>) -> WebResult<Pl
             api: "/v1/platform".into(),
             enabled: true,
             repo: String::new(),
+            head: None,
         },
     })
 }

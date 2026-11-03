@@ -6,6 +6,35 @@ use axum::response::Html;
 pub use forge_core::roles::Permission;
 use serde_json::Value;
 
+/// What every tab of an addon shows above the tabs (`addon_head.html`), from `/v1/addons/{slug}`.
+#[derive(Debug, Clone, Default)]
+pub struct AddonHead {
+    pub slug: String,
+    pub name: String,
+    pub icon_url: Option<String>,
+    pub author: String,
+    pub claimed: bool,
+    pub category: String,
+    pub repo: String,
+    pub summary: String,
+}
+
+impl AddonHead {
+    pub fn from_api(a: &Value) -> AddonHead {
+        let s = |v: &Value| v.as_str().unwrap_or_default().to_string();
+        AddonHead {
+            slug: s(&a["slug"]),
+            name: s(&a["name"]),
+            icon_url: a["icon_url"].as_str().map(str::to_string),
+            author: if a["owner"].is_object() { s(&a["owner"]["login"]) } else { s(&a["author"]) },
+            claimed: a["claimed"] != false,
+            category: s(&a["category"]),
+            repo: s(&a["repo"]),
+            summary: s(&a["summary"]),
+        }
+    }
+}
+
 /// The logged-in visitor as the API describes them (`/v1/me`).
 #[derive(Debug, Clone, Default)]
 pub struct Visitor {
@@ -258,13 +287,10 @@ pub struct AddonPage {
     pub slug: String,
     pub name: String,
     pub summary: String,
-    pub author: String,
-    pub claimed: bool,
-    pub category: String,
     pub repo: String,
+    pub head: AddonHead,
     /// Sanitized by the API (forge_core::markdown); the one value rendered unescaped.
     pub description_html: String,
-    pub icon_url: Option<String>,
     pub shots: Vec<Shot>,
     pub contributors: Vec<String>,
     pub deps: Vec<Dep>,
@@ -292,6 +318,7 @@ pub struct VersionsPage {
     pub csrf: String,
     pub slug: String,
     pub name: String,
+    pub head: AddonHead,
     /// (download link, version)
     pub rows: Vec<(String, VersionRow)>,
     /// What the visitor may edit; `None` shows no edit toolbar.

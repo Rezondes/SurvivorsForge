@@ -223,12 +223,9 @@ pub async fn addon(
         slug: slug.clone(),
         name: s(&a["name"]),
         summary: s(&a["summary"]),
-        author: if a["owner"].is_object() { s(&a["owner"]["login"]) } else { s(&a["author"]) },
-        claimed: a["claimed"] != false,
-        category: s(&a["category"]),
         repo: s(&a["repo"]),
+        head: crate::templates::AddonHead::from_api(&a),
         description_html: s(&a["description_html"]),
-        icon_url: a["icon_url"].as_str().map(str::to_string),
         shots: a["images"]
             .as_array()
             .into_iter()
@@ -271,7 +268,7 @@ pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Exte
     let rows = rows.into_iter().map(|r| (download_href(&slug, &r), r)).collect();
     // GitHub counts downloads of release files only, not the source zips of tags.
     let counted = a["source_type"] != "tag";
-    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), rows, perms, counted }))
+    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), head: crate::templates::AddonHead::from_api(&a), rows, perms, counted }))
 }
 
 async fn version_data(state: &AppState, slug: &str, tag: &str) -> WebResult<(Value, VersionRow)> {

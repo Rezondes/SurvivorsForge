@@ -2,7 +2,7 @@
 {% block title %}Issues of {{ place.name }} - SurvivorsForge{% endblock %}
 {% block content %}
 {% if place.addon() %}<p class="back"><a href="/addons/{{ place.slug }}">{{ place.name }}</a></p>{% endif %}
-<h1>{{ place.name }}</h1>
+{% if let Some(head) = place.head %}{% include "addon_head.html" %}{% else %}<h1>{{ place.name }}</h1>{% endif %}
 {% if place.addon() %}{% let slug = place.slug.as_str() %}{% let name = place.name.as_str() %}{% let tab = "issues" %}{% include "addon_tabs.html" %}{% endif %}
 
 <div id="lazy-content">

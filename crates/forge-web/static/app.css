@@ -615,9 +615,11 @@ button.suggestion:hover { border-color: var(--outline-hover); background: var(--
 .doc-list h2 { margin: 0 0 8px; font-size: 1.25rem; }
 .doc-list p { margin: 0; }
 
+/* The space above comes from the header before them: a margin of their own would add up where
+   main is a flex column (a page with a .list) and so move the tabs from page to page. */
 /* Addon tabs (Overview, Issues, Versions): links between the addon's pages, underlined like the
    range toggle so they read as one place with sections, not as buttons. */
-.addon-tabs { display: flex; gap: 4px; margin: 16px 0 20px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.addon-tabs { display: flex; gap: 4px; margin: 0 0 20px; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .addon-tabs a { padding: 10px 16px; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .addon-tabs a:hover { color: var(--gold); }
 .addon-tabs a[aria-current="page"] { color: var(--gold-bright); box-shadow: inset 0 -2px 0 var(--gold); }

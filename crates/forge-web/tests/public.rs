@@ -933,6 +933,7 @@ async fn every_version_shows_its_downloads() {
     let page = web.get("/addons/lucky/versions").await;
     assert!(page.body.contains("<th>Downloads</th>"), "{}", page.body);
     assert!(page.body.contains("<td>12,345</td>") && page.body.contains("<td>0</td>"), "a version nobody downloaded says 0: {}", page.body);
+    assert!(page.body.contains("<h1>") && !page.body.contains("<h1>Versions of") && page.body.contains(r#"<header class="addon-head">"#), "the addon's name as on the other tabs");
 
     let mut tag_addon = addon("scanned");
     tag_addon["source_type"] = json!("tag");

@@ -54,6 +54,7 @@ pub struct CommentsPage {
     pub csrf: String,
     pub slug: String,
     pub name: String,
+    pub head: crate::templates::AddonHead,
     pub comments: Vec<Comment>,
     /// The owner has not turned the comments on.
     pub off: bool,
@@ -116,6 +117,7 @@ pub async fn list(
         csrf: csrf.0.clone(),
         slug: slug.clone(),
         name: s(&addon["name"]),
+        head: crate::templates::AddonHead::from_api(&addon),
         comments,
         off: addon["comments_enabled"] != true,
         older,
