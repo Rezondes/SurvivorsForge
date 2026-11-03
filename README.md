@@ -345,11 +345,11 @@ turns off the events (and with them the ID) or only the ID.
 2. Fails if the tag does not match the version in `Cargo.toml` and `Cargo.lock`.
 3. Builds on Windows and on Ubuntu 22.04 in parallel.
 4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once both builds succeeded.
-5. Publishes one GitHub release, only if all of that succeeded, with `compose.yaml`, `env.example` and each launcher under a fixed and a versioned name:
-   - `SurvivorsForge-windows-x86_64.zip` and `SurvivorsForge-<version>-x86_64-pc-windows-msvc.zip`
-   - `SurvivorsForge-linux-x86_64.AppImage` and `SurvivorsForge-<version>-x86_64.AppImage`
+5. Publishes one GitHub release, only if all of that succeeded, with `compose.yaml`, `env.example` and each launcher under a name that is the same in every release:
+   - `SurvivorsForge-windows-x86_64.zip`
+   - `SurvivorsForge-linux-x86_64.AppImage`
 
-Launchers from 0.4.0 on update from the fixed names, older ones from the versioned names. The fixed names also give stable links (`releases/latest/download/<name>`).
+The self-update looks for these names, and they give stable links (`releases/latest/download/<name>`). Launchers before 0.4.0 looked for versioned names (`SurvivorsForge-<version>-...`), which releases after 0.6.0 no longer carry: they must be downloaded again by hand.
 
 A tag with a hyphen, e.g. `v0.4.0-rc.1` (with `version = "0.4.0-rc.1"` in `Cargo.toml`), makes a
 pre-release for testing: installed launchers do not update to it, and the images get only the tag

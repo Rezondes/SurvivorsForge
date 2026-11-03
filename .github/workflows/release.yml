@@ -162,29 +162,27 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
       # Only the launcher builds: the image jobs leave build records (*.dockerbuild) as artifacts too,
-      # and those cannot be downloaded this way.
+      # and those cannot be downloaded this way. Not into the checkout's assets/: everything in this
+      # folder is uploaded.
       - uses: actions/download-artifact@v4
         with:
           name: windows
-          path: assets
+          path: release
       - uses: actions/download-artifact@v4
         with:
           name: linux
-          path: assets
+          path: release
       # What a server needs besides the images (docs/self-hosting.md).
       - name: Add the server files
-        run: cp compose.yaml assets/ && cp .env.example assets/env.example
-      # Fixed names for direct links (releases/latest/download/<name>). Copies only: launchers before
-      # 0.4.0 update from the versioned names, 0.4.0 and later from the fixed ones.
-      # TODO: drop the versioned names some releases after 0.4.0 (rename here instead of copy). A
-      # launcher older than 0.4.0 that never ran while 0.4.0 or a later release with them was the
-      # latest then stops finding updates and must be downloaded again by hand.
-      - name: Add the stable launcher names
+        run: cp compose.yaml release/ && cp .env.example release/env.example
+      # Fixed names only, for the self-update and direct links (releases/latest/download/<name>).
+      # Launchers before 0.4.0 looked for the versioned names and must be downloaded again by hand.
+      - name: Give the launchers their fixed names
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          cp "assets/SurvivorsForge-$VERSION-x86_64-pc-windows-msvc.zip" assets/SurvivorsForge-windows-x86_64.zip
-          cp "assets/SurvivorsForge-$VERSION-x86_64.AppImage" assets/SurvivorsForge-linux-x86_64.AppImage
+          mv "release/SurvivorsForge-$VERSION-x86_64-pc-windows-msvc.zip" release/SurvivorsForge-windows-x86_64.zip
+          mv "release/SurvivorsForge-$VERSION-x86_64.AppImage" release/SurvivorsForge-linux-x86_64.AppImage
       # A tag with a hyphen (v0.4.0-rc.1) becomes a pre-release: GitHub's latest release, which the
       # launcher's self-update reads, skips it.
       - name: Publish release
@@ -200,7 +198,7 @@ jobs:
           elif previous=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null); then
             options=(--notes-start-tag "$previous")
           fi
-          gh release create "$TAG" assets/* "${options[@]}" \
+          gh release create "$TAG" release/* "${options[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "SurvivorsForge ${{ needs.version.outputs.version }}" \
             --generate-notes
