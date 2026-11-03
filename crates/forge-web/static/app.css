@@ -625,6 +625,8 @@ button.suggestion:hover { border-color: var(--outline-hover); background: var(--
 /* Issues: a list of rows, a filter bar with a status toggle and search, posts with replies. */
 .issues-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
 .issues-head h2 { margin: 0 0 4px; }
+/* The button keeps its one line; the text beside it wraps instead. */
+.issues-head > .button { flex: none; white-space: nowrap; }
 .issue-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
 .issue-filter input[type="search"] { flex: 1 1 240px; }
 .segmented { display: inline-flex; border: 1px solid var(--outline); border-radius: var(--radius); overflow: hidden; }

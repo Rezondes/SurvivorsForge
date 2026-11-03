@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Versions of {{ name }} - SurvivorsForge{% endblock %}
 {% block content %}
-<p><a href="/addons/{{ slug }}">Back to {{ name }}</a></p>
+<p class="back"><a href="/addons/{{ slug }}">{{ name }}</a></p>
 <h1>Versions of {{ name }}</h1>
 {% let tab = "versions" %}{% include "addon_tabs.html" %}
 {% if let Some(perms) = perms %}{% let section = "versions" %}{% include "creator/nav.html" %}{% endif %}
