@@ -4,6 +4,7 @@
 {% block content %}
 <h1>Build an addon pack</h1>
 <p>Pick the addons you play with. You get one zip with all of them and a link to share. Upload the zip in the browser version of the game.</p>
+<p class="muted">A pack needs at least two addons. For a single addon you need no pack: download it on its own from its page.</p>
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 
 <form class="panel" method="post" action="/packs/new">
@@ -28,8 +29,8 @@
   <p class="muted">Only checked versions go into a pack. Flagged or unchecked ones are not listed.</p>
   <label class="check"><input type="checkbox" name="latest" value="1" checked> Keep every addon on its newest checked version</label>
   <p class="muted">Without it, the pack keeps the versions shown above. You can change both later.</p>
-  <label class="check"><input type="checkbox" name="listed" value="1"> Show it on the public pack list</label>
-  <p class="muted">Without it, only people with the link find the pack.</p>
+  <label class="check"><input type="checkbox" name="listed" value="1"{% if listed %} checked{% endif %}> Show it on the public pack list</label>
+  <p class="muted">Untick it, and only people with the link find the pack.</p>
   <p><button type="submit">Create the pack</button></p>
 </form>
 {% endblock %}

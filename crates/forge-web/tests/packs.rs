@@ -221,17 +221,34 @@ async fn packs_can_be_searched() {
 }
 
 #[tokio::test]
-async fn packs_can_be_listed_when_created() {
+async fn packs_are_listed_unless_unticked() {
     let mut web = logged_in().await;
-    assert!(web.get("/packs/new").await.body.contains(r#"name="listed""#));
+    let form = web.get("/packs/new").await.body;
+    assert!(form.contains(r#"name="listed" value="1" checked"#), "ticked from the start: {form}");
+    assert!(form.contains("For a single addon you need no pack: download it on its own from its page."));
     Mock::given(method("POST"))
         .and(path("/v1/packs"))
-        .and(body_partial_json(json!({ "listed": true })))
+        .and(body_partial_json(json!({ "listed": false })))
         .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "id": "AbCdE12345" })))
         .mount(&web.api)
         .await;
-    let page = web.post_form("/packs/new", &[("name", "Mine"), ("addon", "lucky"), ("listed", "1")]).await;
-    assert_eq!(page.location(), "/packs/AbCdE12345");
+    let page = web.post_form("/packs/new", &[("name", "Mine"), ("addon", "lucky"), ("addon", "odds")]).await;
+    assert_eq!(page.location(), "/packs/AbCdE12345", "unticked, the pack is hidden");
+}
+
+#[tokio::test]
+async fn one_addon_is_sent_back_with_the_way_to_download_it() {
+    let mut web = logged_in().await;
+    let message = "A pack needs at least two addons. A single addon you can download on its own from its page.";
+    Mock::given(method("POST"))
+        .and(path("/v1/packs"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({ "error": "too_few_addons", "message": message })))
+        .mount(&web.api)
+        .await;
+    let page = web.post_form("/packs/new", &[("name", "Mine"), ("addon", "lucky")]).await;
+    assert_eq!(page.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(page.body.contains(&format!(r#"role="alert">{message}<"#)), "{}", page.body);
+    assert!(!page.body.contains(r#"name="listed" value="1" checked"#), "the choice stays as it was sent");
 }
 
 fn editable_pack() -> serde_json::Value {

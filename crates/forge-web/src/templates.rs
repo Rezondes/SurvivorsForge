@@ -906,6 +906,8 @@ pub struct NewPackPage {
     pub csrf: String,
     pub name: String,
     pub choices: Vec<PackChoice>,
+    /// On the public pack list; on unless the author unticks it.
+    pub listed: bool,
     pub error: Option<String>,
 }
 

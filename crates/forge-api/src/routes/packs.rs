@@ -40,10 +40,14 @@ fn public_id() -> String {
 pub struct NewPack {
     #[serde(default)]
     name: String,
-    /// Shown on the public pack list; otherwise only the link leads to it.
-    #[serde(default)]
+    /// Shown on the public pack list unless the author hides it; otherwise only the link leads to it.
+    #[serde(default = "listed_by_default")]
     listed: bool,
     addons: Vec<PackAddon>,
+}
+
+fn listed_by_default() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -87,8 +91,8 @@ fn check_name(name: &str) -> ApiResult<()> {
 
 /// The versions `addons` ask for, each checked and the whole within the pack limits.
 async fn choose(state: &AppState, addons: &[PackAddon]) -> ApiResult<Vec<Chosen>> {
-    if addons.is_empty() {
-        return Err(invalid("empty_pack", "Pick at least one addon"));
+    if addons.len() < 2 {
+        return Err(invalid("too_few_addons", "A pack needs at least two addons. A single addon you can download on its own from its page."));
     }
     let max = state.config.pack_max_addons;
     if addons.len() as i64 > max {

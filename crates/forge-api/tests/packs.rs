@@ -78,6 +78,7 @@ async fn create_show_build_and_download(pool: PgPool) {
 
     let pack = app.get(&format!("/v1/packs/{id}"), None).await.json();
     assert_eq!((pack["name"].as_str(), pack["created_by"].as_str(), pack["available"].as_bool()), (Some("My UI"), Some("alice"), Some(true)));
+    assert_eq!(pack["listed"], true, "on the public list unless the author hides it");
     let slugs: Vec<&str> = pack["addons"].as_array().unwrap().iter().map(|a| a["slug"].as_str().unwrap()).collect();
     assert_eq!(slugs, ["lucky", "odds"]);
     assert_eq!(pack["file"]["status"], "none");
@@ -108,8 +109,10 @@ async fn create_show_build_and_download(pool: PgPool) {
 async fn pack_download_counted(pool: PgPool) {
     let (app, _dir) = app_with_packs(pool).await;
     let token = app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
     checked_version(&app, "lucky", "clean").await;
-    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await.json()["id"].as_str().unwrap().to_string();
+    checked_version(&app, "odds", "clean").await;
+    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }, { "slug": "odds" }] })).await.json()["id"].as_str().unwrap().to_string();
     app.get(&format!("/v1/packs/{id}/download"), None).await;
     let counts = || sqlx::query_scalar::<_, i64>("SELECT coalesce(sum(count), 0)::bigint FROM download_counts WHERE source = 'pack'").fetch_one(&app.pool);
     assert_eq!(counts().await.unwrap(), 0, "a build is no download");
@@ -133,6 +136,7 @@ async fn only_checked_versions_and_within_limits(pool: PgPool) {
     app.publish(4, "dave", "big").await;
     checked_version(&app, "lucky", "clean").await;
     checked_version(&app, "bad", "flagged").await;
+    checked_version(&app, "big", "clean").await;
     sqlx::query("UPDATE versions SET asset_size = 5000 WHERE asset_url LIKE '%lucky%'").execute(&app.pool).await.unwrap();
 
     let error = |body| {
@@ -140,19 +144,20 @@ async fn only_checked_versions_and_within_limits(pool: PgPool) {
         let token = token.clone();
         async move { app.post("/v1/packs", Some(&token), body).await.error() }
     };
-    assert_eq!(error(json!({ "addons": [] })).await, "empty_pack");
+    assert_eq!(error(json!({ "addons": [] })).await, "too_few_addons");
+    assert_eq!(error(json!({ "addons": [{ "slug": "big" }] })).await, "too_few_addons", "one addon downloads on its own");
     assert_eq!(error(json!({ "addons": [{ "slug": "a" }, { "slug": "b" }, { "slug": "c" }] })).await, "too_many_addons");
-    assert_eq!(error(json!({ "addons": [{ "slug": "nope" }] })).await, "unknown_addon");
-    assert_eq!(error(json!({ "addons": [{ "slug": "bad" }] })).await, "not_packable", "flagged");
-    assert_eq!(error(json!({ "addons": [{ "slug": "new" }] })).await, "unknown_addon", "no version yet");
-    assert_eq!(error(json!({ "addons": [{ "slug": "lucky" }] })).await, "too_large", "known release size over the limit");
+    assert_eq!(error(json!({ "addons": [{ "slug": "nope" }, { "slug": "big" }] })).await, "unknown_addon");
+    assert_eq!(error(json!({ "addons": [{ "slug": "bad" }, { "slug": "big" }] })).await, "not_packable", "flagged");
+    assert_eq!(error(json!({ "addons": [{ "slug": "new" }, { "slug": "big" }] })).await, "unknown_addon", "no version yet");
+    assert_eq!(error(json!({ "addons": [{ "slug": "lucky" }, { "slug": "big" }] })).await, "too_large", "known release size over the limit");
     sqlx::query("UPDATE versions SET asset_size = 50 WHERE asset_url LIKE '%lucky%'").execute(&app.pool).await.unwrap();
     assert_eq!(error(json!({ "addons": [{ "slug": "lucky" }, { "slug": "LUCKY" }] })).await, "duplicate_addon");
 
     for _ in 0..2 {
-        assert_eq!(app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await.status, StatusCode::CREATED);
+        assert_eq!(app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }, { "slug": "big" }] })).await.status, StatusCode::CREATED);
     }
-    let limited = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await;
+    let limited = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }, { "slug": "big" }] })).await;
     assert_eq!((limited.status, limited.error()), (StatusCode::TOO_MANY_REQUESTS, "pack_limit".to_string()));
 }
 
@@ -160,8 +165,10 @@ async fn only_checked_versions_and_within_limits(pool: PgPool) {
 async fn failed_builds_and_blocked_addons(pool: PgPool) {
     let (app, dir) = app_with_packs(pool).await;
     let token = app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
     checked_version(&app, "lucky", "clean").await;
-    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await.json()["id"].as_str().unwrap().to_string();
+    checked_version(&app, "odds", "clean").await;
+    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }, { "slug": "odds" }] })).await.json()["id"].as_str().unwrap().to_string();
 
     // The file on GitHub is no longer the checked one.
     app.github.data().downloads.insert("https://github.com/lucky/v1.zip".into(), addon_zip("Lucky", 5));
@@ -181,8 +188,10 @@ async fn failed_builds_and_blocked_addons(pool: PgPool) {
 async fn built_zip_goes_out_only_while_its_addons_are_available(pool: PgPool) {
     let (app, _dir) = app_with_packs(pool).await;
     let token = app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
     checked_version(&app, "lucky", "clean").await;
-    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }] })).await.json()["id"].as_str().unwrap().to_string();
+    checked_version(&app, "odds", "clean").await;
+    let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }, { "slug": "odds" }] })).await.json()["id"].as_str().unwrap().to_string();
     let key: String = sqlx::query_scalar("SELECT content_key FROM packs WHERE public_id = $1").bind(&id).fetch_one(&app.pool).await.unwrap();
 
     assert_eq!(app.get(&format!("/v1/pack-files/{key}.zip"), None).await.status, StatusCode::NO_CONTENT);
@@ -201,11 +210,13 @@ async fn prune_drops_stale_and_over_budget_zips(pool: PgPool) {
     let (app, dir) = app_with_packs(pool).await;
     let token = app.publish(1, "alice", "lucky").await;
     app.publish(2, "bob", "odds").await;
+    app.publish(3, "carol", "aether").await;
     checked_version(&app, "lucky", "clean").await;
     checked_version(&app, "odds", "clean").await;
+    checked_version(&app, "aether", "clean").await;
     let mut ids = Vec::new();
-    for slug in ["lucky", "odds"] {
-        let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": slug }] })).await.json()["id"].as_str().unwrap().to_string();
+    for (first, second) in [("lucky", "odds"), ("odds", "aether")] {
+        let id = app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": first }, { "slug": second }] })).await.json()["id"].as_str().unwrap().to_string();
         app.get(&format!("/v1/packs/{id}/download"), None).await;
         build(&app, &id).await;
         app.get(&format!("/v1/packs/{id}/download"), None).await;
@@ -242,20 +253,22 @@ async fn only_listed_and_available_packs_are_public(pool: PgPool) {
     let (app, _dir) = app_with_packs(pool).await;
     let token = app.publish(1, "alice", "lucky").await;
     app.publish(2, "bob", "odds").await;
+    app.publish(3, "carol", "aether").await;
     checked_version(&app, "lucky", "clean").await;
     checked_version(&app, "odds", "clean").await;
+    checked_version(&app, "aether", "clean").await;
     let create = |body: serde_json::Value| {
         let (app, token) = (&app, token.clone());
         async move { app.post("/v1/packs", Some(&token), body).await.json()["id"].as_str().unwrap().to_string() }
     };
-    create(json!({ "name": "Hidden", "addons": [{ "slug": "lucky" }] })).await;
+    create(json!({ "name": "Hidden", "listed": false, "addons": [{ "slug": "lucky" }, { "slug": "aether" }] })).await;
     let listed = create(json!({ "name": "My UI", "listed": true, "addons": [{ "slug": "lucky" }, { "slug": "odds" }] })).await;
-    create(json!({ "name": "Odds only", "listed": true, "addons": [{ "slug": "odds" }] })).await;
+    create(json!({ "name": "Odds and Aether", "listed": true, "addons": [{ "slug": "odds" }, { "slug": "aether" }] })).await;
     assert_eq!(app.get(&format!("/v1/packs/{listed}"), None).await.json()["listed"], true);
 
     let list = app.get("/v1/packs", None).await.json();
     let names: Vec<&str> = list["packs"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["Odds only", "My UI"], "newest first, the unlisted one stays hidden");
+    assert_eq!(names, ["Odds and Aether", "My UI"], "newest first, the unlisted one stays hidden");
     assert_eq!(list["total"], 2);
     let mine = list["packs"].as_array().unwrap().iter().find(|p| p["id"] == listed.as_str()).unwrap();
     assert_eq!((mine["created_by"].as_str(), mine["addons"].clone()), (Some("alice"), json!(["Addon lucky", "Addon odds"])));
@@ -271,7 +284,7 @@ async fn only_listed_and_available_packs_are_public(pool: PgPool) {
     };
     assert_eq!(found("my%20ui").await, ["My UI"]);
     assert_eq!(found("LUCKY").await, ["My UI"], "by an addon of the pack");
-    assert_eq!(found("odds").await, ["Odds only", "My UI"]);
+    assert_eq!(found("odds").await, ["Odds and Aether", "My UI"]);
     assert!(found("nothing").await.is_empty());
 
     sqlx::query("UPDATE addons SET blocked_at = now() WHERE slug = 'odds'").execute(&app.pool).await.unwrap();
@@ -290,12 +303,14 @@ async fn staff_list_every_pack_with_its_listing(pool: PgPool) {
     });
     let token = app.publish(1, "alice", "lucky").await;
     app.publish(2, "bob", "odds").await;
+    app.publish(3, "carol", "aether").await;
     checked_version(&app, "lucky", "clean").await;
     checked_version(&app, "odds", "clean").await;
+    checked_version(&app, "aether", "clean").await;
     for body in [
-        json!({ "name": "Hidden", "addons": [{ "slug": "lucky" }] }),
-        json!({ "name": "Shown", "listed": true, "addons": [{ "slug": "lucky" }] }),
-        json!({ "name": "Odds only", "addons": [{ "slug": "odds" }] }),
+        json!({ "name": "Hidden", "listed": false, "addons": [{ "slug": "lucky" }, { "slug": "aether" }] }),
+        json!({ "name": "Shown", "addons": [{ "slug": "lucky" }, { "slug": "aether" }] }),
+        json!({ "name": "Odds only", "listed": false, "addons": [{ "slug": "odds" }, { "slug": "lucky" }] }),
     ] {
         assert_eq!(app.post("/v1/packs", Some(&token), body).await.status, StatusCode::CREATED);
     }
@@ -374,7 +389,7 @@ async fn creator_changes_name_addons_and_versions(pool: PgPool) {
     checked_version(&app, "lucky", "clean").await;
     checked_version(&app, "odds", "clean").await;
     newer_version(&app, "lucky", "v2").await;
-    let id = app.post("/v1/packs", Some(&token), json!({ "name": "Old", "addons": [{ "slug": "lucky", "tag": "v1" }] })).await.json()["id"].as_str().unwrap().to_string();
+    let id = app.post("/v1/packs", Some(&token), json!({ "name": "Old", "addons": [{ "slug": "lucky", "tag": "v1" }, { "slug": "odds" }] })).await.json()["id"].as_str().unwrap().to_string();
     let uri = format!("/v1/packs/{id}");
 
     assert_eq!(app.patch(&uri, Some(&bob), json!({ "name": "Mine" })).await.status, StatusCode::FORBIDDEN);
@@ -383,14 +398,39 @@ async fn creator_changes_name_addons_and_versions(pool: PgPool) {
     let renamed = app.patch(&uri, Some(&token), json!({ "name": "  My UI ", "listed": true })).await;
     assert_eq!(renamed.status, StatusCode::OK, "{}", renamed.body);
     assert_eq!((renamed.json()["name"].as_str(), renamed.json()["listed"].as_bool()), (Some("My UI"), Some(true)));
-    assert_eq!(tags(&renamed.json()), [("lucky".into(), "v1".into(), false)], "addons stay without addons");
+    assert_eq!(tags(&renamed.json()), [("lucky".into(), "v1".into(), false), ("odds".into(), "v1".into(), false)], "addons stay without addons");
 
     let changed = app.patch(&uri, Some(&token), json!({ "addons": [{ "slug": "lucky", "latest": true }, { "slug": "odds" }] })).await.json();
     assert_eq!(tags(&changed), [("lucky".into(), "v2".into(), true), ("odds".into(), "v1".into(), false)]);
     assert_eq!(changed["id"], json!(id), "same link");
 
-    let refused = app.patch(&uri, Some(&token), json!({ "addons": [] })).await;
-    assert_eq!((refused.status, refused.error().as_str()), (StatusCode::UNPROCESSABLE_ENTITY, "empty_pack"));
+    for addons in [json!([]), json!([{ "slug": "lucky" }])] {
+        let refused = app.patch(&uri, Some(&token), json!({ "addons": addons })).await;
+        assert_eq!((refused.status, refused.error().as_str()), (StatusCode::UNPROCESSABLE_ENTITY, "too_few_addons"), "{addons}");
+    }
     let twice = app.patch(&uri, Some(&token), json!({ "addons": [{ "slug": "lucky", "tag": "v1" }, { "slug": "lucky", "latest": true }] })).await;
     assert_eq!(twice.error(), "duplicate_addon");
+}
+
+#[sqlx::test]
+async fn the_migration_deletes_packs_of_one_addon(pool: PgPool) {
+    let (app, _dir) = app_with_packs(pool).await;
+    let token = app.publish(1, "alice", "lucky").await;
+    app.publish(2, "bob", "odds").await;
+    checked_version(&app, "lucky", "clean").await;
+    checked_version(&app, "odds", "clean").await;
+    let create = || async { app.post("/v1/packs", Some(&token), json!({ "addons": [{ "slug": "lucky" }, { "slug": "odds" }] })).await.json()["id"].as_str().unwrap().to_string() };
+    let (kept, single) = (create().await, create().await);
+    // Made before this update: a pack of lucky alone.
+    sqlx::query("DELETE FROM pack_versions WHERE pack_id = (SELECT id FROM packs WHERE public_id = $1) AND version_id = (SELECT v.id FROM versions v JOIN addons a ON a.id = v.addon_id WHERE a.slug = 'odds')")
+        .bind(&single)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    sqlx::raw_sql(include_str!("../migrations/0035_packs_of_two.sql")).execute(&app.pool).await.unwrap();
+    assert_eq!(app.get(&format!("/v1/packs/{kept}"), None).await.status, StatusCode::OK, "two addons stay");
+    assert_eq!(app.get(&format!("/v1/packs/{single}"), None).await.status, StatusCode::NOT_FOUND, "one addon goes");
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM pack_versions").fetch_one(&app.pool).await.unwrap();
+    assert_eq!(left, 2, "its versions went with it");
 }

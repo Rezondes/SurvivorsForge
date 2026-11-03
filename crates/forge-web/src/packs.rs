@@ -73,7 +73,7 @@ fn values(raw: Option<&str>, field: &str) -> Vec<String> {
 pub async fn new_pack(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, RawQuery(raw): RawQuery) -> WebResult<Html<String>> {
     let (user, _) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
     let choices = choices(&state, &values(raw.as_deref(), "addon")).await?;
-    Ok(render(&NewPackPage { user: Some(user), csrf: csrf.0, name: String::new(), choices, error: None }))
+    Ok(render(&NewPackPage { user: Some(user), csrf: csrf.0, name: String::new(), choices, listed: true, error: None }))
 }
 
 /// `POST /packs/new`: the ticked boxes arrive as repeated `addon` fields.
@@ -88,7 +88,7 @@ pub async fn create_pack(State(state): State<AppState>, jar: PrivateCookieJar, E
         Ok(created) => Ok(Redirect::to(&format!("/packs/{}", s(&created["id"]))).into_response()),
         Err(ApiError::Api { status, message, .. }) if status == 422 || status == 429 => {
             let choices = choices(&state, &picked).await?;
-            let page = NewPackPage { user: Some(user), csrf: csrf.0, name, choices, error: Some(message) };
+            let page = NewPackPage { user: Some(user), csrf: csrf.0, name, choices, listed, error: Some(message) };
             Ok((axum::http::StatusCode::from_u16(status).unwrap_or(axum::http::StatusCode::BAD_REQUEST), render(&page)).into_response())
         }
         Err(e) => Err(e.into()),
