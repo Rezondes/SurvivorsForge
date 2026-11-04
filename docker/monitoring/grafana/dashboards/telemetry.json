@@ -369,6 +369,145 @@
           "countRows": false
         }
       }
+    },
+    {
+      "id": 11,
+      "title": "Launcher versions over time",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT hour AS time, version AS metric, count(*) AS value FROM launcher_active WHERE $__timeFilter(hour) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Launchers active per hour by version: how fast a new release replaces the old ones."
+    },
+    {
+      "id": 12,
+      "title": "Failures per launcher version",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT launcher_version AS \"Launcher\", count(*) FILTER (WHERE kind IN ('install', 'update')) AS \"Done\", count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) AS \"Failed\", round(100.0 * count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) / nullif(count(*), 0), 1) AS \"Failed %\" FROM telemetry_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 DESC",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "Installs and updates in the time range per launcher version, and the share that failed. A broken release shows here first."
+    },
+    {
+      "id": 13,
+      "title": "Failed share per platform and day",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT day::timestamptz AS time, os AS metric, round(100.0 * count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) / nullif(count(*), 0), 1) AS value FROM telemetry_events WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 14,
+      "title": "Hours active per launcher and day",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', hour) AS time, os AS metric, round(count(*)::numeric / count(DISTINCT install_id), 1) AS value FROM launcher_active WHERE $__timeFilter(hour) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "On average, in how many hours of a day a launcher asked the platform something, by platform: how long launchers stay open."
     }
   ]
 }
