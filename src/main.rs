@@ -689,8 +689,13 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_issues_failed(failed);
     let verified_author = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).is_some_and(|a| a.verified_author == Some(true));
     let installed = core.detail.as_ref().and_then(|(id, _)| core.state.get(id)).map(|e| e.version.clone()).unwrap_or_default();
+    let held = core.detail.as_ref().is_some_and(|(id, _)| core.config.held.contains(id));
     let (versions, loading, failed) = match &core.versions {
-        Some(Listing { rows: Some(rows), .. }) => (rows.iter().map(|v| version_line(v, verified_author, &installed)).collect(), false, false),
+        Some(Listing { rows: Some(rows), .. }) => {
+            // The newest is the first that is no pre-release, as the platform installs it.
+            let newest = rows.iter().position(|v| !v.prerelease);
+            (rows.iter().enumerate().map(|(i, v)| version_line(v, verified_author, &installed, Some(i) == newest, held)).collect(), false, false)
+        }
         Some(l) => (Vec::new(), !l.failed, l.failed),
         None => (Vec::new(), false, false),
     };
@@ -705,7 +710,9 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         ui.set_comments_waiting(match c.asked.filter(|_| first).map(|t| controller::waiting(t.elapsed())) {
             Some(controller::Waiting::Placeholders) => 1,
             Some(controller::Waiting::Slow) => 2,
-            _ => 0,
+            // Asked, too soon for placeholders: nothing yet, and no "No comments yet." either.
+            Some(_) => 3,
+            None => 0,
         });
         ui.set_comments_loading_more(c.asked.is_some() && !first);
         ui.set_comments_failed(c.failed);
@@ -2254,7 +2261,7 @@ fn tone_kind(tone: forge_core::trust::Tone) -> i32 {
     }
 }
 
-fn version_line(v: &controller::VersionLine, verified_author: bool, installed: &str) -> VersionLine {
+fn version_line(v: &controller::VersionLine, verified_author: bool, installed: &str, newest: bool, held: bool) -> VersionLine {
     let trust_kind = tone_kind(v.trust.tone(verified_author));
     VersionLine {
         tag: v.tag.as_str().into(),
@@ -2266,6 +2273,8 @@ fn version_line(v: &controller::VersionLine, verified_author: bool, installed: &
         prerelease: v.prerelease,
         installed: v.tag == installed,
         can_install: v.install.is_some(),
+        newest,
+        held: held && v.tag == installed,
     }
 }
 
@@ -2283,7 +2292,7 @@ fn on_version_install(ui: &AppWindow, shared: &Shared, tag: String) {
     };
     let (id, version, remote, name, older) = job;
     let mut lines = vec![if older {
-        format!("{} is not the newest version. SurvivorsForge does not update {name} on its own until you install the newest again.", version.name)
+        format!("{} is not the newest version. SurvivorsForge does not update {name} on its own until you install the newest again, here under Versions or with Update.", version.name)
     } else {
         format!("{} is the newest version.", version.name)
     }];

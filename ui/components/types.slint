@@ -97,6 +97,9 @@ export struct VersionLine {
     // The installed one; and whether this one can be installed (not blocked, file still there).
     installed: bool,
     can-install: bool,
+    // What the platform installs; and the installed one kept on purpose at an older version.
+    newest: bool,
+    held: bool,
 }
 
 // One comment of an addon's discussion, in reading order; `depth` indents replies (0 to 3).

@@ -6,7 +6,7 @@ import { AddonIcon, Placeholder } from "addon-parts.slint";
 
 // The comments of an addon, read only: writing and replying need the website's GitHub login.
 // While the platform answers, placeholders show (after 150 ms, `waiting` 1) and from 5 s a word
-// that the connection is slow (`waiting` 2).
+// that the connection is slow (`waiting` 2); before 150 ms nothing shows (`waiting` 3).
 export component CommentsView inherits VerticalLayout {
     in property <string> name;
     in property <[CommentRow]> rows;
@@ -142,7 +142,8 @@ export component CommentsView inherits VerticalLayout {
             }
         }
         // Comments on their way: three placeholder cards in the shape of a comment.
-        if root.waiting > 0 : VerticalLayout {
+        // 3: asked a moment ago, nothing to draw yet.
+        if root.waiting == 1 || root.waiting == 2 : VerticalLayout {
             spacing: 12px;
             accessible-role: text;
             accessible-label: "Loading the comments";

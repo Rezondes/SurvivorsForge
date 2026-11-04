@@ -190,7 +190,7 @@ export component VersionsView inherits VerticalLayout {
                     spacing: 2px;
                     horizontal-stretch: 1;
                     Text {
-                        text: version.name + (version.prerelease ? "  (pre-release)" : "");
+                        text: version.name + (version.prerelease ? "  (pre-release)" : "") + (version.newest ? "  (newest)" : "");
                         font-size: Theme.body;
                         color: Theme.text;
                         overflow: elide;
@@ -210,9 +210,10 @@ export component VersionsView inherits VerticalLayout {
                 }
                 if version.installed : Text {
                     width: 90px;
-                    text: "Installed";
+                    text: version.held ? "Installed, kept" : "Installed";
                     font-size: Theme.meta;
-                    color: Theme.gold;
+                    color: version.held ? Theme.warn : Theme.gold;
+                    wrap: word-wrap;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
