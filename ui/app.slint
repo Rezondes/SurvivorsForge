@@ -787,6 +787,7 @@ export component AppWindow inherits Window {
                     if root.browse-tiles : AddonTiles {
                         rows: root.browse-rows;
                         action(id) => { root.row-action(id); }
+                        remove(id) => { root.row-remove(id); }
                         open(id) => { root.row-open(id); }
                         details(id) => { root.row-details(id); }
                         pick(id) => { root.row-pick(id); }
@@ -796,6 +797,7 @@ export component AppWindow inherits Window {
                         for row in root.browse-rows : AddonRowView {
                             addon: row;
                             action => { root.row-action(row.id); }
+                            remove => { root.row-remove(row.id); }
                             open => { root.row-open(row.id); }
                             details => { root.row-details(row.id); }
                             pick => { root.row-pick(row.id); }

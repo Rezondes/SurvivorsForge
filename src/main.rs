@@ -311,7 +311,14 @@ fn row_progress(core: &Core, id: &str) -> Option<(String, i32, f32)> {
     core.outcomes.get(id).map(|(text, failed)| (text.clone(), if *failed { 3 } else { 1 }, -1.0))
 }
 
-fn browse_row(b: controller::BrowseRow, core: &Core) -> AddonRow {
+/// A Browse card. An installed addon shows its card from Installed (status, Update, Remove), only
+/// with the pack box Browse adds.
+fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
+    let can_pick = core.registry.get(&b.id).is_some_and(controller::packable);
+    let picked = core.picked.contains(&b.id);
+    if let Some(row) = rows.iter().find(|r| r.id == b.id) {
+        return AddonRow { can_pick, picked, ..installed_row(row, core) };
+    }
     let (status, status_kind) = match (b.installed, b.installable) {
         (true, _) => ("Installed".to_string(), 1),
         (false, false) => ("Not installable".to_string(), 3),
@@ -334,8 +341,8 @@ fn browse_row(b: controller::BrowseRow, core: &Core) -> AddonRow {
         busy: core.busy.contains(&b.id),
         can_remove: false,
         can_open: true,
-        can_pick: core.registry.get(&b.id).is_some_and(controller::packable),
-        picked: core.picked.contains(&b.id),
+        can_pick,
+        picked,
         warning: SharedString::new(),
     }
 }
@@ -354,7 +361,7 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
     let (id, browse) = core.detail.as_ref()?;
     let (row, folders) = if *browse {
         let b = controller::browse_rows(&core.registry, &core.state).into_iter().find(|b| &b.id == id)?;
-        (browse_row(b, core), Vec::new())
+        (browse_row(b, core, rows), Vec::new())
     } else {
         let r = rows.iter().find(|r| &r.id == id)?;
         (installed_row(r, core), r.folders.clone())
@@ -581,7 +588,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
             .into_iter()
             .filter(|b| controller::matches(&core.search, &b.name, &b.author))
             .filter(|b| core.category.as_deref().is_none_or(|w| controller::in_category(&b.category, w, &choices)))
-            .map(|b| browse_row(b, &core))
+            .map(|b| browse_row(b, &core, &rows))
             .collect(),
     ));
     match detail(&core, &rows) {
@@ -2175,6 +2182,38 @@ fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
     on_row_details(ui, shared, id);
     ui.window().set_minimized(false);
     ui.window().with_winit_window(|w| w.focus_window());
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    #[test]
+    fn an_installed_addon_shows_the_same_card_in_browse_and_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::new(dir.path().to_path_buf(), None);
+        let (installed, other) = (core.registry.addons[0].clone(), core.registry.addons[1].clone());
+        core.state.upsert(survivorsforge::state::Entry {
+            id: installed.id.clone(),
+            name: installed.name.clone(),
+            source: Source::Verified { registry_id: installed.id.clone() },
+            folders: installed.folders.clone(),
+            version: "v1".into(),
+            installed_at: 0,
+        });
+        core.statuses.insert(installed.id.clone(), UpdateStatus::UpToDate);
+        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+        let browse = |id: &str| {
+            let b = controller::browse_rows(&core.registry, &core.state).into_iter().find(|b| b.id == id).unwrap();
+            browse_row(b, &core, &rows)
+        };
+        let card = installed_row(rows.iter().find(|r| r.id == installed.id).unwrap(), &core);
+        let shown = browse(&installed.id);
+        assert!(shown.can_remove, "Remove shows in Browse");
+        // As text: two empty images never compare equal.
+        assert_eq!(format!("{:?}", AddonRow { can_pick: card.can_pick, picked: card.picked, ..shown }), format!("{card:?}"));
+        assert_eq!(browse(&other.id).action, "Install", "an addon that is not installed keeps its Browse card");
+    }
 }
 
 #[cfg(test)]
