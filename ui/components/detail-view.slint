@@ -1,0 +1,393 @@
+import { Theme } from "../theme.slint";
+import { AboutBlock, AddonDetail } from "types.slint";
+import { ActionButton, GlyphButton, LinkButton, RemoveButton, TabButton } from "buttons.slint";
+import { PickBox } from "fields.slint";
+import { ScrollPanel } from "layout.slint";
+import { AddonIcon, Picture, Pill, Placeholder, ProgressBar } from "addon-parts.slint";
+
+// One block of a description, styled as the website styles it.
+export component AboutBlockView inherits VerticalLayout {
+    in property <AboutBlock> block;
+    callback enlarge(image, string);
+    padding-top: root.block.kind == 1 ? 8px : 0px;
+    if root.block.kind == 0 || root.block.kind == 1 : Text {
+        text: root.block.text;
+        font-family: root.block.kind == 1 ? Theme.font-display : Theme.font-body;
+        font-size: root.block.kind == 1 ? Theme.heading : Theme.body;
+        color: root.block.kind == 1 ? Theme.gold : Theme.text;
+        wrap: word-wrap;
+    }
+    // Wrapping text never goes into a HorizontalLayout: Slint measures its height there as one
+    // unbroken line, and everything below would slide into it. A fixed width measures it right.
+    if root.block.kind == 2 : Rectangle {
+        height: item.preferred-height;
+        Text {
+            x: 6px;
+            y: 0;
+            text: root.block.marker;
+            font-size: Theme.body;
+            color: Theme.gold;
+        }
+        item := Text {
+            x: 28px;
+            y: 0;
+            width: parent.width - self.x;
+            text: root.block.text;
+            font-size: Theme.body;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+    }
+    if root.block.kind == 3 : Rectangle {
+        background: Theme.field;
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.line;
+        height: code.preferred-height + 20px;
+        code := Text {
+            x: 10px;
+            width: parent.width - 20px;
+            text: root.block.text;
+            font-family: "Consolas";
+            font-size: Theme.meta;
+            color: Theme.gold-bright;
+            wrap: word-wrap;
+        }
+    }
+    if root.block.kind == 4 : Rectangle {
+        height: quote.preferred-height;
+        Rectangle {
+            x: 0;
+            width: 3px;
+            height: parent.height;
+            background: Theme.outline;
+        }
+        quote := Text {
+            x: 15px;
+            y: 0;
+            width: parent.width - self.x;
+            text: root.block.text;
+            font-size: Theme.body;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+        }
+    }
+    if root.block.kind == 5 : Picture {
+        source: root.block.image;
+        caption: root.block.text;
+        enlarge => { root.enlarge(root.block.image, root.block.text); }
+    }
+}
+
+// One fact of the detail view: a gold label over its text.
+export component Fact inherits VerticalLayout {
+    in property <string> label;
+    in property <string> text;
+    spacing: 4px;
+    Text {
+        text: root.label;
+        font-size: Theme.body;
+        color: Theme.gold;
+    }
+    Text {
+        text: root.text;
+        font-size: Theme.body;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+}
+
+// The addon a row was clicked for: name and action on top, then the facts and the description.
+export component DetailView inherits VerticalLayout {
+    in property <AddonDetail> detail;
+    callback back();
+    callback action();
+    callback remove();
+    callback open();
+    callback website();
+    // A page of the addon on the website or GitHub: "bug", "issues", "abuse".
+    callback link(string);
+    // The sub page, as on the website: 0 Overview, 1 Issues, 2 Comments, 3 Versions. Only the
+    // Overview is drawn here; the app places the other pages under the view.
+    in-out property <int> tab;
+    callback tab-changed(int);
+    // The browser cannot open here (Game Mode): the website buttons are greyed out.
+    in property <bool> links-enabled: true;
+    // Scan the installed folders with forge-scan on this computer.
+    callback scan();
+    // Switch updating on its own on or off for this addon.
+    callback auto-update();
+    // Screenshot `index` was clicked, or a picture of the description: show it large.
+    callback enlarge-shot(int);
+    callback enlarge(image, string);
+
+    spacing: 14px;
+
+    HorizontalLayout {
+        alignment: start;
+        LinkButton {
+            text: "< Back to the list";
+            clicked => { root.back(); }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 16px;
+        VerticalLayout {
+            alignment: center;
+            AddonIcon {
+                width: 64px;
+                height: 64px;
+                icon: root.detail.row.icon;
+                initial: root.detail.row.initial;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: root.detail.row.name;
+                    font-size: 26px;
+                    color: Theme.gold-heading;
+                    overflow: elide;
+                }
+                if root.detail.row.badge != "" : VerticalLayout {
+                    alignment: center;
+                    Pill { text: root.detail.row.badge; tone: root.detail.row.badge-tone; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            Text {
+                text: (root.detail.row.author != "" ? "by " + root.detail.row.author : "")
+                    + (root.detail.category != "" ? "   " + root.detail.category : "")
+                    + (root.detail.row.version != "" ? "   " + root.detail.row.version : "");
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 6px;
+            Text {
+                text: root.detail.row.status;
+                font-size: Theme.body;
+                horizontal-alignment: right;
+                color: root.detail.row.busy ? Theme.text-muted
+                    : root.detail.row.status-kind == 1 ? Theme.ok
+                    : root.detail.row.status-kind == 2 ? Theme.warn
+                    : root.detail.row.status-kind == 3 ? Theme.danger
+                    : Theme.text-muted;
+            }
+            if root.detail.row.busy && root.detail.row.progress >= 0 : ProgressBar {
+                value: root.detail.row.progress;
+            }
+            if root.detail.row.action != "" : ActionButton {
+                text: root.detail.row.action;
+                primary: true;
+                large: true;
+                enabled: !root.detail.row.busy;
+                clicked => { root.action(); }
+            }
+        }
+    }
+
+    // Icons named by their tooltips: the addon's own places and this computer first, then, as on
+    // the website, bugs and a report to the admins; issues and comments have their tabs. Writing
+    // needs the website's GitHub login; the launcher has none.
+    HorizontalLayout {
+        alignment: start;
+        spacing: Theme.gap-tight;
+        if root.detail.on-website : GlyphButton {
+            label: "Open on the website";
+            // A globe.
+            glyph: "M 1.5 8 A 6.5 6.5 0 0 1 14.5 8 A 6.5 6.5 0 0 1 1.5 8 Z M 1.5 8 L 14.5 8 M 8 1.5 C 5 4.5 5 11.5 8 14.5 M 8 1.5 C 11 4.5 11 11.5 8 14.5";
+            enabled: root.links-enabled;
+            clicked => { root.website(); }
+        }
+        if root.detail.row.can-open : GlyphButton {
+            label: "GitHub";
+            // Code brackets.
+            glyph: "M 5 4 L 1.5 8 L 5 12 M 11 4 L 14.5 8 L 11 12 M 9.5 2.5 L 6.5 13.5";
+            enabled: root.links-enabled;
+            clicked => { root.open(); }
+        }
+        if root.detail.row.can-remove && !root.detail.row.busy : GlyphButton {
+            label: "Scan locally";
+            // A magnifier.
+            glyph: "M 1.5 6.5 A 5 5 0 0 1 11.5 6.5 A 5 5 0 0 1 1.5 6.5 Z M 10.1 10.1 L 14.5 14.5";
+            clicked => { root.scan(); }
+        }
+        if root.detail.row.can-remove && !root.detail.row.busy : RemoveButton {
+            label: "Remove " + root.detail.row.name;
+            clicked => { root.remove(); }
+        }
+        if root.detail.on-website : Rectangle {
+            width: 1px;
+            background: Theme.line;
+        }
+        if root.detail.on-website : GlyphButton {
+            label: root.detail.bug-label;
+            // A bug: body, head line and legs.
+            glyph: "M 4.5 8.5 A 3.5 4.5 0 0 1 11.5 8.5 A 3.5 4.5 0 0 1 4.5 8.5 Z M 8 5 L 8 13 M 6 4.5 L 5 2 M 10 4.5 L 11 2 M 4.5 7 L 1.5 6 M 11.5 7 L 14.5 6 M 4.6 10.5 L 1.5 11.5 M 11.4 10.5 L 14.5 11.5";
+            enabled: root.links-enabled;
+            clicked => { root.link("bug"); }
+        }
+        if root.detail.on-website : GlyphButton {
+            label: "Report abuse";
+            // A flag.
+            glyph: "M 3.5 15 L 3.5 1.5 M 3.5 2.5 L 13 2.5 L 10.5 6 L 13 9.5 L 3.5 9.5";
+            enabled: root.links-enabled;
+            clicked => { root.link("abuse"); }
+        }
+        if root.detail.on-website && !root.links-enabled : VerticalLayout {
+            alignment: center;
+            Text {
+                text: "The website opens in Desktop Mode.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
+        }
+    }
+
+    if root.detail.can-auto-update : HorizontalLayout {
+        alignment: start;
+        spacing: 10px;
+        PickBox {
+            label: "Update automatically";
+            enabled: !root.detail.auto-update-all;
+            checked: root.detail.auto-update;
+            toggled => { root.auto-update(); }
+        }
+        Text {
+            text: root.detail.held ? "Kept at an older version: it updates on its own again once you install the newest"
+                : root.detail.auto-update-all ? "Updates automatically (switched on for all addons in the settings)" : "Update automatically when the platform found nothing in a new version";
+            font-size: Theme.body;
+            color: root.detail.auto-update-all ? Theme.text-muted : Theme.text;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.detail.row.warning != "" : Text {
+        text: root.detail.row.warning;
+        font-size: Theme.body;
+        color: Theme.danger;
+        wrap: word-wrap;
+    }
+
+    if root.detail.on-website : HorizontalLayout {
+        alignment: start;
+        spacing: Theme.gap-tight;
+        TabButton {
+            text: "Overview";
+            active: root.tab == 0;
+            clicked => { root.open-tab(0); }
+        }
+        if root.detail.issues-ready : TabButton {
+            text: "Issues";
+            active: root.tab == 1;
+            clicked => { root.open-tab(1); }
+        }
+        if root.detail.comments-on : TabButton {
+            text: "Comments";
+            active: root.tab == 2;
+            clicked => { root.open-tab(2); }
+        }
+        TabButton {
+            text: "Versions";
+            active: root.tab == 3;
+            clicked => { root.open-tab(3); }
+        }
+    }
+
+    function open-tab(tab: int) {
+        if root.tab != tab {
+            root.tab = tab;
+            root.tab-changed(tab);
+        }
+    }
+
+    if root.tab == 0 : ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 18px;
+        // Screenshots first, then the description, as on the website.
+        if root.detail.shots.length > 0 : Text {
+            text: "Screenshots";
+            font-size: Theme.body;
+            color: Theme.gold;
+        }
+        // A grid like the website's: as many columns of at least 240px as fit, wrapping.
+        if root.detail.shots.length > 0 : Rectangle {
+            property <length> gap: 12px;
+            property <int> columns: max(1, floor((self.width + self.gap) / (240px + self.gap)));
+            property <length> cell: (self.width - (self.columns - 1) * self.gap) / self.columns;
+            property <length> row-height: self.cell * 9 / 16 + 24px;
+            height: ceil(root.detail.shots.length / self.columns) * (self.row-height + self.gap) - self.gap;
+            for shot[i] in root.detail.shots : VerticalLayout {
+                x: mod(i, parent.columns) * (parent.cell + parent.gap);
+                y: floor(i / parent.columns) * (parent.row-height + parent.gap);
+                width: parent.cell;
+                height: parent.row-height;
+                spacing: 4px;
+                Picture {
+                    source: shot.image;
+                    caption: shot.caption;
+                    height: parent.width * 9 / 16;
+                    enlarge => { root.enlarge-shot(i); }
+                }
+                Text {
+                    text: shot.caption;
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    overflow: elide;
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 10px;
+            Text {
+                text: "About";
+                font-size: Theme.body;
+                color: Theme.gold;
+            }
+            for block in root.detail.about : AboutBlockView {
+                block: block;
+                enlarge(image, caption) => { root.enlarge(image, caption); }
+            }
+            // The rest of the description is on its way: three lines of placeholder.
+            if root.detail.about-loading : VerticalLayout {
+                spacing: 8px;
+                accessible-role: text;
+                accessible-label: "Loading the description";
+                Placeholder { height: 12px; }
+                HorizontalLayout {
+                    Placeholder { height: 12px; horizontal-stretch: 9; }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    Placeholder { height: 12px; horizontal-stretch: 6; }
+                    Rectangle { horizontal-stretch: 4; }
+                }
+            }
+        }
+        if root.detail.safety != "" : Fact {
+            label: "Safety check";
+            text: root.detail.safety;
+        }
+        if root.detail.game != "" : Fact {
+            label: "Game version";
+            text: root.detail.game;
+        }
+        if root.detail.folders != "" : Fact {
+            label: "Folders";
+            text: root.detail.folders;
+        }
+        if root.detail.needs != "" : Fact {
+            label: "Needs";
+            text: root.detail.needs;
+        }
+    }
+}

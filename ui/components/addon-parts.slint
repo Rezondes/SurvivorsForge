@@ -1,0 +1,113 @@
+import { Theme } from "../theme.slint";
+
+// A thin bar for a running download.
+export component ProgressBar inherits Rectangle {
+    in property <float> value;
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.line;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        height: parent.height;
+        border-radius: 2px;
+        background: Theme.gold;
+    }
+}
+
+// A tag like the website's badges. `tone` colours it the same way everywhere: 0 gold (Checked, a
+// category), 1 ok (Verified, Verified author), 2 warn (Not checked), 3 danger (Flagged, Blocked).
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <int> tone;
+    property <color> ink: root.tone == 1 ? Theme.ok : root.tone == 2 ? Theme.warn : root.tone == 3 ? Theme.danger : Theme.gold;
+    height: 20px;
+    width: label.preferred-width + 16px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: root.tone == 0 ? Theme.outline : root.ink;
+    label := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        font-size: 11px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.ink;
+    }
+}
+
+// The addon's icon, or its initial in a gold-rimmed square while there is none.
+export component AddonIcon inherits Rectangle {
+    in property <image> icon;
+    in property <string> initial;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.outline;
+    background: Theme.field;
+    clip: true;
+    if root.icon.width == 0 : Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.initial;
+        font-size: parent.height / 2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Theme.gold-heading;
+    }
+    if root.icon.width > 0 : Image {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        source: root.icon;
+        image-fit: cover;
+    }
+}
+
+// A grey surface that slowly pulses where content is still on its way, instead of a "Loading" text.
+export component Placeholder inherits Rectangle {
+    accessible-role: none;
+    background: Theme.line;
+    border-radius: Theme.radius;
+    opacity: 0.45 + 0.3 * sin(animation-tick() / 1.2s * 360deg);
+}
+
+// A screenshot or description image, at most `tallest` tall; a click asks to enlarge it.
+export component Picture inherits Rectangle {
+    in property <image> source;
+    in property <string> caption;
+    in property <length> tallest: 360px;
+    callback enlarge();
+    property <float> ratio: root.source.width > 0 ? root.source.height / root.source.width : 0.5625;
+    height: min(root.tallest, root.width * root.ratio);
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: touch.has-hover ? Theme.outline-hover : Theme.line;
+    background: Theme.field;
+    clip: true;
+    accessible-role: button;
+    accessible-label: root.caption != "" ? "Enlarge " + root.caption : "Enlarge picture";
+    if root.source.width == 0 : Placeholder {
+        width: parent.width;
+        height: parent.height;
+    }
+    Image {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        source: root.source;
+        image-fit: contain;
+    }
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: root.source.width > 0 ? pointer : default;
+        clicked => {
+            if (root.source.width > 0) {
+                root.enlarge();
+            }
+        }
+    }
+}

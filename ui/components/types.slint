@@ -1,0 +1,109 @@
+export struct AddonRow {
+    id: string,
+    name: string,
+    initial: string,
+    // The platform's icon; empty (width 0) without one, then the initial stands in.
+    icon: image,
+    author: string,
+    version: string,
+    badge: string,
+    // The badge's colour, as on the website: 0 gold, 1 ok, 2 warn, 3 danger.
+    badge-tone: int,
+    description: string,
+    status: string,
+    // 0 neutral, 1 ok, 2 update available, 3 error
+    status-kind: int,
+    // How full the bar of a running download is, 0 to 1; below 0 without a bar.
+    progress: float,
+    // Empty when the row offers no main action.
+    action: string,
+    busy: bool,
+    can-remove: bool,
+    can-open: bool,
+    warning: string,
+    // Browse only: the row can go into an addon pack, and is picked for one.
+    can-pick: bool,
+    picked: bool,
+}
+
+// One block of a description: 0 paragraph, 1 heading, 2 list item, 3 code, 4 quote, 5 image.
+export struct AboutBlock {
+    kind: int,
+    marker: string,
+    text: string,
+    image: image,
+}
+
+export struct Shot {
+    image: image,
+    caption: string,
+}
+
+// An addon opened from a list: its row plus what the list has no room for.
+export struct AddonDetail {
+    row: AddonRow,
+    category: string,
+    safety: string,
+    game: string,
+    folders: string,
+    needs: string,
+    // The description in blocks, the summary while it loads or when there is none.
+    about: [AboutBlock],
+    // Screenshots in the website's order; an image stays empty while it loads.
+    shots: [Shot],
+    // Nothing stored yet and the platform is being asked: placeholders pulse below the summary.
+    about-loading: bool,
+    // The addon has a page on the platform website.
+    on-website: bool,
+    // An installed platform addon: it may update on its own.
+    can-auto-update: bool,
+    // It does: switched on for it, or for all addons in the settings.
+    auto-update: bool,
+    // Switched on for all addons in the settings; the box here cannot turn it off.
+    auto-update-all: bool,
+    // Put back to an older version on the Versions tab: no updates on its own until the newest.
+    held: bool,
+    // "Report a bug" (the platform's form) or "Report on GitHub", as on the website.
+    bug-label: string,
+    // The platform takes bug reports: its Issues tab is worth a button.
+    issues-ready: bool,
+    // The owner turned the Comments tab on.
+    comments-on: bool,
+}
+
+// An open issue on the detail view's Issues tab.
+export struct IssueLine {
+    number: int,
+    title: string,
+    author: string,
+    comments: int,
+    date: string,
+}
+
+// A version on the detail view's Versions tab.
+export struct VersionLine {
+    tag: string,
+    name: string,
+    date: string,
+    // The platform's trust tag ("Checked", "Flagged") and its colour as on the website: 0 gold, 1 ok,
+    // 2 warn, 3 danger.
+    trust: string,
+    trust-kind: int,
+    downloads: int,
+    prerelease: bool,
+    // The installed one; and whether this one can be installed (not blocked, file still there).
+    installed: bool,
+    can-install: bool,
+}
+
+// One comment of an addon's discussion, in reading order; `depth` indents replies (0 to 3).
+export struct CommentRow {
+    author: string,
+    avatar: image,
+    initial: string,
+    date: string,
+    edited: bool,
+    deleted: bool,
+    depth: int,
+    body: string,
+}

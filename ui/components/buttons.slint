@@ -1,0 +1,217 @@
+import { Theme } from "../theme.slint";
+import { TipArea } from "tooltip.slint";
+
+// Outlined gold button; `primary` is the deep red one with the gold rim.
+export component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    // Display type and more height, for the one call to action of a screen.
+    in property <bool> large;
+    callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.text;
+    height: root.large ? 46px : Theme.touch ? 44px : 34px;
+    min-width: label.preferred-width + (root.large ? 40px : 28px);
+    border-radius: Theme.radius;
+    border-width: focus.has-focus ? 2px : 1px;
+    border-color: focus.has-focus ? Theme.outline-active
+        : !root.enabled ? Theme.line
+        : root.danger && touch.has-hover ? Theme.danger
+        : root.primary ? (touch.has-hover ? Theme.outline-active : Theme.outline-hover)
+        : touch.has-hover ? Theme.outline-hover : Theme.outline;
+    background: !root.enabled ? Theme.control
+        : root.primary ? (touch.has-hover && !touch.pressed ? Theme.crimson-hover : Theme.crimson)
+        : Theme.control;
+
+    label := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        font-family: root.large ? Theme.font-display : Theme.font-body;
+        font-size: root.large ? 19px : Theme.body;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+        color: !root.enabled ? Theme.text-disabled
+            : root.danger ? Theme.danger
+            : root.primary ? Theme.gold-bright : Theme.gold;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+
+    // Tab reaches the button, Space or Return presses it.
+    focus := FocusScope {
+        width: 0;
+        height: 0;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+// Square outlined button with a drawn glyph (16x16 path), for icon-only actions. Its label shows
+// as a tooltip on hover.
+export component GlyphButton inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    // Red on hover (remove), or the deep red of a closing action (the viewer's X).
+    in property <bool> danger;
+    in property <bool> primary;
+    // Off: dimmed and not pressable; the tooltip still names it.
+    in property <bool> enabled: true;
+    // A small count in the top right corner ("3" updates); empty for none.
+    in property <string> badge;
+    callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    width: root.height;
+    height: Theme.touch ? 44px : 34px;
+    border-radius: Theme.radius;
+    border-width: focus.has-focus ? 2px : 1px;
+    border-color: focus.has-focus ? Theme.outline-active
+        : !root.enabled ? Theme.line
+        : root.danger && touch.has-hover ? Theme.danger
+        : root.primary ? (touch.has-hover ? Theme.outline-active : Theme.outline-hover)
+        : touch.has-hover ? Theme.outline-hover : Theme.outline;
+    background: root.primary && root.enabled ? (touch.has-hover ? Theme.crimson-hover : Theme.crimson) : Theme.control;
+
+    Path {
+        width: 16px;
+        height: 16px;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        commands: root.glyph;
+        stroke: !root.enabled ? Theme.text-disabled
+            : root.danger && touch.has-hover ? Theme.danger
+            : root.primary || touch.has-hover ? Theme.gold-bright : Theme.text-muted;
+        stroke-width: 1.5px;
+    }
+
+    if root.badge != "" : Rectangle {
+        x: parent.width - self.width + 5px;
+        y: -5px;
+        width: max(16px, count.preferred-width + 8px);
+        height: 16px;
+        border-radius: 8px;
+        background: Theme.gold;
+        count := Text {
+            text: root.badge;
+            font-size: 11px;
+            color: #1A1208;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TipArea {
+        width: parent.width;
+        height: parent.height;
+        tip: root.label;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
+    }
+
+    // Tab reaches the button, Space or Return presses it.
+    focus := FocusScope {
+        width: 0;
+        height: 0;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+// Square button with a bin, for removing an addon; turns red on hover.
+export component RemoveButton inherits GlyphButton {
+    label: "Remove";
+    danger: true;
+    // Lid with its handle, the bin, two ribs.
+    glyph: "M 2 4 L 14 4 M 6 4 L 6 2 L 10 2 L 10 4 M 3.5 4 L 4.5 14 L 11.5 14 L 12.5 4 M 6.5 7 L 6.5 11 M 9.5 7 L 9.5 11";
+}
+
+// Small text-only control for secondary row actions (open, remove).
+export component LinkButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger;
+    callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.text;
+    height: Theme.touch ? 44px : 22px;
+    min-width: label.preferred-width + (Theme.touch ? 20px : 10px);
+
+    label := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        font-size: Theme.touch ? Theme.body : Theme.meta;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: !touch.has-hover ? Theme.text-muted : root.danger ? Theme.danger : Theme.gold;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Top-level page tab, like the game's menu tabs. The selected one turns deep red.
+export component TabButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked;
+
+    accessible-role: tab;
+    accessible-label: root.text;
+    height: Theme.touch ? 44px : 40px;
+    min-width: label.preferred-width + 36px;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: root.active ? Theme.outline-active : touch.has-hover ? Theme.outline-hover : Theme.outline;
+    background: root.active ? Theme.crimson : touch.has-hover ? Theme.control : Theme.bg;
+
+    label := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        font-size: 17px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.active ? Theme.gold-bright : Theme.gold;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

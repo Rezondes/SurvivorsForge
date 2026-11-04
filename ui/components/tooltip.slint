@@ -1,0 +1,63 @@
+import { Theme } from "../theme.slint";
+
+// The tooltip showing now, and where its control is in the window. One for the whole window:
+// TooltipLayer draws it above everything, so no panel or list below clips or covers it.
+export global TipState {
+    in-out property <string> text;
+    // The control's bottom centre, and its top for a tip that does not fit below.
+    in-out property <length> x;
+    in-out property <length> bottom;
+    in-out property <length> top;
+}
+
+// A TouchArea that names its control after a short hover, and hides the name on leave and press.
+export component TipArea inherits TouchArea {
+    in property <string> tip;
+
+    Timer {
+        interval: 450ms;
+        running: root.has-hover && root.tip != "" && TipState.text != root.tip;
+        triggered => {
+            TipState.x = root.absolute-position.x + root.width / 2;
+            TipState.bottom = root.absolute-position.y + root.height;
+            TipState.top = root.absolute-position.y;
+            TipState.text = root.tip;
+        }
+    }
+    changed has-hover => {
+        if !self.has-hover && TipState.text == root.tip {
+            TipState.text = "";
+        }
+    }
+    pointer-event(event) => {
+        if event.kind == PointerEventKind.down {
+            TipState.text = "";
+        }
+    }
+}
+
+// Draws TipState's tooltip; place it last in the window, over the whole window. It takes no input.
+export component TooltipLayer inherits Rectangle {
+    if TipState.text != "" : Rectangle {
+        property <bool> fits-below: TipState.bottom + 6px + self.height <= root.height;
+        accessible-role: text;
+        accessible-label: TipState.text;
+        x: clamp(TipState.x - self.width / 2, 4px, root.width - self.width - 4px);
+        y: self.fits-below ? TipState.bottom + 6px : TipState.top - self.height - 6px;
+        width: label.preferred-width + 18px;
+        height: label.preferred-height + 10px;
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.outline;
+        background: Theme.panel;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #000000A0;
+        label := Text {
+            text: TipState.text;
+            font-size: Theme.meta;
+            color: Theme.text;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

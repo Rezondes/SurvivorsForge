@@ -409,4 +409,4 @@ The portal's file chooser may not show under gamescope, so Game Mode uses no fil
 
 ## Window frame
 
-The window runs with `no-frame`. Title bar, caption buttons and resize edges are Slint components (`ui/components.slint`). Moving and resizing go through winit (`drag_window`, `drag_resize_window`), which needs the Slint feature `unstable-winit-030`. When you upgrade Slint, check that this feature still exists.
+The window runs with `no-frame`. Title bar, caption buttons and resize edges are Slint components (`ui/components/window-frame.slint`; `ui/components.slint` re-exports the files in `ui/components/`, one per area). Moving and resizing go through winit (`drag_window`, `drag_resize_window`), which needs the Slint feature `unstable-winit-030`. When you upgrade Slint, check that this feature still exists.

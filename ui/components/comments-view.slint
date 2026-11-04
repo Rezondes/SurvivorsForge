@@ -1,0 +1,176 @@
+import { Theme } from "../theme.slint";
+import { CommentRow } from "types.slint";
+import { ActionButton, LinkButton } from "buttons.slint";
+import { ScrollPanel } from "layout.slint";
+import { AddonIcon, Placeholder } from "addon-parts.slint";
+
+// The comments of an addon, read only: writing and replying need the website's GitHub login.
+// While the platform answers, placeholders show (after 150 ms, `waiting` 1) and from 5 s a word
+// that the connection is slow (`waiting` 2).
+export component CommentsView inherits VerticalLayout {
+    in property <string> name;
+    in property <[CommentRow]> rows;
+    in property <int> waiting;
+    in property <bool> failed;
+    in property <bool> off;
+    in property <bool> more;
+    in property <bool> loading-more;
+    in property <bool> links-enabled: true;
+    // A tab of the detail view: its header names the addon, so no back link and title here.
+    in property <bool> embedded;
+    callback back();
+    callback write();
+    callback older();
+    callback retry();
+
+    spacing: 14px;
+
+    if !root.embedded : HorizontalLayout {
+        alignment: start;
+        LinkButton {
+            text: "< Back to " + root.name;
+            clicked => { root.back(); }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            if !root.embedded : Text {
+                text: "Comments";
+                font-size: 26px;
+                color: Theme.gold-heading;
+            }
+            Text {
+                text: root.links-enabled ? "Write and reply on the website, with your GitHub login." : "Write and reply on the website in Desktop Mode.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            ActionButton {
+                text: "Write a comment";
+                primary: true;
+                enabled: root.links-enabled;
+                clicked => { root.write(); }
+            }
+        }
+    }
+
+    ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 12px;
+        if root.off : Text {
+            text: "The creator has not turned on comments.";
+            font-size: Theme.body;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+        }
+        if root.failed : HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: root.rows.length > 0 ? "Older comments could not be loaded." : "Comments could not be loaded. Check the connection.";
+                font-size: Theme.body;
+                color: Theme.danger;
+                wrap: word-wrap;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            ActionButton {
+                text: "Try again";
+                clicked => { root.retry(); }
+            }
+        }
+        if !root.off && !root.failed && root.waiting == 0 && root.rows.length == 0 && !root.loading-more : Text {
+            text: "No comments yet.";
+            font-size: Theme.body;
+            color: Theme.text-muted;
+        }
+        for row in root.rows : HorizontalLayout {
+            padding-left: row.depth * 24px;
+            Rectangle {
+                background: Theme.field;
+                border-width: 1px;
+                border-color: Theme.line;
+                border-radius: Theme.radius;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    if row.deleted : Text {
+                        text: "Deleted comment.";
+                        font-size: Theme.body;
+                        color: Theme.text-muted;
+                    }
+                    if !row.deleted : HorizontalLayout {
+                        spacing: 8px;
+                        AddonIcon {
+                            width: 24px;
+                            height: 24px;
+                            icon: row.avatar;
+                            initial: row.initial;
+                        }
+                        Text {
+                            text: row.author;
+                            font-size: Theme.body;
+                            color: Theme.gold;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: row.date + (row.edited ? " · edited" : "");
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    // A Rectangle around the wrapping text: a HorizontalLayout would measure it as one line.
+                    if !row.deleted : Rectangle {
+                        height: body.preferred-height;
+                        body := Text {
+                            width: parent.width;
+                            text: row.body;
+                            font-size: Theme.body;
+                            color: Theme.text;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+        // Comments on their way: three placeholder cards in the shape of a comment.
+        if root.waiting > 0 : VerticalLayout {
+            spacing: 12px;
+            accessible-role: text;
+            accessible-label: "Loading the comments";
+            if root.waiting == 2 : Text {
+                text: "Still loading. The connection seems slow.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
+            for i in 3 : VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    Placeholder { height: 14px; horizontal-stretch: 3; }
+                    Rectangle { horizontal-stretch: 7; }
+                }
+                Placeholder { height: 12px; }
+                HorizontalLayout {
+                    Placeholder { height: 12px; horizontal-stretch: 6; }
+                    Rectangle { horizontal-stretch: 4; }
+                }
+            }
+        }
+        if root.more && !root.failed : HorizontalLayout {
+            alignment: start;
+            ActionButton {
+                text: root.loading-more ? "Loading" : "Older comments";
+                enabled: !root.loading-more;
+                clicked => { root.older(); }
+            }
+        }
+    }
+}

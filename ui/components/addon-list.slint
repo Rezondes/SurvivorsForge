@@ -1,0 +1,276 @@
+import { Theme } from "../theme.slint";
+import { AddonRow } from "types.slint";
+import { ActionButton, RemoveButton } from "buttons.slint";
+import { PickBox } from "fields.slint";
+import { AddonIcon, Pill, ProgressBar } from "addon-parts.slint";
+
+export component AddonRowView inherits Rectangle {
+    in property <AddonRow> addon;
+    callback action();
+    callback remove();
+    callback open();
+    callback pick();
+    // The row itself was clicked: open the detail view.
+    callback details();
+
+    // Touch: room for the 44px action button and 44px links stacked in the last column.
+    height: Theme.touch ? 104px : 84px;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: hover.has-hover ? Theme.outline : Theme.line;
+    background: hover.has-hover ? Theme.row-hover : Theme.row;
+
+    hover := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: pointer;
+        clicked => { root.details(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 16px;
+        if root.addon.can-pick : VerticalLayout {
+            alignment: center;
+            PickBox {
+                checked: root.addon.picked;
+                label: "Pick " + root.addon.name + " for a pack";
+                toggled => { root.pick(); }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            AddonIcon {
+                width: 50px;
+                height: 50px;
+                icon: root.addon.icon;
+                initial: root.addon.initial;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+
+            HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: root.addon.name;
+                    font-size: Theme.heading;
+                    color: Theme.gold-heading;
+                    overflow: elide;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            Text {
+                text: (root.addon.author != "" ? "by " + root.addon.author + "   " : "") + root.addon.version;
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                overflow: elide;
+            }
+            Text {
+                text: root.addon.warning != "" ? root.addon.warning : root.addon.description;
+                font-size: Theme.meta;
+                color: root.addon.warning != "" ? Theme.danger : Theme.text;
+                overflow: elide;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Text {
+                text: root.addon.status;
+                font-size: Theme.meta;
+                horizontal-alignment: right;
+                color: root.addon.busy ? Theme.text-muted
+                    : root.addon.status-kind == 1 ? Theme.ok
+                    : root.addon.status-kind == 2 ? Theme.warn
+                    : root.addon.status-kind == 3 ? Theme.danger
+                    : Theme.text-muted;
+            }
+            if root.addon.busy && root.addon.progress >= 0 : ProgressBar {
+                value: root.addon.progress;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            width: Theme.touch ? 160px : 124px;
+            if root.addon.action != "" : ActionButton {
+                text: root.addon.action;
+                primary: root.addon.status-kind == 2;
+                enabled: !root.addon.busy;
+                clicked => { root.action(); }
+            }
+            // GitHub fills the column, so it lines up with the Update button above; the bin stays square.
+            HorizontalLayout {
+                spacing: 6px;
+                if root.addon.can-open : ActionButton {
+                    horizontal-stretch: 1;
+                    text: "GitHub";
+                    clicked => { root.open(); }
+                }
+                if root.addon.can-remove && !root.addon.busy : RemoveButton {
+                    label: "Remove " + root.addon.name;
+                    clicked => { root.remove(); }
+                }
+            }
+        }
+    }
+}
+
+// An addon as a tile: the icon large on top, then name, author, summary, its state and buttons.
+export component AddonTileView inherits Rectangle {
+    in property <AddonRow> addon;
+    callback action();
+    callback remove();
+    callback open();
+    callback pick();
+    callback details();
+
+    // Below the icon: name, author, two lines of summary, badge and state, the main button, the rest.
+    out property <length> body-height: Theme.touch ? 256px : 212px;
+
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: hover.has-hover ? Theme.outline : Theme.line;
+    background: hover.has-hover ? Theme.row-hover : Theme.row;
+    clip: true;
+
+    hover := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.details(); }
+    }
+
+    AddonIcon {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.width;
+        border-radius: 0;
+        border-width: 0;
+        icon: root.addon.icon;
+        initial: root.addon.initial;
+    }
+    if root.addon.can-pick : PickBox {
+        x: 10px;
+        y: 10px;
+        checked: root.addon.picked;
+        label: "Pick " + root.addon.name + " for a pack";
+        toggled => { root.pick(); }
+    }
+    Rectangle {
+        y: parent.width - 1px;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    VerticalLayout {
+        y: parent.width;
+        height: root.body-height;
+        padding: 10px;
+        spacing: 4px;
+        Text {
+            text: root.addon.name;
+            font-size: 17px;
+            color: Theme.gold-heading;
+            overflow: elide;
+        }
+        Text {
+            text: (root.addon.author != "" ? "by " + root.addon.author + "   " : "") + root.addon.version;
+            font-size: Theme.meta;
+            color: Theme.text-muted;
+            overflow: elide;
+        }
+        Text {
+            height: 36px;
+            text: root.addon.warning != "" ? root.addon.warning : root.addon.description;
+            font-size: Theme.meta;
+            color: root.addon.warning != "" ? Theme.danger : Theme.text;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            height: 22px;
+            if root.addon.badge != "" : VerticalLayout {
+                alignment: center;
+                Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: root.addon.status;
+                font-size: Theme.meta;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                overflow: elide;
+                color: root.addon.busy ? Theme.text-muted
+                    : root.addon.status-kind == 1 ? Theme.ok
+                    : root.addon.status-kind == 2 ? Theme.warn
+                    : root.addon.status-kind == 3 ? Theme.danger
+                    : Theme.text-muted;
+            }
+        }
+        if root.addon.busy && root.addon.progress >= 0 : ProgressBar {
+            value: root.addon.progress;
+        }
+        Rectangle { vertical-stretch: 1; }
+        if root.addon.action != "" : ActionButton {
+            text: root.addon.action;
+            primary: root.addon.status-kind == 2;
+            enabled: !root.addon.busy;
+            clicked => { root.action(); }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            if root.addon.can-open : ActionButton {
+                horizontal-stretch: 1;
+                text: "GitHub";
+                clicked => { root.open(); }
+            }
+            if root.addon.can-remove && !root.addon.busy : RemoveButton {
+                label: "Remove " + root.addon.name;
+                clicked => { root.remove(); }
+            }
+        }
+    }
+}
+
+// Tiles in as many columns of at least 170px as fit, like the website's grid. A column stays below the
+// 256px of the platform's icons in a normal window, so they are shown smaller, never blown up.
+export component AddonTiles inherits Rectangle {
+    in property <[AddonRow]> rows;
+    callback action(string);
+    callback remove(string);
+    callback open(string);
+    callback pick(string);
+    callback details(string);
+
+    property <length> gap: 12px;
+    property <int> columns: max(1, floor((self.width + self.gap) / (170px + self.gap)));
+    property <length> cell: (self.width - (self.columns - 1) * self.gap) / self.columns;
+    property <length> tile-height: self.cell + (Theme.touch ? 256px : 212px);
+    height: ceil(root.rows.length / self.columns) * (self.tile-height + self.gap) - self.gap;
+
+    for row[i] in root.rows : AddonTileView {
+        x: mod(i, root.columns) * (root.cell + root.gap);
+        y: floor(i / root.columns) * (root.tile-height + root.gap);
+        width: root.cell;
+        height: root.tile-height;
+        addon: row;
+        action => { root.action(row.id); }
+        remove => { root.remove(row.id); }
+        open => { root.open(row.id); }
+        pick => { root.pick(row.id); }
+        details => { root.details(row.id); }
+    }
+}
