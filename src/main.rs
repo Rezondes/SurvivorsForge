@@ -2808,6 +2808,24 @@ mod layout_tests {
         }
 
         #[test]
+        fn an_empty_filtered_list_offers_to_clear_the_filters() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let cleared = Rc::new(Cell::new(false));
+            let c = cleared.clone();
+            ui.on_search_changed(move |text| c.set(text.is_empty()));
+            ui.show().unwrap();
+            if ElementHandle::find_by_accessible_label(&ui, "Installed (0)").next().is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            ui.set_search("zzz".into());
+            let clear = ElementHandle::find_by_accessible_label(&ui, "Clear search and filters").next().expect("a way out of an empty filtered list");
+            clear.invoke_accessible_default_action();
+            assert!(cleared.get() && ui.get_search().is_empty(), "the search is gone");
+        }
+
+        #[test]
         fn a_toast_shows_bottom_right_and_closes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

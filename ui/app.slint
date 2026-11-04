@@ -372,6 +372,17 @@ export component AppWindow inherits Window {
     in property <int> installed-total;
     in-out property <string> search;
     callback search-changed(string);
+
+    // A search, category or safety filter hides some addons.
+    property <bool> filtered: root.search != "" || root.category-index > 0 || root.safety-index > 0;
+    function clear-filters() {
+        root.search = "";
+        root.search-changed("");
+        root.category-index = 0;
+        root.category-changed(0);
+        root.safety-index = 0;
+        root.safety-changed(0);
+    }
     in property <string> addons-dir;
     in property <int> update-count;
     in property <bool> checking;
@@ -719,7 +730,12 @@ export component AppWindow inherits Window {
                             glyph: "M 8 2.5 L 8 13.5 M 2.5 8 L 13.5 8";
                             clicked => { root.add-repo(); }
                         }
-                        if root.page == 0 : GlyphButton {
+                        if root.page == 0 && Theme.touch && root.update-count > 0 : ActionButton {
+                            text: "Update all (" + root.update-count + ")";
+                            primary: true;
+                            clicked => { root.update-all(); }
+                        }
+                        if root.page == 0 && !(Theme.touch && root.update-count > 0) : GlyphButton {
                             height: Theme.touch ? 44px : 38px;
                             label: root.update-count > 0 ? "Update all (" + root.update-count + ")" : root.checking ? "Update all" : "All up to date";
                             // An arrow into a tray, or a tick when there is nothing to update.
@@ -871,11 +887,21 @@ export component AppWindow inherits Window {
                             }
                         }
                         if root.installed-rows.length == 0 : Text {
-                            text: root.search != "" ? "No installed addon matches your search." : "No addons installed yet. Browse the verified addons, install a zip or add a GitHub repo.";
+                            // The filters are shared with Browse, so they can hide everything here too.
+                            text: root.filtered ? "No installed addon matches the search and filters."
+                                : root.file-dialog ? "No addons installed yet. Browse the verified addons, install a zip or add a GitHub repo."
+                                : "No addons installed yet. Browse the verified addons or add a GitHub repo.";
                             font-size: Theme.body;
                             color: Theme.text-muted;
                             wrap: word-wrap;
                             horizontal-alignment: center;
+                        }
+                        if root.installed-rows.length == 0 && root.filtered : HorizontalLayout {
+                            alignment: center;
+                            LinkButton {
+                                text: "Clear search and filters";
+                                clicked => { root.clear-filters(); }
+                            }
                         }
                     }
 
@@ -931,10 +957,18 @@ export component AppWindow inherits Window {
                             }
                         }
                         if root.browse-rows.length == 0 : Text {
-                            text: "No verified addon matches your search.";
+                            text: root.search != "" ? "No addon matches \"" + root.search + "\"." : "No addon in this category with this safety check.";
                             font-size: Theme.body;
                             color: Theme.text-muted;
+                            wrap: word-wrap;
                             horizontal-alignment: center;
+                        }
+                        if root.browse-rows.length == 0 && root.filtered : HorizontalLayout {
+                            alignment: center;
+                            LinkButton {
+                                text: "Clear search and filters";
+                                clicked => { root.clear-filters(); }
+                            }
                         }
                     }
 
