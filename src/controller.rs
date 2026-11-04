@@ -788,14 +788,16 @@ pub fn auto_update_ids(
         let clean = registry.get(registry_id).and_then(|a| a.latest.as_ref()).is_some_and(|l| matches!(l.trust, Trust::Scanned | Trust::Verified));
         clean && matches!(statuses.get(id), Some(UpdateStatus::UpdateAvailable(remote)) if remote.sha256.is_some())
     };
-    let ids = update_all_ids(statuses).into_iter().filter(|id| all || picked.contains(id)).filter(checked).collect();
+    let ids = update_all_ids(statuses, &[]).into_iter().filter(|id| all || picked.contains(id)).filter(checked).collect();
     split_confirmations(ids, registry, state, game, games).0
 }
 
-pub fn update_all_ids(statuses: &HashMap<String, UpdateStatus>) -> Vec<String> {
+/// The addons "Update all" installs: those with an update, except the ones `held` at an older
+/// version on purpose (they update only by hand).
+pub fn update_all_ids(statuses: &HashMap<String, UpdateStatus>, held: &[String]) -> Vec<String> {
     let mut ids: Vec<String> = statuses
         .iter()
-        .filter(|(_, s)| matches!(s, UpdateStatus::UpdateAvailable(_)))
+        .filter(|(id, s)| matches!(s, UpdateStatus::UpdateAvailable(_)) && !held.contains(id))
         .map(|(id, _)| id.clone())
         .collect();
     ids.sort();
@@ -1091,7 +1093,8 @@ mod tests {
             ("c".to_string(), UpdateStatus::UpToDate),
             ("d".to_string(), UpdateStatus::CheckFailed("x".into())),
         ]);
-        assert_eq!(update_all_ids(&statuses), ["a", "b"]);
+        assert_eq!(update_all_ids(&statuses, &[]), ["a", "b"]);
+        assert_eq!(update_all_ids(&statuses, &["a".to_string()]), ["b"], "a version kept on purpose stays");
     }
 
     #[test]

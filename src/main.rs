@@ -312,6 +312,8 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
     let (status, kind, action) = match &row.state {
         RowState::Unchecked => (if core.checking { "Checking..." } else { "Not checked" }.to_string(), 0, ""),
         RowState::UpToDate => ("Up to date".into(), 1, ""),
+        // Kept at an older version on purpose: the update is offered, not pushed.
+        RowState::UpdateAvailable(label) if core.config.held.contains(&row.id) => (format!("Kept at this version, {label} available"), 0, "Update"),
         RowState::UpdateAvailable(label) => (format!("Update: {label}"), 2, "Update"),
         RowState::Manual => ("Installed from zip".into(), 0, ""),
         RowState::CheckFailed(_) => ("Check failed".into(), 3, ""),
@@ -701,7 +703,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         ui.set_comments_off(c.off);
         ui.set_comments_more(c.older.is_some());
     }
-    ui.set_update_count(controller::update_all_ids(&core.statuses).len() as i32);
+    ui.set_update_count(controller::update_all_ids(&core.statuses, &core.config.held).len() as i32);
     ui.set_checking(core.checking);
     let game_missing = match config::game_executable(core.addons_dir(), USE_WINDOWS_GAME) {
         Some(_) => "",
@@ -1243,7 +1245,7 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
     let (ids, skipped) = {
         let core = lock(shared);
         let ids: Vec<String> =
-            controller::update_all_ids(&core.statuses).into_iter().filter(|id| !core.busy.contains(id)).collect();
+            controller::update_all_ids(&core.statuses, &core.config.held).into_iter().filter(|id| !core.busy.contains(id)).collect();
         // Updates that need a confirmation are left for the user to install one by one.
         let (ids, mut skipped) =
             controller::split_confirmations(ids, &core.registry, &core.state, core.config.game_version.as_deref(), &core.game_versions);
@@ -1414,7 +1416,7 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             let _ = weak.upgrade_in_event_loop(move |ui| install_updates(&ui, &s, auto, Vec::new()));
         }
 
-        let updates = controller::update_all_ids(&core.statuses).len();
+        let updates = controller::update_all_ids(&core.statuses, &core.config.held).len();
         let failed = core.statuses.values().filter(|s| matches!(s, UpdateStatus::CheckFailed(_))).count();
         let mut message = match updates {
             0 => "All addons are up to date".to_string(),
