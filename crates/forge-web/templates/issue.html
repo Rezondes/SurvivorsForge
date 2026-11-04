@@ -23,7 +23,7 @@
   <div class="post-body description">{% if issue.body_html.trim().is_empty() %}<p class="muted">No description.</p>{% else %}{{ issue.body_html|safe }}{% endif %}</div>
   {% if issue.mine && frame.write == Write::Ok %}
   <div class="post-tools">
-    <details>
+    <details{% if self.is_editing(0) %} open{% endif %}>
       <summary>Edit</summary>
       <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/edit">
         <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -53,7 +53,7 @@
   <div class="post-body description">{{ r.body_html|safe }}</div>
   {% if r.mine && frame.write == Write::Ok %}
   <div class="post-tools">
-    <details>
+    <details{% if self.is_editing(r.id) %} open{% endif %}>
       <summary>Edit</summary>
       <form method="post" action="{{ place.base }}/issues/{{ issue.number }}/replies/{{ r.id }}/edit">
         <input type="hidden" name="csrf" value="{{ csrf }}">

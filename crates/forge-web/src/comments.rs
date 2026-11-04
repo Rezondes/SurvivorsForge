@@ -12,7 +12,8 @@ use crate::templates::{Permission, Visitor, render};
 use askama::Template;
 use axum::Extension;
 use axum::extract::{Form, Path, Query, State};
-use axum::response::{Html, Redirect};
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum_extra::extract::PrivateCookieJar;
 use reqwest::Method;
 use serde::Deserialize;
@@ -63,6 +64,32 @@ pub struct CommentsPage {
     pub reasons: &'static [(&'static str, &'static str)],
     pub done: Option<String>,
     pub error: Option<String>,
+    /// Text the API refused, back in its field with the reason.
+    pub draft: Option<Draft>,
+}
+
+/// A refused comment: `form` is `new`, `reply` (to comment `id`) or `edit` (of comment `id`).
+pub struct Draft {
+    pub form: &'static str,
+    pub id: i64,
+    pub body: String,
+    pub error: String,
+}
+
+impl CommentsPage {
+    fn draft_of(&self, form: &str, id: i64) -> Option<&Draft> {
+        self.draft.as_ref().filter(|d| d.form == form && d.id == id)
+    }
+
+    /// The refused text of this form, or `fallback`.
+    pub fn draft_body<'a>(&'a self, form: &str, id: impl std::borrow::Borrow<i64>, fallback: &'a str) -> &'a str {
+        self.draft_of(form, *id.borrow()).map_or(fallback, |d| d.body.as_str())
+    }
+
+    /// Why the API refused this form's text; empty when it did not.
+    pub fn draft_error(&self, form: &str, id: impl std::borrow::Borrow<i64>) -> &str {
+        self.draft_of(form, *id.borrow()).map_or("", |d| d.error.as_str())
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -107,7 +134,11 @@ pub async fn list(
     Path(slug): Path<String>,
     Query(q): Query<ListQuery>,
 ) -> WebResult<Html<String>> {
-    let session = visitor(&state, &jar).await?;
+    page(&state, &jar, csrf, slug, q, None).await
+}
+
+async fn page(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, slug: String, q: ListQuery, draft: Option<Draft>) -> WebResult<Html<String>> {
+    let session = visitor(state, jar).await?;
     let addon = state.api.get(&format!("/v1/addons/{}", seg(&slug)), None).await?;
     if addon["blocked"] == true {
         return Err(WebError::NotFound);
@@ -124,6 +155,7 @@ pub async fn list(
         reasons: REASONS,
         done: q.done.clone(),
         error: q.error.clone(),
+        draft: None,
     };
     if addon["comments_enabled"] != true {
         return Ok(render(&page(session.map(|(u, _)| u), Vec::new(), None)));
@@ -165,7 +197,7 @@ pub async fn list(
             }
         })
         .collect();
-    Ok(render(&page(user, threads(comments), older)))
+    Ok(render(&CommentsPage { draft, ..page(user, threads(comments), older) }))
 }
 
 #[derive(Deserialize, Default)]
@@ -200,18 +232,46 @@ async fn token(state: &AppState, jar: &PrivateCookieJar) -> WebResult<String> {
     Ok(visitor(state, jar).await?.ok_or(WebError::LoginRequired)?.1)
 }
 
-pub async fn create(State(state): State<AppState>, jar: PrivateCookieJar, Path(slug): Path<String>, Form(form): Form<CommentForm>) -> WebResult<Redirect> {
+/// A refused comment or change: the page again, the text in its field and the reason under it,
+/// instead of a redirect that would lose what was typed.
+async fn refused(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, slug: String, draft: Draft) -> WebResult<Response> {
+    let page = page(state, jar, csrf, slug, ListQuery::default(), Some(draft)).await?;
+    Ok((StatusCode::UNPROCESSABLE_ENTITY, page).into_response())
+}
+
+pub async fn create(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(slug): Path<String>,
+    Form(form): Form<CommentForm>,
+) -> WebResult<Response> {
     let token = token(&state, &jar).await?;
     let body = json!({ "body": form.body, "parent_id": form.parent_id });
     let result = state.api.post(&format!("/v1/addons/{}/comments", seg(&slug)), Some(&token), &body).await;
+    if let Err(ApiError::Api { message, .. }) = &result {
+        let (kind, id) = form.parent_id.map_or(("new", 0), |p| ("reply", p));
+        let draft = Draft { form: kind, id, body: form.body, error: message.clone() };
+        return refused(&state, &jar, csrf, slug, draft).await;
+    }
     let anchor = result.as_ref().ok().and_then(|r| r["id"].as_i64());
-    back(&slug, anchor, result, "Your comment is posted.")
+    Ok(back(&slug, anchor, result, "Your comment is posted.")?.into_response())
 }
 
-pub async fn edit(State(state): State<AppState>, jar: PrivateCookieJar, Path((slug, id)): Path<(String, i64)>, Form(form): Form<CommentForm>) -> WebResult<Redirect> {
+pub async fn edit(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path((slug, id)): Path<(String, i64)>,
+    Form(form): Form<CommentForm>,
+) -> WebResult<Response> {
     let token = token(&state, &jar).await?;
     let result = state.api.call(Method::PATCH, &format!("/v1/addons/{}/comments/{id}", seg(&slug)), Some(&token), Some(&json!({ "body": form.body }))).await;
-    back(&slug, Some(id), result, "The comment is changed.")
+    if let Err(ApiError::Api { message, .. }) = &result {
+        let draft = Draft { form: "edit", id, body: form.body, error: message.clone() };
+        return refused(&state, &jar, csrf, slug, draft).await;
+    }
+    Ok(back(&slug, Some(id), result, "The comment is changed.")?.into_response())
 }
 
 pub async fn delete(State(state): State<AppState>, jar: PrivateCookieJar, Path((slug, id)): Path<(String, i64)>) -> WebResult<Redirect> {

@@ -281,3 +281,24 @@ async fn survivorsforge_has_its_own_issue_pages() {
     let new = web.get_htmx("/issues/new?kind=bug").await;
     assert_eq!(hx_redirect(&new), "https://github.com/alice/lucky/issues/new", "GitHub's form while the App may not post");
 }
+
+#[tokio::test]
+async fn a_refused_edit_keeps_what_was_typed() {
+    let mut web = TestWeb::new().await;
+    addon(&web).await;
+    mock_get(&web, "/v1/addons/lucky/issues/6", issue("bob")).await;
+    web.login_with_github("t", me("bob", "user"), github_token("2030-01-01T00:00:00Z")).await;
+    for route in ["/v1/addons/lucky/issues/6", "/v1/addons/lucky/issues/6/comments/12"] {
+        Mock::given(method("PATCH"))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(422).set_body_json(json!({ "error": "invalid", "message": "GitHub refused it" })))
+            .mount(&web.api)
+            .await;
+    }
+    let page = web.post_form("/addons/lucky/issues/6/edit", &[("title", "New title"), ("body", "New text")]).await;
+    assert!(page.body.contains("GitHub refused it"), "{}", page.body);
+    assert!(page.body.contains(r#"value="New title""#) && page.body.contains(">New text</textarea>"), "{}", page.body);
+    assert!(page.body.contains("<details open>"), "the edit form stays open");
+    let page = web.post_form("/addons/lucky/issues/6/replies/12/edit", &[("body", "Changed reply")]).await;
+    assert!(page.body.contains(">Changed reply</textarea>") && page.body.contains("<details open>"), "{}", page.body);
+}

@@ -9,9 +9,9 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2>Add a contributor</h2>
   <label for="login">GitHub login</label>
-  <input id="login" name="login" required placeholder="octocat">
-  <label class="check"><input type="checkbox" name="description" value="1"> May edit the description</label>
-  <label class="check"><input type="checkbox" name="images" value="1"> May edit the images</label>
+  <input id="login" name="login" required placeholder="octocat" value="{{ typed_login }}">
+  <label class="check"><input type="checkbox" name="description" value="1"{% if typed_description %} checked{% endif %}> May edit the description</label>
+  <label class="check"><input type="checkbox" name="images" value="1"{% if typed_images %} checked{% endif %}> May edit the images</label>
   <p><button type="submit">Add</button></p>
 </form>
 

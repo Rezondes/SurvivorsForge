@@ -293,8 +293,17 @@ pub struct IssuePage {
     pub replies: Vec<Reply>,
     /// The reply typed before a refusal, so it is not lost.
     pub reply: String,
+    /// The edit form that was refused, kept open with what was typed: 0 for the issue itself,
+    /// else the reply's id.
+    pub editing: Option<i64>,
     pub error: Option<String>,
     pub done: Option<String>,
+}
+
+impl IssuePage {
+    pub fn is_editing(&self, id: impl std::borrow::Borrow<i64>) -> bool {
+        self.editing == Some(*id.borrow())
+    }
 }
 
 #[derive(Template)]
@@ -432,6 +441,7 @@ async fn issue_page(state: &AppState, jar: &PrivateCookieJar, csrf: String, user
         issue,
         replies,
         reply: String::new(),
+        editing: None,
         error: None,
         done: None,
     })
@@ -594,8 +604,26 @@ pub async fn create(
 /// One write of the API below `.../issues/{number}`: method, path after it and body.
 type Call = (Method, String, Option<Value>);
 
+/// What an edit form sent: the issue's title and text, or a reply's text. A refused edit shows
+/// the page again with it instead of losing it.
+enum Typed {
+    Issue { title: String, body: String },
+    Reply { id: i64, body: String },
+}
+
 /// Runs one write as the visitor and goes back to the issue with how it went.
-async fn write_and_return(state: &AppState, jar: PrivateCookieJar, path: &HashMap<String, String>, (method, rest, body): Call, done: &str) -> WebResult<Response> {
+async fn write_and_return(state: &AppState, jar: PrivateCookieJar, path: &HashMap<String, String>, call: Call, done: &str) -> WebResult<Response> {
+    write_or_keep(state, jar, path, call, done, None).await
+}
+
+async fn write_or_keep(
+    state: &AppState,
+    jar: PrivateCookieJar,
+    path: &HashMap<String, String>,
+    (method, rest, body): Call,
+    done: &str,
+    typed: Option<(String, Typed)>,
+) -> WebResult<Response> {
     let number = number(path, "number")?;
     let (_, token) = visitor(state, &jar).await?.ok_or(WebError::LoginRequired)?;
     let place = place(state, path).await?;
@@ -610,7 +638,26 @@ async fn write_and_return(state: &AppState, jar: PrivateCookieJar, path: &HashMa
         Err(ApiError::Unauthorized) => Err(WebError::LoginRequired),
         Err(e) => {
             let (message, jar) = refused(&e, jar);
-            Ok((jar, Redirect::to(&issue_url(&place.base, number, "error", &message))).into_response())
+            let Some((csrf, typed)) = typed else {
+                return Ok((jar, Redirect::to(&issue_url(&place.base, number, "error", &message))).into_response());
+            };
+            let user = visitor(state, &jar).await?.map(|(u, _)| u);
+            let mut page = issue_page(state, &jar, csrf, user, place, number).await?;
+            match typed {
+                Typed::Issue { title, body } => {
+                    page.issue.title = title;
+                    page.issue.body = body;
+                    page.editing = Some(0);
+                }
+                Typed::Reply { id, body } => {
+                    if let Some(r) = page.replies.iter_mut().find(|r| r.id == id) {
+                        r.body = body;
+                    }
+                    page.editing = Some(id);
+                }
+            }
+            page.error = Some(message);
+            Ok((jar, render(&page)).into_response())
         }
     }
 }
@@ -660,9 +707,16 @@ pub struct IssueForm {
 }
 
 /// `POST .../issues/{number}/edit`: the author's title and text.
-pub async fn edit(State(state): State<AppState>, jar: PrivateCookieJar, Path(path): Path<HashMap<String, String>>, Form(form): Form<IssueForm>) -> WebResult<Response> {
+pub async fn edit(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(path): Path<HashMap<String, String>>,
+    Form(form): Form<IssueForm>,
+) -> WebResult<Response> {
     let call = (Method::PATCH, String::new(), Some(json!({ "title": form.title, "body": form.body })));
-    write_and_return(&state, jar, &path, call, "Saved on GitHub.").await
+    let typed = Typed::Issue { title: form.title, body: form.body };
+    write_or_keep(&state, jar, &path, call, "Saved on GitHub.", Some((csrf.0, typed))).await
 }
 
 #[derive(Deserialize, Default)]
@@ -678,9 +732,17 @@ pub async fn set_state(State(state): State<AppState>, jar: PrivateCookieJar, Pat
 }
 
 /// `POST .../issues/{number}/replies/{id}/edit`.
-pub async fn edit_reply(State(state): State<AppState>, jar: PrivateCookieJar, Path(path): Path<HashMap<String, String>>, Form(form): Form<TextForm>) -> WebResult<Response> {
+pub async fn edit_reply(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(path): Path<HashMap<String, String>>,
+    Form(form): Form<TextForm>,
+) -> WebResult<Response> {
     let id = number(&path, "id")?;
-    write_and_return(&state, jar, &path, (Method::PATCH, format!("/comments/{id}"), Some(json!({ "body": form.body }))), "Reply saved on GitHub.").await
+    let call = (Method::PATCH, format!("/comments/{id}"), Some(json!({ "body": form.body })));
+    let typed = Typed::Reply { id, body: form.body };
+    write_or_keep(&state, jar, &path, call, "Reply saved on GitHub.", Some((csrf.0, typed))).await
 }
 
 /// `POST .../issues/{number}/replies/{id}/delete`.

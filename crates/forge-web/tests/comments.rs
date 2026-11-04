@@ -121,7 +121,7 @@ async fn a_reply_goes_to_the_api_and_back_to_the_comment() {
 }
 
 #[tokio::test]
-async fn a_refusal_comes_back_as_a_notice() {
+async fn a_refusal_keeps_the_text_next_to_the_error() {
     let mut web = TestWeb::new().await;
     addon(&web, discussion()).await;
     web.login_as("t", me("bob", "user")).await;
@@ -131,8 +131,14 @@ async fn a_refusal_comes_back_as_a_notice() {
         .mount(&web.api)
         .await;
     let page = web.post_form("/addons/lucky/comments", &[("body", "one more")]).await;
-    let follow = web.get(page.location()).await;
-    assert!(follow.body.contains(r#"<div class="notice bad" role="alert">At most 100 comments a day</div>"#), "{}", follow.body);
+    assert_eq!(page.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(page.body.contains(">one more</textarea>"), "the text stays: {}", page.body);
+    assert!(page.body.contains(r#"<p class="field-error" id="new-comment-error">At most 100 comments a day</p>"#), "{}", page.body);
+    assert!(page.body.contains(r#"aria-describedby="new-comment-error""#));
+
+    let reply = web.post_form("/addons/lucky/comments", &[("body", "my reply"), ("parent_id", "3")]).await;
+    let form = article(&reply.body, 3);
+    assert!(form.contains("<details open>") && form.contains(">my reply</textarea>"), "the reply form stays open with its text: {form}");
 }
 
 #[tokio::test]

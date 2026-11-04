@@ -473,21 +473,36 @@ pub struct EditForm {
     pub issues: Option<String>,
 }
 
-async fn edit_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, errors: Errors, saved: bool) -> WebResult<Html<String>> {
+/// How the edit page comes: freshly opened, just saved, or with a refused form whose fields show
+/// instead of the saved ones.
+enum Edit<'a> {
+    Open,
+    Saved,
+    Refused(&'a EditForm),
+}
+
+async fn edit_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, errors: Errors, edit: Edit<'_>) -> WebResult<Html<String>> {
+    let saved = matches!(edit, Edit::Saved);
+    let typed = match edit {
+        Edit::Refused(form) => Some(form),
+        _ => None,
+    };
     let p = perms(state, slug, token).await?;
     let a = state.api.get(&format!("/v1/addons/{slug}"), None).await?;
-    let description = s(&a["description_md"]);
+    let typed_or = |field: Option<&Option<String>>, saved: String| field.and_then(|f| f.clone()).unwrap_or(saved);
+    let description = typed_or(typed.map(|t| &t.description_md), s(&a["description_md"]));
+    let folders = a["folders"].as_array().into_iter().flatten().map(s).collect::<Vec<_>>().join("\n");
     Ok(render(&EditAddonPage {
         user: Some(user),
         csrf,
         slug: slug.to_string(),
-        name: s(&a["name"]),
-        category: s(&a["category"]),
+        name: typed_or(typed.map(|t| &t.name), s(&a["name"])),
+        category: typed_or(typed.map(|t| &t.category), s(&a["category"])),
         categories: categories(state).await?,
-        source_type: s(&a["source_type"]),
-        asset_pattern: s(&a["asset_pattern"]),
-        folders: a["folders"].as_array().into_iter().flatten().map(s).collect::<Vec<_>>().join("\n"),
-        summary: s(&a["summary"]),
+        source_type: typed_or(typed.map(|t| &t.source_type), s(&a["source_type"])),
+        asset_pattern: typed_or(typed.map(|t| &t.asset_pattern), s(&a["asset_pattern"])),
+        folders: typed_or(typed.map(|t| &t.folders), folders),
+        summary: typed_or(typed.map(|t| &t.summary), s(&a["summary"])),
         description_html: forge_core::markdown::render(&description, &state.image_base()),
         description,
         perms: p,
@@ -548,7 +563,7 @@ pub async fn edit_addon(
     if !p.owner && !p.edit_description {
         return Ok(Redirect::to(&format!("/addons/{slug}/images")).into_response());
     }
-    Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), false).await?.into_response())
+    Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), Edit::Open).await?.into_response())
 }
 
 pub async fn save_addon(
@@ -581,11 +596,11 @@ pub async fn save_addon(
         body.insert("issues_enabled".into(), json!(form.issues.is_some()));
     }
     match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}"), Some(&token), Some(&Value::Object(body))).await {
-        Ok(_) => Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), true).await?.into_response()),
+        Ok(_) => Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), Edit::Saved).await?.into_response()),
         Err(ApiError::Api { status: 403, .. }) => Ok(forbidden()),
         Err(e) => {
             let errors = form_errors(e)?;
-            Ok((StatusCode::UNPROCESSABLE_ENTITY, edit_page(&state, user, &token, csrf.0, &slug, errors, false).await?).into_response())
+            Ok((StatusCode::UNPROCESSABLE_ENTITY, edit_page(&state, user, &token, csrf.0, &slug, errors, Edit::Refused(&form)).await?).into_response())
         }
     }
 }
@@ -817,7 +832,8 @@ pub async fn delete_image(State(state): State<AppState>, jar: PrivateCookieJar, 
     Ok(Redirect::to(&format!("/addons/{slug}/images?tab=screenshots")).into_response())
 }
 
-async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>) -> WebResult<Html<String>> {
+/// The contributors page; `typed` is a refused add form, shown again.
+async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>, typed: Option<&MemberForm>) -> WebResult<Html<String>> {
     let list = state.api.get(&format!("/v1/addons/{slug}/members"), Some(token)).await?;
     let members = list
         .as_array()
@@ -831,7 +847,9 @@ async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String
         })
         .collect();
     let perms = perms(state, slug, token).await?;
-    Ok(render(&MembersPage { user: Some(user), csrf, slug: slug.into(), members, error, perms }))
+    let typed_login = typed.map(|t| t.login.clone()).unwrap_or_default();
+    let (typed_description, typed_images) = typed.map_or((false, false), |t| (t.description.is_some(), t.images.is_some()));
+    Ok(render(&MembersPage { user: Some(user), csrf, slug: slug.into(), members, error, perms, typed_login, typed_description, typed_images }))
 }
 
 /// The channel verified-addons on the Azeroth Survivors Discord, where creators post their addon.
@@ -890,7 +908,7 @@ pub async fn members(State(state): State<AppState>, jar: PrivateCookieJar, Exten
     if !perms(&state, &slug, &token).await?.owner {
         return Ok(forbidden());
     }
-    Ok(members_page(&state, user, &token, csrf.0, &slug, None).await?.into_response())
+    Ok(members_page(&state, user, &token, csrf.0, &slug, None, None).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -914,7 +932,7 @@ pub async fn add_member(
     let body = json!({ "login": form.login.trim(), "can_edit_description": form.description.is_some(), "can_edit_images": form.images.is_some() });
     match state.api.post(&format!("/v1/addons/{slug}/members"), Some(&token), &body).await {
         Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/members")).into_response()),
-        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(members_page(&state, user, &token, csrf.0, &slug, Some(message)).await?.into_response()),
+        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(members_page(&state, user, &token, csrf.0, &slug, Some(message), Some(&form)).await?.into_response()),
         Err(e) => Err(e.into()),
     }
 }
@@ -941,10 +959,13 @@ fn current_deps(addon: &Value) -> Vec<(String, String, bool)> {
     addon["dependencies"].as_array().into_iter().flatten().map(|d| (s(&d["slug"]), s(&d["name"]), d["required"] == true)).collect()
 }
 
-async fn deps_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>) -> WebResult<Html<String>> {
+/// The dependencies page; `typed` is a refused add form, shown again.
+async fn deps_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>, typed: Option<&DepForm>) -> WebResult<Html<String>> {
     let perms = perms(state, slug, token).await?;
     let a = state.api.get(&format!("/v1/addons/{slug}"), None).await?;
-    Ok(render(&DepsPage { user: Some(user), csrf, slug: slug.into(), deps: current_deps(&a), error, perms }))
+    let typed_dep = typed.map(|t| t.dependency.clone()).unwrap_or_default();
+    let typed_required = typed.is_none_or(|t| t.required.is_some());
+    Ok(render(&DepsPage { user: Some(user), csrf, slug: slug.into(), deps: current_deps(&a), error, perms, typed_dep, typed_required }))
 }
 
 pub async fn deps(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Response> {
@@ -952,7 +973,7 @@ pub async fn deps(State(state): State<AppState>, jar: PrivateCookieJar, Extensio
     if !perms(&state, &slug, &token).await?.owner {
         return Ok(forbidden());
     }
-    Ok(deps_page(&state, user, &token, csrf.0, &slug, None).await?.into_response())
+    Ok(deps_page(&state, user, &token, csrf.0, &slug, None, None).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -984,7 +1005,7 @@ pub async fn save_deps(
     }
     match state.api.call(Method::PUT, &format!("/v1/addons/{slug}/dependencies"), Some(&token), Some(&Value::Array(list))).await {
         Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/dependencies")).into_response()),
-        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(deps_page(&state, user, &token, csrf.0, &slug, Some(message)).await?.into_response()),
+        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(deps_page(&state, user, &token, csrf.0, &slug, Some(message), Some(&form)).await?.into_response()),
         Err(e) => Err(e.into()),
     }
 }

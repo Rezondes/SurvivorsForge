@@ -524,6 +524,10 @@ pub struct MembersPage {
     pub members: Vec<MemberRow>,
     pub error: Option<String>,
     pub perms: Perms,
+    /// A refused add form, shown again.
+    pub typed_login: String,
+    pub typed_description: bool,
+    pub typed_images: bool,
 }
 
 #[derive(Template)]
@@ -554,6 +558,9 @@ pub struct DepsPage {
     pub deps: Vec<(String, String, bool)>,
     pub error: Option<String>,
     pub perms: Perms,
+    /// A refused add form, shown again (Required starts ticked).
+    pub typed_dep: String,
+    pub typed_required: bool,
 }
 
 #[derive(Template)]

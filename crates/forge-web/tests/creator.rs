@@ -766,3 +766,23 @@ async fn only_owners_open_the_verification_tab() {
     let mut web = logged_in(json!({ "owner": false, "edit_description": true, "edit_images": true, "admin": false })).await;
     assert_eq!(web.get("/addons/lucky/verification").await.status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn refused_settings_keep_what_was_typed() {
+    let mut web = logged_in(owner()).await;
+    for (verb, route) in [("PATCH", "/v1/addons/lucky"), ("POST", "/v1/addons/lucky/members"), ("PUT", "/v1/addons/lucky/dependencies")] {
+        Mock::given(method(verb))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(422).set_body_json(json!({ "error": "invalid", "message": "Not accepted" })))
+            .mount(&web.api)
+            .await;
+    }
+    get_json(&web, "/v1/addons/lucky/members", json!([])).await;
+    let page = web.post_form("/addons/lucky/edit", &[("name", "Lucky Two"), ("summary", "New summary"), ("description_md", "Typed **text**")]).await;
+    assert_eq!(page.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(page.body.contains(r#"value="Lucky Two""#) && page.body.contains("New summary") && page.body.contains(">Typed **text**</textarea>"), "{}", page.body);
+    let page = web.post_form("/addons/lucky/members", &[("login", "carol"), ("images", "1")]).await;
+    assert!(page.body.contains(r#"value="carol""#) && page.body.contains(r#"name="images" value="1" checked"#), "{}", page.body);
+    let page = web.post_form("/addons/lucky/dependencies", &[("dependency", "lib2")]).await;
+    assert!(page.body.contains(r#"value="lib2""#) && !page.body.contains(r#"name="required" value="1" checked"#), "{}", page.body);
+}

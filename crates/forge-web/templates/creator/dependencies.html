@@ -9,9 +9,9 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2>Add a dependency</h2>
   <label for="dependency">Addon address</label>
-  <input id="dependency" name="dependency" required placeholder="ace-lib">
+  <input id="dependency" name="dependency" required placeholder="ace-lib" value="{{ typed_dep }}">
   <p class="muted">The part after /addons/ in the other addon's link.</p>
-  <label class="check"><input type="checkbox" name="required" value="1" checked> Required (the launcher installs it too)</label>
+  <label class="check"><input type="checkbox" name="required" value="1"{% if typed_required %} checked{% endif %}> Required (the launcher installs it too)</label>
   <p><button type="submit">Add</button></p>
 </form>
 

@@ -14,7 +14,8 @@
 <form class="panel" method="post" action="/addons/{{ slug }}/comments">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label for="new-comment">Your comment</label>
-  <textarea id="new-comment" name="body" rows="4" maxlength="5000" required placeholder="Thanks, questions, ideas: bugs go to the Issues tab."></textarea>
+  <textarea id="new-comment" name="body" rows="4" maxlength="5000" required placeholder="Thanks, questions, ideas: bugs go to the Issues tab."{% if self.draft_error("new", 0) != "" %} aria-invalid="true" aria-describedby="new-comment-error"{% endif %}>{{ self.draft_body("new", 0, "") }}</textarea>
+  {% if self.draft_error("new", 0) != "" %}<p class="field-error" id="new-comment-error">{{ self.draft_error("new", 0) }}</p>{% endif %}
   <div class="actions"><button type="submit">Post comment</button></div>
 </form>
 {% else %}
@@ -35,23 +36,25 @@
   <div class="post-body">{{ c.body }}</div>
   {% if user.is_some() %}
   <div class="post-tools">
-    <details>
+    <details{% if self.draft_error("reply", c.id) != "" %} open{% endif %}>
       <summary>Reply</summary>
       <form method="post" action="/addons/{{ slug }}/comments">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="parent_id" value="{{ c.id }}">
         <label for="reply-{{ c.id }}" class="sr-only">Reply to {{ c.author }}</label>
-        <textarea id="reply-{{ c.id }}" name="body" rows="3" maxlength="5000" required></textarea>
+        <textarea id="reply-{{ c.id }}" name="body" rows="3" maxlength="5000" required{% if self.draft_error("reply", c.id) != "" %} aria-invalid="true" aria-describedby="reply-{{ c.id }}-error"{% endif %}>{{ self.draft_body("reply", c.id, "") }}</textarea>
+        {% if self.draft_error("reply", c.id) != "" %}<p class="field-error" id="reply-{{ c.id }}-error">{{ self.draft_error("reply", c.id) }}</p>{% endif %}
         <button type="submit">Post reply</button>
       </form>
     </details>
     {% if c.can_edit %}
-    <details>
+    <details{% if self.draft_error("edit", c.id) != "" %} open{% endif %}>
       <summary>Edit</summary>
       <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/edit">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label for="edit-{{ c.id }}" class="sr-only">Comment</label>
-        <textarea id="edit-{{ c.id }}" name="body" rows="4" maxlength="5000" required>{{ c.body }}</textarea>
+        <textarea id="edit-{{ c.id }}" name="body" rows="4" maxlength="5000" required{% if self.draft_error("edit", c.id) != "" %} aria-invalid="true" aria-describedby="edit-{{ c.id }}-error"{% endif %}>{{ self.draft_body("edit", c.id, c.body) }}</textarea>
+        {% if self.draft_error("edit", c.id) != "" %}<p class="field-error" id="edit-{{ c.id }}-error">{{ self.draft_error("edit", c.id) }}</p>{% endif %}
         <button type="submit">Save</button>
       </form>
     </details>
