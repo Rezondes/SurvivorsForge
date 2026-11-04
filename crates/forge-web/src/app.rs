@@ -343,7 +343,7 @@ async fn addon_api(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
 async fn docs_page(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, title: &'static str, playground: bool, md: &str) -> WebResult<Html<String>> {
     let user = visitor(state, jar).await?.map(|(v, _)| v);
     // The page has its own h1; the Markdown's title would come out as a second heading.
-    let (description_html, toc) = heading_ids(&forge_core::markdown::render(md.split_once('\n').map_or(md, |(_, rest)| rest), ""));
+    let (description_html, toc) = heading_ids(&forge_core::markdown::render_prose(md.split_once('\n').map_or(md, |(_, rest)| rest)));
     Ok(render(&DocsPage { user, csrf: csrf.0, title, playground, description_html, toc }))
 }
 

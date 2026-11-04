@@ -22,8 +22,18 @@ pub const GITHUB_ATTACHMENTS: &[&str] = &["https://github.com/user-attachments/a
 
 /// Like `render`, with images allowed from each of `image_bases`.
 pub fn render_with_images(md: &str, image_bases: &[&str]) -> String {
+    clean(md, image_bases, true)
+}
+
+/// Like `render` for the platform's own docs, written as prose: a wrapped line goes on in its
+/// paragraph, as on GitHub. No images.
+pub fn render_prose(md: &str) -> String {
+    clean(md, &[], false)
+}
+
+fn clean(md: &str, image_bases: &[&str], keep_breaks: bool) -> String {
     let events = Parser::new_ext(md, Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH).map(|e| match e {
-        Event::SoftBreak => Event::HardBreak,
+        Event::SoftBreak if keep_breaks => Event::HardBreak,
         Event::Start(Tag::Heading { level, id, classes, attrs }) => Event::Start(Tag::Heading { level: lower(level), id, classes, attrs }),
         Event::End(TagEnd::Heading(level)) => Event::End(TagEnd::Heading(lower(level))),
         e => e,
@@ -180,6 +190,16 @@ mod tests {
     use super::*;
 
     const IMG: &str = "https://forge.test/img";
+
+    #[test]
+    fn prose_joins_wrapped_lines() {
+        assert_eq!(render_prose("one
+two"), "<p>one
+two</p>
+", "a wrapped line goes on in the paragraph");
+        assert!(r("one
+two").contains("<br>"), "descriptions keep every line break");
+    }
 
     #[test]
     fn links_within_the_page_stay() {
