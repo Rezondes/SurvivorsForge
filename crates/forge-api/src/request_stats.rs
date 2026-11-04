@@ -4,6 +4,7 @@
 //! platform (`launcher_active`), for the active launchers in Grafana. Other clients of the public API
 //! are counted per hour by their User-Agent's first word and country (`public_api_stats`).
 
+use axum::body::HttpBody;
 use axum::extract::{MatchedPath, Request, State};
 use axum::http::{header, Method};
 use axum::middleware::Next;
@@ -310,7 +311,17 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let labels = [("route", route), ("method", method), ("status", status.to_string()), ("client", client.as_str().to_string())];
     metrics::counter!("forge_http_requests_total", &labels).increment(1);
     metrics::histogram!("forge_http_request_duration_seconds", &labels[..2]).record(elapsed.as_secs_f64());
+    if let Some(bytes) = response_bytes(&response).filter(|_| labels[1].1 != "HEAD") {
+        metrics::counter!("forge_http_response_bytes_total", &labels[..1]).increment(bytes);
+    }
     response
+}
+
+/// The size of the answer's body before any proxy compresses it: `Content-Length` or the size the
+/// body knows up front. Streamed bodies (pack and image files) have none and are not counted.
+fn response_bytes(response: &Response) -> Option<u64> {
+    let header = response.headers().get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()?.parse().ok());
+    header.or_else(|| response.body().size_hint().exact())
 }
 
 /// Installs the Prometheus recorder of this process; `None` if one is installed already.
@@ -396,6 +407,16 @@ mod tests {
         let first = pending.iter().find(|(k, _)| k.hour == hour).map(|(_, b)| *b);
         assert_eq!(first, Some(Bucket { count: 2, total_ms: 40, max_ms: 30 }));
         assert_eq!(pending.len(), 2);
+    }
+
+    #[test]
+    fn measures_known_response_sizes() {
+        assert_eq!(response_bytes(&Response::new(axum::body::Body::from("hello"))), Some(5));
+        assert_eq!(response_bytes(&Response::new(axum::body::Body::empty())), Some(0));
+        let mut sized = Response::new(axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(tokio::io::empty())));
+        assert_eq!(response_bytes(&sized), None, "a stream has no size up front");
+        sized.headers_mut().insert(header::CONTENT_LENGTH, "42".parse().unwrap());
+        assert_eq!(response_bytes(&sized), Some(42));
     }
 
     #[test]

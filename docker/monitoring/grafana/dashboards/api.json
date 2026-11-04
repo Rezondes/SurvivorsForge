@@ -327,6 +327,74 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 10,
+      "title": "Bytes sent per route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (route) (rate(forge_http_response_bytes_total[5m])))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Answer bodies before compression, top ten routes. Streamed files (packs, images) are not counted."
+    },
+    {
+      "id": 11,
+      "title": "Registry answered with 304",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 43,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(forge_http_requests_total{route=\"/v1/registry\",status=\"304\"}[15m])) / sum(rate(forge_http_requests_total{route=\"/v1/registry\"}[15m]))",
+          "legendFormat": "304 share",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Share of /v1/registry requests that sent If-None-Match and got 304 Not Modified instead of the full index."
     }
   ]
 }
