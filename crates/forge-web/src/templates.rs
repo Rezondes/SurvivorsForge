@@ -1102,6 +1102,8 @@ pub struct ApiPlaygroundPage {
     pub error: String,
     /// The API's answer, pretty-printed.
     pub result: String,
+    /// Its HTTP status; 503 when the API could not be reached.
+    pub status: u16,
 }
 
 #[derive(Template)]

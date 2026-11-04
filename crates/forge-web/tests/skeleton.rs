@@ -260,6 +260,9 @@ async fn playground_shows_the_answer_and_reaches_only_public_endpoints() {
     let page = web.get("/docs/api-docs/playground?endpoint=versions&slug=aetherhud").await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("GET /v1/addons/aetherhud/versions"), "{}", page.body);
+    assert!(page.body.contains(r#"<span class="badge ok">200</span>"#), "the status shows: {}", page.body);
+    let missing = web.get("/docs/api-docs/playground?endpoint=addon&slug=nothing").await;
+    assert!(missing.body.contains(r#"<span class="badge bad">404</span>"#), "an error answer looks like one: {}", missing.body);
     assert!(page.body.contains("&#34;tag&#34;: &#34;v2.3.0&#34;") || page.body.contains("&quot;tag&quot;: &quot;v2.3.0&quot;"), "{}", page.body);
 
     let page = web.get("/docs/api-docs/playground?endpoint=addon&slug=..%2Fme").await;

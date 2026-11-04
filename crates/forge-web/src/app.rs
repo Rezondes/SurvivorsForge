@@ -1,6 +1,6 @@
 //! The router of the website.
 
-use crate::api_client::ApiClient;
+use crate::api_client::{ApiClient, ApiError};
 use crate::config::Config;
 use crate::csrf::{self, CsrfToken};
 use crate::error::{WebError, WebResult, error_page};
@@ -423,11 +423,25 @@ async fn api_playground(
     Query(q): Query<PlaygroundQuery>,
 ) -> WebResult<Html<String>> {
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
-    let (mut path, mut error, mut result) = (String::new(), String::new(), String::new());
+    let (mut path, mut error, mut result, mut status) = (String::new(), String::new(), String::new(), 0u16);
     if !q.endpoint.is_empty() {
         match playground_path(&q) {
             Ok(p) => {
-                let answer = state.api.get(&p, None).await.unwrap_or_else(|e| json!({ "error": e.code(), "message": e.message() }));
+                // The HTTP status goes along: an error answer must not look like a success.
+                let answer = match state.api.get(&p, None).await {
+                    Ok(v) => {
+                        status = 200;
+                        v
+                    }
+                    Err(e) => {
+                        status = match &e {
+                            ApiError::Api { status, .. } => *status,
+                            ApiError::Unauthorized => 401,
+                            ApiError::Down(_) => 503,
+                        };
+                        json!({ "error": e.code(), "message": e.message() })
+                    }
+                };
                 result = serde_json::to_string_pretty(&answer).unwrap_or_default();
                 path = p;
             }
@@ -436,7 +450,7 @@ async fn api_playground(
     }
     let endpoint = if q.endpoint.is_empty() { "registry".into() } else { q.endpoint };
     let api_url = format!("{}{path}", state.config.public_api_url);
-    Ok(render(&ApiPlaygroundPage { user, csrf: csrf.0, endpoint, slug: q.slug, tag: q.tag, path, api_url, error, result }))
+    Ok(render(&ApiPlaygroundPage { user, csrf: csrf.0, endpoint, slug: q.slug, tag: q.tag, path, api_url, error, result, status }))
 }
 
 #[derive(Deserialize)]

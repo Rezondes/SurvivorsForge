@@ -20,15 +20,18 @@
       <label for="tag">Version tag</label>
       <input id="tag" name="tag" value="{{ tag }}" placeholder="v2.3.0" autocomplete="off" spellcheck="false">
     </div>
-    <button type="submit">Send</button>
+    <button type="submit">Send request</button>
   </form>
   {% if error != "" %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
 </section>
 {% if path != "" %}
 <section class="panel">
-  <h2><code>GET {{ path }}</code></h2>
+  <h2><code>GET {{ path }}</code> <span class="badge {% if status >= 400 %}bad{% else %}ok{% endif %}">{{ status }}</span></h2>
+  {% if status == 503 %}<div class="notice bad">The API is not reachable right now. Try again in a minute.</div>{% endif %}
   <p><a href="{{ api_url }}">Open in the API</a></p>
   <pre>{{ result }}</pre>
 </section>
+{% else %}
+<p class="muted">Pick an endpoint and send a request to see the JSON here.</p>
 {% endif %}
 {% endblock %}
