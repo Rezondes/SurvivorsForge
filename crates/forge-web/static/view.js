@@ -638,3 +638,36 @@
     window.htmx.ajax("GET", box.getAttribute("hx-get"), { target: box, select: "#lazy-content", swap: "outerHTML" });
   });
 })();
+
+// A form that posts and loads a new page: one send only. A second click while the first is on
+// its way is ignored and the button says it is sending. The button itself stays enabled, so its
+// name and value (Close: acted on it) still go along.
+(function () {
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (event.defaultPrevented || form.method !== "post" || form.hasAttribute("hx-post") || form.hasAttribute("data-move")) return;
+    if (form.hasAttribute("data-sending")) {
+      event.preventDefault();
+      return;
+    }
+    form.setAttribute("data-sending", "");
+    var button = event.submitter;
+    if (button && button.tagName === "BUTTON") {
+      button.setAttribute("data-label", button.textContent);
+      button.setAttribute("aria-disabled", "true");
+      button.textContent = button.getAttribute("data-pending") || "Sending...";
+    }
+  });
+  // Back to a page from the browser's cache: its forms send again.
+  window.addEventListener("pageshow", function (event) {
+    if (!event.persisted) return;
+    document.querySelectorAll("form[data-sending]").forEach(function (form) {
+      form.removeAttribute("data-sending");
+      form.querySelectorAll("button[data-label]").forEach(function (button) {
+        button.textContent = button.getAttribute("data-label");
+        button.removeAttribute("data-label");
+        button.removeAttribute("aria-disabled");
+      });
+    });
+  });
+})();

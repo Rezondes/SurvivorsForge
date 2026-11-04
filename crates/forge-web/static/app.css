@@ -132,6 +132,7 @@ button.danger, .button.danger { border-color: var(--outline); background: var(--
 button.danger:hover, .button.danger:hover { border-color: var(--bad); }
 button.link { min-height: 0; padding: 0; border: none; background: none; color: var(--muted); font-size: var(--meta); }
 button.link:hover { color: var(--gold); background: none; }
+button[aria-disabled="true"] { cursor: progress; opacity: 0.7; }
 button:disabled, button:disabled:hover {
   border-color: var(--line); background: var(--control); color: var(--disabled); cursor: default;
 }

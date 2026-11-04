@@ -319,7 +319,7 @@ async fn phones_open_the_filters_in_a_sheet() {
     let css = web.get("/static/app.css").await.body;
     assert!(css.contains(".filter-sheet.open") && css.contains("height: 80dvh"), "the sheet takes 80 % and slides in");
     let script = web.get("/static/view.js").await.body;
-    for text in ["data-sheet-close", "data-sheet-drag", "Escape"] {
+    for text in ["data-sheet-close", "data-sheet-drag", "Escape", "data-sending"] {
         assert!(script.contains(text), "view.js misses {text}");
     }
 }
