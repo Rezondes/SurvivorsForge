@@ -2189,8 +2189,29 @@ fn main() -> Result<(), slint::PlatformError> {
         if ui.get_page() == 2 {
             on_settings_save(&ui, shared);
         }
-        let _ = slint::quit_event_loop();
+        let warning = {
+            let core = lock(shared);
+            controller::quit_warning(core.game_updating, ui.get_self_update_busy(), core.busy.len())
+        };
+        match warning {
+            Some(text) => ask(&ui, "Quit SurvivorsForge?", &text, "Quit anyway", true, || {
+                let _ = slint::quit_event_loop();
+            }),
+            None => {
+                let _ = slint::quit_event_loop();
+            }
+        }
     });
+    // Alt+F4 and the system's close go the same way, so they also save and ask.
+    {
+        let weak = ui.as_weak();
+        ui.window().on_close_requested(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_close_window();
+            }
+            slint::CloseRequestResponse::KeepWindowShown
+        });
+    }
 
     refresh(&ui, &shared);
     if !needs_setup {

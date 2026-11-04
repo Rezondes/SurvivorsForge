@@ -56,6 +56,20 @@ pub struct Row {
 pub const UNMANAGED_PREFIX: &str = "folder:";
 
 /// `toc:1.0` -> `1.0`, `zip:file.zip` -> `file.zip`, a 40-char SHA -> its first 7 characters.
+/// Why quitting now would break something, or `None` when nothing is running. A game update
+/// stopped between files leaves the game half updated.
+pub fn quit_warning(game_updating: bool, self_updating: bool, addons_busy: usize) -> Option<String> {
+    if game_updating {
+        Some("The game update is still running. Quitting now stops it halfway and the game may not start.".into())
+    } else if self_updating {
+        Some("SurvivorsForge is updating itself. Quitting now stops the update.".into())
+    } else if addons_busy > 0 {
+        Some(format!("{addons_busy} addon install{} still running. Quitting now stops {}.", if addons_busy == 1 { " is" } else { "s are" }, if addons_busy == 1 { "it" } else { "them" }))
+    } else {
+        None
+    }
+}
+
 pub fn display_version(version: &str) -> String {
     if let Some(v) = version.strip_prefix(TOC_PREFIX) {
         return if v.is_empty() { "unknown".into() } else { v.into() };
@@ -1095,6 +1109,15 @@ mod tests {
         ]);
         assert_eq!(update_all_ids(&statuses, &[]), ["a", "b"]);
         assert_eq!(update_all_ids(&statuses, &["a".to_string()]), ["b"], "a version kept on purpose stays");
+    }
+
+    #[test]
+    fn quitting_asks_only_while_work_runs() {
+        assert_eq!(quit_warning(false, false, 0), None);
+        assert!(quit_warning(true, false, 2).unwrap().starts_with("The game update"), "the game update matters most");
+        assert!(quit_warning(false, true, 0).unwrap().contains("updating itself"));
+        assert_eq!(quit_warning(false, false, 1).unwrap(), "1 addon install is still running. Quitting now stops it.");
+        assert!(quit_warning(false, false, 3).unwrap().starts_with("3 addon installs are"));
     }
 
     #[test]
