@@ -502,6 +502,8 @@ export component Field inherits Rectangle {
     in property <bool> enabled: true;
     callback accepted();
     callback edited(string);
+    // The cursor left the field, by Tab or a click elsewhere.
+    callback focus-lost();
 
     public function focus-input() {
         input.focus();
@@ -545,6 +547,11 @@ export component Field inherits Rectangle {
         vertical-alignment: center;
         accepted => { root.accepted(); }
         edited => { root.edited(self.text); }
+        changed has-focus => {
+            if !self.has-focus {
+                root.focus-lost();
+            }
+        }
     }
 }
 

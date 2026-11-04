@@ -173,6 +173,8 @@ component SettingsView inherits VerticalLayout {
     // Install checked updates of every addon on their own.
     in-out property <bool> auto-update;
     callback browse();
+    // Tick boxes and the dropdown save at once, text fields on Enter, when they lose focus and
+    // when the page is left: not on every key.
     callback save();
 
     spacing: 16px;
@@ -183,6 +185,7 @@ component SettingsView inherits VerticalLayout {
         Field {
             text <=> root.path;
             accepted => { root.save(); }
+            focus-lost => { root.save(); }
         }
         if root.file-dialog : ActionButton {
             text: "Browse...";
@@ -200,6 +203,7 @@ component SettingsView inherits VerticalLayout {
         Dropdown {
             model: root.game-versions;
             current-index <=> root.game-index;
+            selected => { root.save(); }
         }
     }
     SettingRow {
@@ -208,6 +212,7 @@ component SettingsView inherits VerticalLayout {
             text <=> root.api-url;
             placeholder: root.api-default;
             accepted => { root.save(); }
+            focus-lost => { root.save(); }
         }
     }
     SettingRow {
@@ -216,6 +221,7 @@ component SettingsView inherits VerticalLayout {
             text <=> root.web-url;
             placeholder: root.web-default;
             accepted => { root.save(); }
+            focus-lost => { root.save(); }
         }
     }
     SettingRow {
@@ -227,7 +233,10 @@ component SettingsView inherits VerticalLayout {
                 PickBox {
                     label: "Count my installs in the public statistics";
                     checked: root.telemetry;
-                    toggled => { root.telemetry = !root.telemetry; }
+                    toggled => {
+                        root.telemetry = !root.telemetry;
+                        root.save();
+                    }
                 }
                 Text {
                     text: "Count my installs in the public statistics";
@@ -243,7 +252,10 @@ component SettingsView inherits VerticalLayout {
                     label: "Send an anonymous installation ID";
                     enabled: root.telemetry;
                     checked: root.send-install-id;
-                    toggled => { root.send-install-id = !root.send-install-id; }
+                    toggled => {
+                        root.send-install-id = !root.send-install-id;
+                        root.save();
+                    }
                 }
                 Text {
                     text: "Send an anonymous installation ID";
@@ -263,7 +275,10 @@ component SettingsView inherits VerticalLayout {
                 PickBox {
                     label: "Update all addons automatically";
                     checked: root.auto-update;
-                    toggled => { root.auto-update = !root.auto-update; }
+                    toggled => {
+                        root.auto-update = !root.auto-update;
+                        root.save();
+                    }
                 }
                 Text {
                     text: "Update all addons automatically";
@@ -292,26 +307,15 @@ component SettingsView inherits VerticalLayout {
     // Not a HorizontalLayout: Slint measures wrapping text there as one line, so a long error would
     // run out of its row. With a fixed width the row grows with the text.
     Rectangle {
-        height: max(save.preferred-height, message.preferred-height);
+        height: message.preferred-height;
         message := Text {
-            x: 0;
-            y: (parent.height - self.height) / 2;
-            width: parent.width - save.width - 16px;
+            x: 180px + Theme.gap-loose;
+            width: parent.width - self.x;
             height: self.preferred-height;
             text: (root.message-error ? "Error: " : "") + root.message;
             font-size: Theme.body;
             color: root.message-error ? Theme.danger : Theme.ok;
-            horizontal-alignment: right;
             wrap: word-wrap;
-        }
-        save := ActionButton {
-            x: parent.width - self.width;
-            y: (parent.height - self.height) / 2;
-            width: self.preferred-width;
-            height: self.preferred-height;
-            text: "Save";
-            primary: true;
-            clicked => { root.save(); }
         }
     }
 }
@@ -444,6 +448,14 @@ export component AppWindow inherits Window {
     callback settings-browse();
     callback settings-save();
 
+    // Leaving Settings saves a field typed into without Enter.
+    function open-page(page: int) {
+        if root.page == 2 && page != 2 {
+            root.settings-save();
+        }
+        root.page = page;
+    }
+
     // Confirmation dialog
     in property <bool> confirm-open;
     in property <string> confirm-title;
@@ -572,17 +584,17 @@ export component AppWindow inherits Window {
             TabButton {
                 text: "Installed (" + root.installed-total + ")";
                 active: root.page == 0;
-                clicked => { root.page = 0; }
+                clicked => { root.open-page(0); }
             }
             TabButton {
                 text: "Browse";
                 active: root.page == 1;
-                clicked => { root.page = 1; }
+                clicked => { root.open-page(1); }
             }
             TabButton {
                 text: "Settings";
                 active: root.page == 2;
-                clicked => { root.page = 2; }
+                clicked => { root.open-page(2); }
             }
             // Game Mode has no title bar, so give it its own way out.
             if root.game-mode : TabButton {

@@ -1548,6 +1548,15 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         let send_install_id = ui.get_settings_send_install_id();
         let auto_update_all = ui.get_settings_auto_update();
         let config = Config { addons_dir: path, game_version, api_url, web_url, telemetry, send_install_id, auto_update_all, ..core.config.clone() };
+        // Saving runs on every focus change: nothing changed, nothing to write. An error from a
+        // value typed back to the saved one is over.
+        if config == core.config {
+            if ui.get_settings_message_error() {
+                ui.set_settings_message(warning.map(|w| w.to_string()).unwrap_or_default().into());
+                ui.set_settings_message_error(false);
+            }
+            return;
+        }
         // Another platform: its list, versions and categories replace the old ones.
         let recheck = config.addons_dir != core.config.addons_dir || platform_changed;
         let saved = config.save(&core.data_dir);
@@ -1943,9 +1952,10 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         refresh(&ui, shared);
     });
-    on!(on_settings_browse, |ui, _shared| {
+    on!(on_settings_browse, |ui, shared| {
         if let Some(p) = pick_folder(&ui.get_settings_path()) {
             ui.set_settings_path(p.into());
+            on_settings_save(&ui, shared);
         }
     });
     on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
@@ -2003,7 +2013,11 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.window().set_maximized(!ui.window().is_maximized());
     });
     // Quitting the loop instead of hiding: a hidden fullscreen window kept the app running.
-    on!(on_close_window, |_ui, _shared| {
+    on!(on_close_window, |ui, shared| {
+        // A field typed into without Enter still counts, as when the page is left.
+        if ui.get_page() == 2 {
+            on_settings_save(&ui, shared);
+        }
         let _ = slint::quit_event_loop();
     });
 
@@ -2278,6 +2292,50 @@ mod layout_tests {
             assert!(body.size().height > 40.0, "the long comment wraps onto several lines: {}", body.size().height);
             assert!(next.absolute_position().y > bottom, "the reply starts {} px into the comment above", bottom - next.absolute_position().y);
             assert!(next.absolute_position().x > body.absolute_position().x, "the reply is indented");
+        }
+    }
+
+    mod settings {
+        use i_slint_backend_testing::{AccessibleRole, ElementHandle, ElementRoot};
+        use slint::platform::{Key, PointerEventButton, WindowEvent};
+        use slint::ComponentHandle;
+        use std::{cell::Cell, rc::Rc};
+
+        fn press(ui: &crate::AppWindow, text: &str) {
+            ui.window().dispatch_event(WindowEvent::KeyPressed { text: text.into() });
+            ui.window().dispatch_event(WindowEvent::KeyReleased { text: text.into() });
+        }
+
+        #[test]
+        fn settings_save_on_their_own_but_not_on_every_key() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let saves = Rc::new(Cell::new(0));
+            let counter = saves.clone();
+            ui.on_settings_save(move || counter.set(counter.get() + 1));
+            ui.set_page(2);
+            ui.show().unwrap();
+            let Some(tick) = ElementHandle::find_by_accessible_label(&ui, "Count my installs in the public statistics").next() else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            assert!(ElementHandle::find_by_accessible_label(&ui, "Save").next().is_none(), "no Save button");
+
+            tick.mock_single_click(PointerEventButton::Left);
+            assert_eq!(saves.get(), 1, "a tick box saves at once");
+
+            let field = ui.root_element().query_descendants().match_accessible_role(AccessibleRole::TextInput).find_first().unwrap();
+            field.mock_single_click(PointerEventButton::Left);
+            press(&ui, "x");
+            press(&ui, "y");
+            assert_eq!(saves.get(), 1, "typing alone does not save");
+            press(&ui, &slint::SharedString::from(Key::Return));
+            assert_eq!(saves.get(), 2, "Enter saves the field");
+
+            press(&ui, "z");
+            let installed = ElementHandle::find_by_accessible_label(&ui, "Installed (0)").next().unwrap();
+            installed.mock_single_click(PointerEventButton::Left);
+            assert_eq!(saves.get(), 3, "leaving the page saves what was typed");
         }
     }
 }
