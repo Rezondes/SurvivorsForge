@@ -5,11 +5,11 @@
 <section class="panel">
   <h1>Delete {{ slug }}?</h1>
   <div class="notice bad" role="alert">The addon disappears from the site and the launcher. Its folders and address become free for others. Your GitHub repo stays untouched.</div>
-  {% if let Some(e) = error %}<p class="field-error">{{ e }}</p>{% endif %}
+  {% if let Some(e) = error %}<p class="field-error" id="confirm-error">{{ e }}</p>{% endif %}
   <form method="post" action="/addons/{{ slug }}/delete">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label for="confirm">Type <code>{{ slug }}</code> to confirm</label>
-    <input id="confirm" name="confirm" autocomplete="off" required>
+    <input id="confirm" name="confirm" autocomplete="off" required{% if error.is_some() %} aria-invalid="true" aria-describedby="confirm-error"{% endif %}>
     <p class="actions"><a class="button secondary" href="/addons/{{ slug }}/edit">Keep it</a> <button type="submit" class="danger">Delete for good</button></p>
   </form>
 </section>

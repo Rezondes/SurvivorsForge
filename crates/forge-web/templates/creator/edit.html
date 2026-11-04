@@ -12,8 +12,8 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2>Details</h2>
   <label for="name">Name</label>
-  <input id="name" name="name" value="{{ name }}" maxlength="64" required>
-  {% if errors.get("name") != "" %}<p class="field-error">{{ errors.get("name") }}</p>{% endif %}
+  <input id="name"{% if errors.get("name") != "" %} aria-invalid="true" aria-describedby="name-error"{% endif %} name="name" value="{{ name }}" maxlength="64" required>
+  {% if errors.get("name") != "" %}<p class="field-error" id="name-error">{{ errors.get("name") }}</p>{% endif %}
   <label for="category">Category</label>
   <select id="category" name="category">
     {% for c in categories %}<option value="{{ c.name }}" {% if c.name.eq_ignore_ascii_case(category) %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
@@ -24,11 +24,11 @@
     <option value="tag" {% if source_type == "tag" %}selected{% endif %}>The source zip of each tag</option>
   </select>
   <label for="asset_pattern">Release zip name</label>
-  <input id="asset_pattern" name="asset_pattern" value="{{ asset_pattern }}">
-  {% if errors.get("asset_pattern") != "" %}<p class="field-error">{{ errors.get("asset_pattern") }}</p>{% endif %}
+  <input id="asset_pattern"{% if errors.get("asset_pattern") != "" %} aria-invalid="true" aria-describedby="asset_pattern-error"{% endif %} name="asset_pattern" value="{{ asset_pattern }}">
+  {% if errors.get("asset_pattern") != "" %}<p class="field-error" id="asset_pattern-error">{{ errors.get("asset_pattern") }}</p>{% endif %}
   <label for="folders">Addon folders</label>
-  <textarea id="folders" name="folders" rows="3">{{ folders }}</textarea>
-  {% if errors.get("folders") != "" %}<p class="field-error">{{ errors.get("folders") }}</p>{% endif %}
+  <textarea id="folders"{% if errors.get("folders") != "" %} aria-invalid="true" aria-describedby="folders-error"{% endif %} name="folders" rows="3">{{ folders }}</textarea>
+  {% if errors.get("folders") != "" %}<p class="field-error" id="folders-error">{{ errors.get("folders") }}</p>{% endif %}
   <p><button type="submit">Save details</button></p>
 </form>
 
@@ -49,12 +49,12 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2>Description</h2>
   <label for="summary">Short description</label>
-  <input id="summary" name="summary" value="{{ summary }}" maxlength="200">
-  {% if errors.get("summary") != "" %}<p class="field-error">{{ errors.get("summary") }}</p>{% endif %}
+  <input id="summary"{% if errors.get("summary") != "" %} aria-invalid="true" aria-describedby="summary-error"{% endif %} name="summary" value="{{ summary }}" maxlength="200">
+  {% if errors.get("summary") != "" %}<p class="field-error" id="summary-error">{{ errors.get("summary") }}</p>{% endif %}
   <label for="description_md">Description (Markdown)</label>
-  <textarea id="description_md" name="description_md" rows="14"
+  <textarea id="description_md"{% if errors.get("description") != "" %} aria-invalid="true" aria-describedby="description-error"{% endif %} name="description_md" rows="14"
             hx-post="/addons/{{ slug }}/preview" hx-trigger="input changed delay:500ms" hx-target="#preview">{{ description }}</textarea>
-  {% if errors.get("description") != "" %}<p class="field-error">{{ errors.get("description") }}</p>{% endif %}
+  {% if errors.get("description") != "" %}<p class="field-error" id="description-error">{{ errors.get("description") }}</p>{% endif %}
   <p class="muted"><code># Heading</code> (with a space), <code>**bold**</code>, <code>*italic*</code>, <code>- list</code>, <code>[link](https://...)</code>. Every line break is kept.</p>
   <p class="muted">Images in the description must be uploaded under Images first.</p>
   <h3>Preview</h3>

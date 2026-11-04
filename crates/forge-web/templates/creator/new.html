@@ -16,28 +16,28 @@
   <h2>1. Your repo</h2>
   {% include "creator/repo_field.html" %}
   <p class="muted">Type the repo name and pick it from the list to fill in the form from its newest release.</p>
-  {% if errors.get("repo") != "" %}<p class="field-error">{{ errors.get("repo") }}</p>{% endif %}
+  {% if errors.get("repo") != "" %}<p class="field-error" id="repo-error">{{ errors.get("repo") }}</p>{% endif %}
 
   <h2>2. About the addon</h2>
   <label for="name">Name</label>
-  <input id="name" name="name" value="{{ form.name }}" maxlength="64" required>
-  {% if errors.get("name") != "" %}<p class="field-error">{{ errors.get("name") }}</p>{% endif %}
+  <input id="name"{% if errors.get("name") != "" %} aria-invalid="true" aria-describedby="name-error"{% endif %} name="name" value="{{ form.name }}" maxlength="64" required>
+  {% if errors.get("name") != "" %}<p class="field-error" id="name-error">{{ errors.get("name") }}</p>{% endif %}
 
   <label for="slug">Address on this site</label>
-  <input id="slug" name="slug" value="{{ form.slug }}" placeholder="lucky-odds" pattern="[a-z0-9][a-z0-9-]{1,48}" required>
+  <input id="slug"{% if errors.get("slug") != "" %} aria-invalid="true" aria-describedby="slug-error"{% endif %} name="slug" value="{{ form.slug }}" placeholder="lucky-odds" pattern="[a-z0-9][a-z0-9-]{1,48}" required>
   <p class="muted">Lowercase letters, digits and dashes. It cannot be changed later.</p>
-  {% if errors.get("slug") != "" %}<p class="field-error">{{ errors.get("slug") }}</p>{% endif %}
+  {% if errors.get("slug") != "" %}<p class="field-error" id="slug-error">{{ errors.get("slug") }}</p>{% endif %}
 
   <label for="summary">Short description</label>
-  <input id="summary" name="summary" value="{{ form.summary }}" maxlength="200">
+  <input id="summary"{% if errors.get("summary") != "" %} aria-invalid="true" aria-describedby="summary-error"{% endif %} name="summary" value="{{ form.summary }}" maxlength="200">
   <p class="muted">One sentence, shown in lists and search results.</p>
-  {% if errors.get("summary") != "" %}<p class="field-error">{{ errors.get("summary") }}</p>{% endif %}
+  {% if errors.get("summary") != "" %}<p class="field-error" id="summary-error">{{ errors.get("summary") }}</p>{% endif %}
 
   <label for="category">Category</label>
-  <select id="category" name="category">
+  <select id="category"{% if errors.get("category") != "" %} aria-invalid="true" aria-describedby="category-error"{% endif %} name="category">
     {% for c in categories %}<option value="{{ c.name }}" {% if c.name.eq_ignore_ascii_case(form.category) %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
   </select>
-  {% if errors.get("category") != "" %}<p class="field-error">{{ errors.get("category") }}</p>{% endif %}
+  {% if errors.get("category") != "" %}<p class="field-error" id="category-error">{{ errors.get("category") }}</p>{% endif %}
 
   <label for="source_type">Downloads come from</label>
   <select id="source_type" name="source_type">
@@ -46,20 +46,20 @@
   </select>
 
   <label for="asset_pattern">Release zip name</label>
-  <input id="asset_pattern" name="asset_pattern" value="{{ form.asset_pattern }}" placeholder="LuckyOdds-v*.zip">
+  <input id="asset_pattern"{% if errors.get("asset_pattern") != "" %} aria-invalid="true" aria-describedby="asset_pattern-error"{% endif %} name="asset_pattern" value="{{ form.asset_pattern }}" placeholder="LuckyOdds-v*.zip">
   <p class="muted">For releases only. <code>*</code> stands for the version.</p>
-  {% if errors.get("asset_pattern") != "" %}<p class="field-error">{{ errors.get("asset_pattern") }}</p>{% endif %}
+  {% if errors.get("asset_pattern") != "" %}<p class="field-error" id="asset_pattern-error">{{ errors.get("asset_pattern") }}</p>{% endif %}
 
   <label for="folders">Addon folders in the zip</label>
-  <textarea id="folders" name="folders" rows="3" placeholder="LuckyOdds" required>{{ form.folders }}</textarea>
+  <textarea id="folders"{% if errors.get("folders") != "" %} aria-invalid="true" aria-describedby="folders-error"{% endif %} name="folders" rows="3" placeholder="LuckyOdds" required>{{ form.folders }}</textarea>
   <p class="muted">One per line. Each folder belongs to one addon on the whole platform.</p>
-  {% if errors.get("folders") != "" %}<p class="field-error">{{ errors.get("folders") }}</p>{% endif %}
+  {% if errors.get("folders") != "" %}<p class="field-error" id="folders-error">{{ errors.get("folders") }}</p>{% endif %}
 
   <h2>3. Description</h2>
   <label for="description_md">Description (Markdown)</label>
-  <textarea id="description_md" name="description_md" rows="12" placeholder="## Features&#10;&#10;- ..."
+  <textarea id="description_md"{% if errors.get("description") != "" %} aria-invalid="true" aria-describedby="description-error"{% endif %} name="description_md" rows="12" placeholder="## Features&#10;&#10;- ..."
             hx-post="/addons/new/preview" hx-trigger="input changed delay:500ms" hx-target="#preview">{{ form.description_md }}</textarea>
-  {% if errors.get("description") != "" %}<p class="field-error">{{ errors.get("description") }}</p>{% endif %}
+  {% if errors.get("description") != "" %}<p class="field-error" id="description-error">{{ errors.get("description") }}</p>{% endif %}
   <p class="muted"><code># Heading</code> (with a space), <code>**bold**</code>, <code>*italic*</code>, <code>- list</code>, <code>[link](https://...)</code>. Every line break is kept.</p>
   <h3>Preview</h3>
   <div id="preview" class="description preview"></div>

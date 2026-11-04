@@ -46,6 +46,7 @@ async fn wizard_happy_path_and_field_errors() {
     let page = web.post_multipart("/addons/new", &fields, &[]).await;
     assert_eq!(page.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(page.body.contains("The folder Lucky belongs to the addon Other"));
+    assert!(page.body.contains(r#"aria-invalid="true" aria-describedby="folders-error""#) && page.body.contains(r#"<p class="field-error" id="folders-error">"#), "the error is tied to its field: {}", page.body);
     assert!(page.body.contains("value=\"taken\""), "input kept behind the fixed account");
 
     Mock::given(method("POST"))
