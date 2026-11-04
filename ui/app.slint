@@ -467,6 +467,9 @@ export component AppWindow inherits Window {
     // The detail view of one addon, shown on the page it was opened from (-1: none).
     in-out property <int> detail-page: -1;
     in property <AddonDetail> detail;
+    // Where Installed and Browse are scrolled to, kept while the detail view covers them.
+    property <length> installed-scroll;
+    property <length> browse-scroll;
     // Each list shows tiles or rows, as its page last chose (kept in the config).
     in-out property <bool> installed-tiles;
     in-out property <bool> browse-tiles;
@@ -939,6 +942,8 @@ export component AppWindow inherits Window {
 
                     if root.page == 0 && !root.showing-detail : ScrollPanel {
                         vertical-stretch: 1;
+                        // Back from the details lands where the list was left.
+                        scroll-y <=> root.installed-scroll;
                         if root.installed-tiles : AddonTiles {
                             rows: root.installed-rows;
                             action(id) => { root.row-action(id); }
@@ -1010,6 +1015,7 @@ export component AppWindow inherits Window {
 
                     if root.page == 1 && !root.showing-detail : ScrollPanel {
                         vertical-stretch: 1;
+                        scroll-y <=> root.browse-scroll;
                         if root.browse-tiles : AddonTiles {
                             rows: root.browse-rows;
                             action(id) => { root.row-action(id); }

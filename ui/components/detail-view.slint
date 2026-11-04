@@ -351,6 +351,10 @@ export component DetailView inherits VerticalLayout {
     if root.tab == 0 : ScrollPanel {
         vertical-stretch: 1;
         spacing: 18px;
+        if root.detail.safety != "" : Fact {
+            label: "Safety check";
+            text: root.detail.safety;
+        }
         VerticalLayout {
             spacing: 10px;
             Text {
@@ -361,6 +365,12 @@ export component DetailView inherits VerticalLayout {
             for block in root.detail.about : AboutBlockView {
                 block: block;
                 enlarge(image, caption) => { root.enlarge(image, caption); }
+            }
+            if root.detail.about-failed : Text {
+                text: "The full description could not be loaded; this is the short summary. It loads on the next start.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
             }
             // The rest of the description is on its way: three lines of placeholder.
             if root.detail.about-loading : VerticalLayout {
@@ -377,10 +387,6 @@ export component DetailView inherits VerticalLayout {
                     Rectangle { horizontal-stretch: 4; }
                 }
             }
-        }
-        if root.detail.safety != "" : Fact {
-            label: "Safety check";
-            text: root.detail.safety;
         }
         if root.detail.game != "" : Fact {
             label: "Game version";

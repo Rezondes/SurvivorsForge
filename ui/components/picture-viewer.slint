@@ -52,6 +52,16 @@ export component PictureViewer inherits Rectangle {
             source: root.shot.image;
             image-fit: fill;
         }
+        // Not here yet, or failed: say so instead of a black stage.
+        if root.shot.image.width == 0 : Text {
+            width: parent.width;
+            height: parent.height;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            text: root.shot.failed ? "This screenshot could not be loaded." : "Loading the screenshot...";
+            font-size: Theme.body;
+            color: Theme.text-muted;
+        }
         TouchArea {
             mouse-cursor: root.scale > 1 ? (self.pressed ? MouseCursor.grabbing : MouseCursor.grab) : MouseCursor.default;
             pointer-event(event) => {

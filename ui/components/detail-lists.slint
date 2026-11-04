@@ -71,7 +71,6 @@ export component IssuesView inherits VerticalLayout {
         }
         ActionButton {
             text: "Report a bug";
-            primary: true;
             enabled: root.links-enabled;
             clicked => { root.report(); }
         }

@@ -56,6 +56,8 @@ export struct AddonDetail {
     shots: [Shot],
     // Nothing stored yet and the platform is being asked: placeholders pulse below the summary.
     about-loading: bool,
+    // The platform did not answer and nothing was stored: only the summary shows.
+    about-failed: bool,
     // The addon has a page on the platform website.
     on-website: bool,
     // An installed platform addon: it may update on its own.

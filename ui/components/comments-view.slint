@@ -52,9 +52,8 @@ export component CommentsView inherits VerticalLayout {
         }
         VerticalLayout {
             alignment: center;
-            ActionButton {
+            if !root.off : ActionButton {
                 text: "Write a comment";
-                primary: true;
                 enabled: root.links-enabled;
                 clicked => { root.write(); }
             }

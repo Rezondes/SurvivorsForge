@@ -451,6 +451,7 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
     // What was stored shows at once; only without it does the page wait for the platform.
     let loaded = entry.and_then(|a| core.platform.info.get(&a.id)).cloned();
     let about_loading = loaded.is_none() && entry.is_some_and(|a| core.fetching.contains(&a.id));
+    let about_failed = loaded.is_none() && entry.is_some_and(|a| !core.fetching.contains(&a.id));
     let loaded = loaded.unwrap_or_default();
     let base = loaded.image_origin().unwrap_or_default();
     let mut about: Vec<AboutBlock> = forge_core::markdown::blocks(&loaded.about, &base).into_iter().map(|b| about_block(core, b)).collect();
@@ -468,6 +469,7 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         about: ModelRc::new(VecModel::from(about)),
         shots: ModelRc::new(VecModel::from(shots)),
         about_loading,
+        about_failed,
         on_website: entry.is_some(),
         bug_label: entry.map(|a| controller::bug_report("", &a.id, &a.repo, loaded.issues_on, core.platform.issues_ready.get(&a.id).copied()).0).unwrap_or_default().into(),
         issues_ready: loaded.issues_on && entry.is_some_and(|a| core.platform.issues_ready.get(&a.id) == Some(&true)),
@@ -2609,6 +2611,18 @@ mod card_tests {
         core.settings_saved("Settings saved.".into(), Kind::Success);
         core.settings_saved("Settings saved.".into(), Kind::Success);
         assert_eq!(core.toasts.items().len(), 1, "one tick after another: one toast");
+    }
+
+    #[test]
+    fn a_description_that_did_not_load_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::new(dir.path().to_path_buf(), None);
+        let id = core.registry.addons[0].id.clone();
+        core.detail = Some((id.clone(), true));
+        core.fetching.insert(id.clone());
+        assert!(!detail(&core, &[]).unwrap().about_failed, "still asking the platform");
+        core.fetching.remove(&id);
+        assert!(detail(&core, &[]).unwrap().about_failed, "the platform did not answer and nothing was stored");
     }
 
     #[test]
