@@ -874,8 +874,9 @@ fn back_with(path: String, msg: &str) -> Response {
     Redirect::to(&format!("{path}?{}", crate::issues::query(&[("msg", msg)]))).into_response()
 }
 
-/// The channel verified-addons on the Azeroth Survivors Discord, where creators post their addon.
-const VERIFIED_ADDONS_CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564402358094405744";
+/// The channel verified-addons on the Azeroth Survivors Discord, where verified creators open a
+/// thread for their addon.
+const VERIFIED_ADDONS_CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564396545837768864";
 
 /// The verification tab: where a request stands, or the form to ask for one.
 async fn verification_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, typed: String, error: Option<String>) -> WebResult<Html<String>> {

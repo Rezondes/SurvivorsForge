@@ -721,10 +721,11 @@ async fn owners_ask_for_a_verification_with_their_discord_post() {
     let page = web.get("/addons/lucky/verification").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     assert!(page.body.contains(r#"<a href="/addons/lucky/verification" aria-current="page">Verification</a>"#), "{}", page.body);
-    assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564402358094405744""#), "links the channel: {}", page.body);
+    assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564396545837768864""#), "links the channel: {}", page.body);
     assert!(page.body.contains(r#"name="discord_url""#) && page.body.contains(r#"type="text""#), "{}", page.body);
+    assert!(page.body.contains("SurvivorsForge is not part of Azeroth Survivors"), "warns not to bother their moderators: {}", page.body);
 
-    let link = "https://discord.com/channels/1557821819032051852/1564402358094405744/1570000000000000000";
+    let link = "https://discord.com/channels/1557821819032051852/1564396545837768864/1570000000000000000";
     Mock::given(method("POST"))
         .and(path("/v1/addons/lucky/verification-request"))
         .and(body_partial_json(json!({ "discord_url": link })))

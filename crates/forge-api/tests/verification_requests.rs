@@ -5,7 +5,7 @@ use common::TestApp;
 use serde_json::json;
 use sqlx::PgPool;
 
-const CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564402358094405744";
+const CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564396545837768864";
 
 /// A scanned version of `lucky`; returns its id.
 async fn scanned_version(app: &TestApp, tag: &str, flagged: bool) -> i64 {

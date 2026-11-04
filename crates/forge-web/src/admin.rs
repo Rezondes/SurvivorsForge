@@ -122,7 +122,7 @@ pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
     }))
 }
 
-/// The creators' requests to verify an addon by hand, with their Discord post.
+/// The creators' requests to verify an addon by hand, with their thread in verified-addons.
 pub async fn verification_requests(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Query(flash): Query<Flash>) -> WebResult<Html<String>> {
     let (user, token) = admin(&state, &jar).await?;
     let list = state.api.get("/v1/admin/verification-requests", Some(&token)).await?;

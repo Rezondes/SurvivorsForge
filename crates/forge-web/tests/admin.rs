@@ -688,7 +688,7 @@ async fn parts_are_pages_of_their_own() {
 #[tokio::test]
 async fn verification_requests_are_listed_and_decided() {
     let mut web = as_admin().await;
-    let link = "https://discord.com/channels/1557821819032051852/1564402358094405744/1570000000000000000";
+    let link = "https://discord.com/channels/1557821819032051852/1564396545837768864/1570000000000000000";
     get_json(&web, "/v1/admin/verification-requests", json!([
         { "id": 4, "slug": "lucky", "name": "Lucky", "version_id": 9, "tag": "v2", "trust": "flagged", "discord_url": link, "requested_by": "alice", "created_at": "2026-05-01T10:00:00Z" }
     ]))

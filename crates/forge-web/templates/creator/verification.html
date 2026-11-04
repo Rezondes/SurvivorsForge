@@ -20,19 +20,21 @@
 <section class="panel">
   <h2>Not verified yet</h2>
   <p>The admins did not verify {{ tag }}:</p>
-  {% if note != "" %}<blockquote>{{ note }}</blockquote>{% else %}<p>They left no note; ask in #verified-addons.</p>{% endif %}
+  {% if note != "" %}<blockquote>{{ note }}</blockquote>{% else %}<p>They left no note. Check your thread in #verified-addons for a reply.</p>{% endif %}
   <p>Fix what they asked for, then ask again.</p>
 </section>
 {% endif %}
 <form class="panel" method="post" action="/addons/{{ slug }}/verification">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2>Ask an admin to verify this addon</h2>
-  <p>Admins check the newest scanned version by hand. Verified addons get a badge on the website and in the launcher.</p>
+  <p>SurvivorsForge admins check the newest scanned version by hand. Verified addons get a badge on the website and in the launcher. A request needs your addon's thread in <a href="{{ channel }}" rel="external noopener">#verified-addons on the Azeroth Survivors Discord</a>:</p>
   <ol>
-    <li>Post your addon in <a href="{{ channel }}" rel="external noopener">#verified-addons on the Azeroth Survivors Discord</a>.</li>
-    <li>Copy the link to your post (right-click it, then Copy Message Link) and paste it here.</li>
+    <li>The Azeroth Survivors moderators verify addons by hand. Only after that you get the role that lets you open a thread in #verified-addons.</li>
+    <li>Open the thread for your addon there.</li>
+    <li>Copy the link to the thread (right-click it, then Copy Link) and paste it here.</li>
   </ol>
-  <label for="discord_url">Link to your Discord post</label>
+  <div class="notice warn" role="note">SurvivorsForge is not part of Azeroth Survivors. Do not message their moderators about SurvivorsForge, this request or the badge, and do not ask them for the role anywhere else. Without your thread in #verified-addons, wait: a request here needs it.</div>
+  <label for="discord_url">Link to your thread in #verified-addons</label>
   <input id="discord_url" name="discord_url" type="text" required maxlength="500" value="{{ discord_url }}" placeholder="https://discord.com/channels/...">
   <p><button type="submit">Send request</button></p>
 </form>

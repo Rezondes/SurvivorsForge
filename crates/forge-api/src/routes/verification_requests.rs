@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 /// The channel verified-addons on the Azeroth Survivors Discord.
-pub const CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564402358094405744";
+pub const CHANNEL: &str = "https://discord.com/channels/1557821819032051852/1564396545837768864";
 
 /// The most a link (or whatever the owner sends instead) may hold.
 pub const MAX_LINK: usize = 500;
@@ -34,7 +34,7 @@ pub async fn ask(State(state): State<AppState>, user: CurrentUser, Path(slug): P
     require(user_permissions(&state.pool, &addon, &user).await?.owner, "Only the owner asks for a verification")?;
     let url = body.discord_url.trim();
     if url.is_empty() || url.chars().count() > MAX_LINK {
-        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid_link", format!("Paste the link to your post in verified-addons (at most {MAX_LINK} characters)")));
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid_link", format!("Paste the link to your thread in verified-addons (at most {MAX_LINK} characters)")));
     }
     let verified: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM verifications w JOIN versions v ON v.id = w.version_id WHERE v.addon_id = $1)")
         .bind(addon.id)
