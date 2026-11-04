@@ -554,6 +554,7 @@ pub async fn edit_addon(
     jar: PrivateCookieJar,
     Extension(csrf): Extension<CsrfToken>,
     Path(slug): Path<String>,
+    Query(done): Query<Done>,
 ) -> WebResult<Response> {
     let (user, token) = me(&state, &jar).await?;
     let p = perms(&state, &slug, &token).await?;
@@ -563,7 +564,8 @@ pub async fn edit_addon(
     if !p.owner && !p.edit_description {
         return Ok(Redirect::to(&format!("/addons/{slug}/images")).into_response());
     }
-    Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), Edit::Open).await?.into_response())
+    let edit = if done.msg.is_some() { Edit::Saved } else { Edit::Open };
+    Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), edit).await?.into_response())
 }
 
 pub async fn save_addon(
@@ -596,7 +598,7 @@ pub async fn save_addon(
         body.insert("issues_enabled".into(), json!(form.issues.is_some()));
     }
     match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}"), Some(&token), Some(&Value::Object(body))).await {
-        Ok(_) => Ok(edit_page(&state, user, &token, csrf.0, &slug, Errors::default(), Edit::Saved).await?.into_response()),
+        Ok(_) => Ok(back_with(format!("/addons/{slug}/edit"), "Saved.")),
         Err(ApiError::Api { status: 403, .. }) => Ok(forbidden()),
         Err(e) => {
             let errors = form_errors(e)?;
@@ -865,7 +867,7 @@ fn split(notice: Option<Result<String, String>>) -> (Option<String>, Option<Stri
 /// What a settings page says after a change, from the address it was sent back to.
 #[derive(Deserialize, Default)]
 pub struct Done {
-    msg: Option<String>,
+    pub msg: Option<String>,
 }
 
 fn back_with(path: String, msg: &str) -> Response {
@@ -1068,7 +1070,7 @@ pub async fn save_version(
     let opt = |v: &str| if v.is_empty() { Value::Null } else { json!(v) };
     let body = json!({ "game_min": opt(&form.game_min), "game_max": opt(&form.game_max) });
     match state.api.call(Method::PATCH, &format!("/v1/addons/{slug}/versions/{tag}"), Some(&token), Some(&body)).await {
-        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/versions")).into_response()),
+        Ok(_) => Ok(back_with(format!("/addons/{slug}/versions"), &format!("Saved the game versions of {tag}."))),
         Err(ApiError::Api { message, status, .. }) if status != 403 && status != 404 => {
             let games: Vec<String> = state.api.get("/v1/game-versions", None).await?.as_array().into_iter().flatten().map(|g| s(&g["name"])).collect();
             let perms = perms(&state, &slug, &token).await?;

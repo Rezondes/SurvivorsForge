@@ -107,7 +107,8 @@ async fn only_the_owner_switches_issues_and_comments() {
         .mount(&web.api)
         .await;
     let saved = web.post_form("/addons/lucky/edit", &[("tabs_form", "1"), ("issues", "1")]).await;
-    assert!(saved.body.contains("Saved."), "an unticked box turns its tab off: {}", saved.body);
+    assert_eq!(saved.status, StatusCode::SEE_OTHER, "a reload does not send the form again");
+    assert!(web.get(saved.location()).await.body.contains("Saved."), "an unticked box turns its tab off");
 
     let mut contributor = logged_in(json!({ "owner": false, "edit_description": true, "edit_images": false })).await;
     assert!(!contributor.get("/addons/lucky/edit").await.body.contains(r#"name="tabs_form""#));
@@ -463,6 +464,7 @@ async fn version_compat_form() {
         .await;
     let page = web.post_form("/addons/lucky/versions/v1/edit", &[("game_min", "0.69.0"), ("game_max", "0.70.0")]).await;
     assert_eq!(page.status, StatusCode::SEE_OTHER);
+    assert!(web.get(page.location()).await.body.contains("Saved the game versions of v1."), "the versions page says it worked");
 }
 
 #[tokio::test]

@@ -264,7 +264,13 @@ pub async fn addon(
     Ok(render(&page).into_response())
 }
 
-pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Html<String>> {
+pub async fn versions(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(slug): Path<String>,
+    Query(done): Query<crate::creator::Done>,
+) -> WebResult<Html<String>> {
     let visitor = visitor(&state, &jar).await?;
     let a = state.api.get(&format!("/v1/addons/{}", seg(&slug)), None).await?;
     if a["blocked"] == true {
@@ -282,7 +288,7 @@ pub async fn versions(State(state): State<AppState>, jar: PrivateCookieJar, Exte
     let rows = rows.into_iter().map(|r| (download_href(&slug, &r), r)).collect();
     // GitHub counts downloads of release files only, not the source zips of tags.
     let counted = a["source_type"] != "tag";
-    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), head: crate::templates::AddonHead::from_api(&a), rows, perms, counted }))
+    Ok(render(&VersionsPage { user, csrf: csrf.0, slug, name: s(&a["name"]), head: crate::templates::AddonHead::from_api(&a), rows, perms, counted, msg: done.msg }))
 }
 
 async fn version_data(state: &AppState, slug: &str, tag: &str) -> WebResult<(Value, VersionRow)> {

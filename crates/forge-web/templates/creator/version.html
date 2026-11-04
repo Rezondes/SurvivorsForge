@@ -5,7 +5,7 @@
 {% let section = "versions" %}{% include "creator/nav.html" %}
 <p><a href="/addons/{{ slug }}/versions">Back to versions</a></p>
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
-<form class="panel" method="post" action="/addons/{{ slug }}/versions/{{ tag }}/edit">
+<form class="panel" method="post" action="/addons/{{ slug }}/versions/{{ tag }}/edit" data-unsaved>
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label for="game_min">From</label>
   <select id="game_min" name="game_min">

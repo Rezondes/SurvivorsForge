@@ -336,6 +336,8 @@ pub struct VersionsPage {
     pub perms: Option<Perms>,
     /// GitHub counts the downloads (release files, not the source zips of tags).
     pub counted: bool,
+    /// What an owner's last change did.
+    pub msg: Option<String>,
 }
 
 #[derive(Template)]

@@ -702,6 +702,20 @@
   });
 })();
 
+// A form marked data-unsaved asks before the page is left with changes nobody saved.
+(function () {
+  var changed = false;
+  document.addEventListener("input", function (event) {
+    if (event.target.form && event.target.form.hasAttribute("data-unsaved")) changed = true;
+  });
+  document.addEventListener("submit", function (event) {
+    if (event.target.hasAttribute("data-unsaved")) changed = false;
+  });
+  window.addEventListener("beforeunload", function (event) {
+    if (changed) event.preventDefault();
+  });
+})();
+
 // A notice from the address shows once: it leaves the address, so a reload or a shared link
 // does not show it again.
 (function () {
