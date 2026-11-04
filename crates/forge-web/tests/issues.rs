@@ -74,7 +74,7 @@ async fn issue_list_shows_rows_tabs_and_how_to_join() {
     assert!(body.contains(r#"<a href="/addons/lucky/issues" aria-current="page">Issues</a>"#), "{body}");
     assert!(body.contains("Crash &#60;on&#62; load") && body.contains("Bug report") && body.contains("2 replies"), "escaped title, kind, replies");
     assert!(body.contains(r#"Closed <span class="count">2</span>"#));
-    assert!(body.contains(r#"<a href="/login">Log in with GitHub</a>"#), "a visitor learns how to report");
+    assert!(body.contains(r#"<a href="/login?next=%2Faddons%2Flucky%2Fissues">Log in with GitHub</a>"#), "a visitor learns how to report");
     assert!(!body.contains(r#"href="/addons/lucky/issues/new">New issue"#), "no form for visitors");
 }
 
@@ -175,7 +175,7 @@ async fn logged_in_before_issues_asks_to_log_in_again() {
     mock_get(&web, "/v1/addons/lucky/issues/6", issue("bob")).await;
     web.login_as("t", me("bob", "user")).await;
     let page = web.get_htmx("/addons/lucky/issues/6").await;
-    assert!(page.body.contains(r#"<a href="/login">Log in again</a>"#), "{}", page.body);
+    assert!(page.body.contains(r#"<a href="/login?next=%2Faddons%2Flucky%2Fissues%2F6">Log in again</a>"#), "{}", page.body);
     let reply = web.post_form("/addons/lucky/issues/6/reply", &[("body", "Hi")]).await;
     assert!(reply.body.contains("Log in again to post on GitHub.") && reply.body.contains(">Hi</textarea>"), "the reply stays in the box: {}", reply.body);
 }
@@ -265,7 +265,7 @@ async fn report_a_bug_goes_to_github_unless_the_app_may_post() {
     mock_get(&web, "/v1/addons/lucky/issues/frame", frame(true)).await;
     let page = web.get_htmx("/addons/lucky/issues/new?kind=bug").await;
     assert_eq!(hx_redirect(&page), "/login", "the form here needs a login");
-    assert_eq!(web.get("/addons/lucky/issues/new?kind=bug&full=1").await.location(), "/login");
+    assert_eq!(web.get("/addons/lucky/issues/new?kind=bug&full=1").await.location(), "/login?next=%2Faddons%2Flucky%2Fissues%2Fnew%3Fkind%3Dbug%26full%3D1");
 }
 
 #[tokio::test]

@@ -909,7 +909,7 @@ async fn addons_and_versions_can_be_reported() {
     assert!(page.contains(r#"href="/addons/lucky/report">Report abuse</a>"#), "linked on the addon page");
     assert!(page.contains(r#"/issues/new" rel="external noopener">Report on GitHub</a>"#), "bugs go to GitHub while the Issues tab is off: {page}");
     assert!(web.get("/addons/lucky/versions/v1").await.body.contains(r#"href="/addons/lucky/report?version=v1""#), "and on the version page");
-    assert_eq!(web.get("/addons/lucky/report").await.location(), "/login", "only logged-in users report");
+    assert_eq!(web.get("/addons/lucky/report").await.location(), "/login?next=%2Faddons%2Flucky%2Freport", "only logged-in users report");
 
     web.login_as("tok", common::me("eve", "user")).await;
     let form = web.get("/addons/lucky/report?version=v1").await;

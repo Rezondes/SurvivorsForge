@@ -518,7 +518,7 @@ async fn delete_requires_slug() {
 async fn creator_pages_need_login() {
     let mut web = TestWeb::new().await;
     let page = web.get("/me/addons").await;
-    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login"));
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login?next=%2Fme%2Faddons"));
 }
 
 #[tokio::test]
@@ -706,7 +706,7 @@ async fn creators_test_a_zip_before_publishing() {
 async fn scan_page_needs_login() {
     let mut web = TestWeb::new().await;
     let page = web.get("/scan").await;
-    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login"));
+    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login?next=%2Fscan"));
 }
 
 #[tokio::test]

@@ -34,7 +34,7 @@ impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         match self {
             WebError::Api(ApiError::Unauthorized) | WebError::LoginRequired => {
-                let mut response = Redirect::to("/login").into_response();
+                let mut response = Redirect::to(&crate::app::login_href()).into_response();
                 if let Ok(value) = HeaderValue::from_str(&expired_session_header()) {
                     response.headers_mut().insert(header::SET_COOKIE, value);
                 }

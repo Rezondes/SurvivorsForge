@@ -34,7 +34,7 @@
           <button type="submit" class="link">Log out {{ u.login }}</button>
         </form>
       {% when None %}
-        <a href="/login" class="button">Log in with GitHub</a>
+        <a href="{{ crate::app::login_href() }}" class="button">Log in with GitHub</a>
       {% endmatch %}
     </nav>
   </header>

@@ -234,12 +234,30 @@ const API_DOCS_JS: &str = include_str!("../static/api-docs.js");
 tokio::task_local! {
     /// The path of the request being answered, for the nav of `base.html`.
     static REQUEST_PATH: String;
+    /// Where a login started on this request comes back to: the page itself, for a GET.
+    static RETURN_TO: Option<String>;
 }
 
 /// Puts the request's path where `current` finds it while the page renders.
 async fn remember_path(request: axum::extract::Request, next: middleware::Next) -> Response {
     let path = request.uri().path().to_string();
-    REQUEST_PATH.scope(path, next.run(request)).await
+    let back = (request.method() == axum::http::Method::GET).then(|| request.uri().path_and_query().map_or(path.clone(), |p| p.to_string()));
+    REQUEST_PATH.scope(path, RETURN_TO.scope(back, next.run(request))).await
+}
+
+/// A page of this site to return to after the login: a path, never another site (`//host`,
+/// `/\host`) and never the login itself.
+pub fn own_page(path: &str) -> bool {
+    path.starts_with('/') && !path.starts_with("//") && !path.starts_with("/\\") && path.len() <= 1000 && !path.starts_with("/login") && !path.starts_with("/auth/")
+}
+
+/// `/login`, carrying the page asked for so the login comes back to it.
+pub fn login_href() -> String {
+    let page = RETURN_TO.try_with(Clone::clone).ok().flatten().filter(|p| own_page(p) && p != "/");
+    match page.and_then(|p| reqwest::Url::parse_with_params("http://x/login", &[("next", p)]).ok()) {
+        Some(url) => format!("/login?{}", url.query().unwrap_or_default()),
+        None => "/login".into(),
+    }
 }
 
 /// Whether the page belongs to the nav section `section`: the section itself or a page below it.
@@ -405,14 +423,20 @@ async fn api_playground(
     Ok(render(&ApiPlaygroundPage { user, csrf: csrf.0, endpoint, slug: q.slug, tag: q.tag, path, api_url, error, result }))
 }
 
-async fn login(State(state): State<AppState>, jar: PrivateCookieJar) -> Response {
+#[derive(Deserialize)]
+struct LoginQuery {
+    next: Option<String>,
+}
+
+async fn login(State(state): State<AppState>, jar: PrivateCookieJar, Query(query): Query<LoginQuery>) -> Response {
     let url = reqwest::Url::parse_with_params(
         &format!("{}/v1/auth/github/start", state.config.public_api_url),
         &[("return_to", state.config.callback_url())],
     )
     .expect("valid API URL");
-    // Lives until the callback removes it or the browser closes.
-    let started = session::cookie(session::LOGIN_COOKIE, "1".into(), state.secure_cookies());
+    // Lives until the callback removes it or the browser closes; holds the page to return to.
+    let back = query.next.filter(|p| own_page(p)).unwrap_or_else(|| "/".into());
+    let started = session::cookie(session::LOGIN_COOKIE, back, state.secure_cookies());
     // A page that moves on at once rather than a redirect: link previews stop here and show this
     // site instead of following through to GitHub's login.
     (jar.add(started), render(&LoginPage { user: None, csrf: String::new(), start: url.to_string() })).into_response()
@@ -426,7 +450,9 @@ struct CallbackQuery {
 
 /// The end of a GitHub login. Counts only when the login started in this browser (`LOGIN_COOKIE`).
 async fn callback(State(state): State<AppState>, jar: PrivateCookieJar, Query(query): Query<CallbackQuery>) -> Response {
-    let started = jar.get(session::LOGIN_COOKIE).is_some();
+    let back = jar.get(session::LOGIN_COOKIE).map(|c| c.value().to_string());
+    let started = back.is_some();
+    let back = back.filter(|p| own_page(p)).unwrap_or_else(|| "/".into());
     let jar = jar.remove(session::removal(session::LOGIN_COOKIE));
     let message = match (query.code, query.error.as_deref()) {
         (Some(_), None) if !started => "This login was not started here. Please log in again.".into(),
@@ -439,7 +465,7 @@ async fn callback(State(state): State<AppState>, jar: PrivateCookieJar, Query(qu
                     if answer["github_token"].is_object() {
                         jar = jar.add(session::cookie(session::GITHUB_COOKIE, answer["github_token"].to_string(), state.secure_cookies()));
                     }
-                    return (jar, Redirect::to("/")).into_response();
+                    return (jar, Redirect::to(&back)).into_response();
                 }
                 Err(e) => e.message(),
             }

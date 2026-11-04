@@ -18,7 +18,7 @@
   <div class="actions"><button type="submit">Post comment</button></div>
 </form>
 {% else %}
-<div class="notice"><a href="/login">Log in with GitHub</a> to write a comment.</div>
+<div class="notice"><a href="{{ crate::app::login_href() }}">Log in with GitHub</a> to write a comment.</div>
 {% endif %}
 
 {% if comments.is_empty() && !off %}<p class="muted">No comments yet.</p>{% endif %}

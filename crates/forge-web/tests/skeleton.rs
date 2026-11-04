@@ -335,3 +335,23 @@ async fn every_link_inside_the_docs_finds_its_heading() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_login_comes_back_to_the_page_it_started_on() {
+    let mut web = TestWeb::new().await;
+    let page = web.get("/packs/new").await;
+    assert_eq!(page.location(), "/login?next=%2Fpacks%2Fnew", "a page that needs a login says where it was");
+    Mock::given(method("POST"))
+        .and(path("/v1/auth/exchange"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "token": "t", "expires_at": "2030-01-01T00:00:00Z" })))
+        .mount(&web.api)
+        .await;
+    web.get("/login?next=%2Faddons%2Flucky%2Fcomments%3Fbefore%3D5").await;
+    let back = web.get("/auth/callback?code=abc").await;
+    assert_eq!(back.location(), "/addons/lucky/comments?before=5");
+    for elsewhere in ["%2F%2Fevil.test%2Fx", "https%3A%2F%2Fevil.test", "%2F%5Cevil.test"] {
+        web.get(&format!("/login?next={elsewhere}")).await;
+        assert_eq!(web.get("/auth/callback?code=abc").await.location(), "/", "{elsewhere} is not this site");
+    }
+    assert!(web.get("/docs").await.body.contains(r#"href="/login?next=%2Fdocs""#), "the header's login link too");
+}

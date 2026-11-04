@@ -34,7 +34,8 @@ async fn protected_pages_send_anonymous_visitors_to_the_login_without_asking_the
     let mut web = TestWeb::new().await;
     for route in PROTECTED {
         let page = web.get(route).await;
-        assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/login"), "{route}");
+        assert_eq!(page.status, StatusCode::SEE_OTHER, "{route}");
+        assert!(page.location().starts_with("/login"), "{route}: {}", page.location());
         assert!(page.body.is_empty(), "{route} leaks a body");
     }
     assert!(web.api.received_requests().await.unwrap().is_empty(), "no API data fetched for anonymous visitors");

@@ -54,7 +54,7 @@ async fn visitors_read_threads_and_learn_how_to_join() {
     assert!(article(body, 3).contains("depth-1") && article(body, 1).contains("depth-0"));
     assert!(article(body, 3).contains("Same &#60;here&#62;"), "escaped text");
     assert!(article(body, 2).contains("Deleted comment.") && !article(body, 2).contains("mallory"));
-    assert!(body.contains(r#"<a href="/login">Log in with GitHub</a> to write a comment."#));
+    assert!(body.contains(r#"<a href="/login?next=%2Faddons%2Flucky%2Fcomments">Log in with GitHub</a> to write a comment."#));
     assert!(!body.contains(r#"action="/addons/lucky/comments"#), "no forms for visitors");
     assert!(!body.contains("Older comments"), "one page only");
 }

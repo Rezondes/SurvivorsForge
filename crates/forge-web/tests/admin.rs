@@ -57,7 +57,7 @@ async fn non_admin_forbidden_everywhere() {
     }
     assert_eq!(web.post_form("/admin/versions/9/verify", &[("note", "x")]).await.status, StatusCode::FORBIDDEN);
     let mut anonymous = TestWeb::new().await;
-    assert_eq!(anonymous.get("/admin").await.location(), "/login");
+    assert_eq!(anonymous.get("/admin").await.location(), "/login?next=%2Fadmin");
 }
 
 #[tokio::test]
