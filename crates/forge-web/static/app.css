@@ -734,6 +734,7 @@ p.issue-badges { margin: 4px 0 0; justify-content: flex-start; }
 .comment .post-body { white-space: pre-wrap; }
 /* The comment a notice is about, after the jump to it. */
 .comment:target { outline: 2px solid var(--gold); outline-offset: 2px; }
+.reported-image { display: block; max-width: min(100%, 360px); max-height: 240px; margin: 8px 0 0; border: 1px solid var(--line); border-radius: 4px; }
 .reported-comment { margin: 8px 0 0; padding: 4px 12px; border-left: 3px solid var(--gold); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 560px) {
   .comment.depth-1, .comment.depth-2, .comment.depth-3 { margin-left: 12px; border-left: 2px solid var(--line); }

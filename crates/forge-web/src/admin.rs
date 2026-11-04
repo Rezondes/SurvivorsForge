@@ -54,9 +54,14 @@ fn back(page: &str, result: Result<Value, ApiError>, done: &str) -> WebResult<Re
         Err(ApiError::Down(e)) => return Err(WebError::Api(ApiError::Down(e))),
         Err(e) => ("error", e.message()),
     };
+    Ok(with_notice(page, key, &text))
+}
+
+/// `page` with the notice `key` (`msg` or `error`) saying `text`.
+fn with_notice(page: &str, key: &str, text: &str) -> Response {
     let sep = if page.contains('?') { '&' } else { '?' };
     let url = reqwest::Url::parse_with_params("http://x/", &[(key, text)]).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
-    Ok(Redirect::to(&format!("{page}{sep}{url}")).into_response())
+    Redirect::to(&format!("{page}{sep}{url}")).into_response()
 }
 
 fn s(v: &Value) -> String {
@@ -300,12 +305,17 @@ pub async fn reports(State(state): State<AppState>, jar: PrivateCookieJar, Exten
             reason_label: crate::report::REASONS.iter().find(|(v, _)| *v == s(&r["reason"])).map_or_else(|| s(&r["reason"]), |(_, l)| (*l).to_string()),
             harmful: matches!(r["reason"].as_str(), Some("malware" | "stolen")),
             id: r["id"].as_i64().unwrap_or(0),
-            target: format!("{} {}", s(&r["target_type"]), s(&r["target_id"])),
+            target: match r["version_tag"].as_str() {
+                Some(tag) => format!("version {tag}"),
+                None => format!("{} {}", s(&r["target_type"]), s(&r["target_id"])),
+            },
             link: match r["target_type"].as_str() {
                 Some("comment") => format!("/addons/{}/comments#comment-{}", s(&r["addon"]), r["target_id"]),
+                Some("version") if r["version_tag"].is_string() => format!("/addons/{}/versions/{}", s(&r["addon"]), crate::public::seg(&s(&r["version_tag"]))),
                 _ => format!("/addons/{}", s(&r["addon"])),
             },
             comment: r["comment"].as_str().map(str::to_string),
+            image: r["image_url"].as_str().map(str::to_string),
             addon: s(&r["addon"]),
             reason: s(&r["reason"]),
             text: s(&r["text"]),
@@ -321,7 +331,11 @@ pub async fn reports(State(state): State<AppState>, jar: PrivateCookieJar, Exten
 pub async fn resolve_report(State(state): State<AppState>, jar: PrivateCookieJar, Path(id): Path<i64>, Form(form): Form<NoteForm>) -> WebResult<Response> {
     let (_, token) = admin(&state, &jar).await?;
     let body = json!({ "status": form.status, "note": form.note });
-    back("/admin/reports", state.api.post(&format!("/v1/admin/reports/{id}/resolve"), Some(&token), &body).await, "Report closed.")
+    match state.api.post(&format!("/v1/admin/reports/{id}/resolve"), Some(&token), &body).await {
+        // Two moderators on one report: the second finds it closed.
+        Err(ApiError::Api { status: 404, .. }) => Ok(with_notice("/admin/reports", "error", "Someone else closed this report already.")),
+        result => back("/admin/reports", result, "Report closed."),
+    }
 }
 
 pub async fn users(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Query(flash): Query<Flash>) -> WebResult<Html<String>> {

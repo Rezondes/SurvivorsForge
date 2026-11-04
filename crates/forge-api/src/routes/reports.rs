@@ -92,10 +92,13 @@ pub async fn queue(State(state): State<AppState>, StaffUser(_): StaffUser) -> Ap
                                  WHEN 'image' THEN (SELECT a.slug FROM images i JOIN addons a ON a.id = i.addon_id WHERE i.id = r.target_id)
                                  ELSE (SELECT a.slug FROM addon_comments c JOIN addons a ON a.id = c.addon_id WHERE c.id = r.target_id) END,
                     'comment', CASE WHEN r.target_type = 'comment' THEN (SELECT CASE WHEN deleted_at IS NULL THEN body ELSE '' END FROM addon_comments WHERE id = r.target_id) END,
+                    'version_tag', CASE WHEN r.target_type = 'version' THEN (SELECT tag FROM versions WHERE id = r.target_id) END,
+                    'image_url', CASE WHEN r.target_type = 'image' THEN (SELECT $1 || '/' || file FROM images WHERE id = r.target_id) END,
                     'reason', r.reason, 'text', r.text, 'reporter', u.login, 'created_at', r.created_at)
                 ORDER BY r.created_at, r.id), '[]')
          FROM reports r JOIN users u ON u.id = r.reporter_id WHERE r.status = 'open'",
     )
+    .bind(&state.config.public_image_url)
     .fetch_one(&state.pool)
     .await?;
     Ok(Json(list))

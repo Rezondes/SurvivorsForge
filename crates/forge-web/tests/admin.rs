@@ -738,3 +738,30 @@ async fn an_admin_cannot_pick_a_new_role_for_themself() {
     let page = web.get("/admin/users").await.body;
     assert!(page.contains("You (another admin changes your role)") && !page.contains("/admin/users/99/role"), "{page}");
 }
+
+#[tokio::test]
+async fn version_and_image_reports_show_what_was_reported() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("root", "admin")).await;
+    get_json(&web, "/v1/admin/reports", json!([
+        { "id": 4, "target_type": "version", "target_id": 12, "addon": "lucky", "version_tag": "v2", "reason": "broken", "text": "", "reporter": "eve", "created_at": "2026-05-01T10:00:00Z" },
+        { "id": 5, "target_type": "image", "target_id": 7, "addon": "lucky", "image_url": "https://img.test/abc.webp", "reason": "spam", "text": "", "reporter": "eve", "created_at": "2026-05-01T10:00:00Z" }
+    ]))
+    .await;
+    let page = web.get("/admin/reports").await.body;
+    assert!(page.contains(r#"<a href="/addons/lucky/versions/v2">lucky</a> <span class="muted">(version v2)</span>"#), "links the version: {page}");
+    assert!(page.contains(r#"<img class="reported-image" src="https://img.test/abc.webp" alt="The reported image">"#), "shows the image: {page}");
+}
+
+#[tokio::test]
+async fn a_report_closed_by_someone_else_says_so() {
+    let mut web = as_admin().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/admin/reports/3/resolve"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({ "error": "not_found", "message": "Not found" })))
+        .mount(&web.api)
+        .await;
+    let page = web.post_form("/admin/reports/3/resolve", &[("status", "dismissed"), ("note", "fine")]).await;
+    let follow = web.get(page.location()).await.body;
+    assert!(follow.contains("Someone else closed this report already."), "{follow}");
+}

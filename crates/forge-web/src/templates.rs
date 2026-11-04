@@ -768,6 +768,8 @@ pub struct ReportRow {
     pub link: String,
     /// The text of a reported comment, as it is now.
     pub comment: Option<String>,
+    /// The address of a reported image.
+    pub image: Option<String>,
     pub reason: String,
     pub text: String,
     pub reporter: String,

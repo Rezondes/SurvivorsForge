@@ -64,6 +64,31 @@ async fn admin_report_queue(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn version_and_image_reports_name_what_was_reported(pool: PgPool) {
+    let (app, owner, admin) = setup(pool).await;
+    let version: i64 = sqlx::query_scalar(
+        "INSERT INTO versions (addon_id, tag, published_at, asset_name, asset_url, created_at)
+         SELECT id, 'v1', now(), 'a.zip', 'https://github.com/a.zip', now() FROM addons RETURNING id",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    let image: i64 = sqlx::query_scalar(
+        "INSERT INTO images (addon_id, kind, file, width, height, uploaded_by, uploaded_at)
+         SELECT a.id, 'screenshot', 'abc.webp', 10, 10, u.id, now() FROM addons a, users u WHERE u.login = 'alice' RETURNING id",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    app.post("/v1/reports", Some(&owner), report("version", &version.to_string())).await;
+    app.post("/v1/reports", Some(&owner), report("image", &image.to_string())).await;
+    let queue = app.get("/v1/admin/reports", Some(&admin)).await.json();
+    assert_eq!(queue[0]["version_tag"], "v1", "{queue}");
+    assert!(queue[1]["image_url"].as_str().is_some_and(|u| u.ends_with("/abc.webp")), "{queue}");
+    assert!(queue[0]["image_url"].is_null() && queue[1]["version_tag"].is_null());
+}
+
+#[sqlx::test]
 async fn blocked_hidden_and_trust_blocked(pool: PgPool) {
     let (app, owner, admin) = setup(pool).await;
     sqlx::query(
