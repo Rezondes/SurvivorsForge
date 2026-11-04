@@ -121,13 +121,23 @@ pub async fn packs(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         .as_array()
         .into_iter()
         .flatten()
-        .map(|p| PackListRow {
-            id: s(&p["id"]),
-            name: Some(s(&p["name"])).filter(|n| !n.is_empty()).unwrap_or_else(|| "Addon pack".into()),
-            created_by: s(&p["created_by"]),
-            created: s(&p["created_at"]).chars().take(10).collect(),
-            addons: p["addons"].as_array().into_iter().flatten().map(s).collect::<Vec<_>>().join(", "),
-            listed: p["listed"] != false,
+        .map(|p| {
+            let addons: Vec<String> = p["addons"].as_array().into_iter().flatten().map(s).collect();
+            // Unnamed packs are called after their addons, as on their own page; long lists end in a count.
+            let named = match addons.as_slice() {
+                [] => "Addon pack".to_string(),
+                [only] => only.clone(),
+                [first, rest @ ..] => format!("{first} and {} more", rest.len()),
+            };
+            let shown = if addons.len() > 3 { format!("{} and {} more", addons[..3].join(", "), addons.len() - 3) } else { addons.join(", ") };
+            PackListRow {
+                id: s(&p["id"]),
+                name: Some(s(&p["name"])).filter(|n| !n.is_empty()).unwrap_or(named),
+                created_by: s(&p["created_by"]),
+                created: long_date(&s(&p["created_at"])),
+                addons: shown,
+                listed: p["listed"] != false,
+            }
         })
         .collect();
     let total = list["total"].as_i64().unwrap_or(0);

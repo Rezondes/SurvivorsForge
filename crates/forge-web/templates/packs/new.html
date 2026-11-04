@@ -15,7 +15,7 @@
   <fieldset class="picker">
     <legend>Addons</legend>
     {% if choices.is_empty() %}
-      <p class="muted">No addon can go into a pack yet. Packs take checked versions only.</p>
+      <p class="muted">No addon can go into a pack yet. Packs take checked versions only. <a href="/addons">Browse addons</a></p>
     {% endif %}
     {% for c in choices %}
     <label class="check pick">
@@ -31,6 +31,6 @@
   <p class="muted">Without it, the pack keeps the versions shown above. You can change both later.</p>
   <label class="check"><input type="checkbox" name="listed" value="1"{% if listed %} checked{% endif %}> Show it on the public pack list</label>
   <p class="muted">Untick it, and only people with the link find the pack.</p>
-  <p><button type="submit">Create the pack</button></p>
+  {% if !choices.is_empty() %}<p><button type="submit">Create the pack</button></p>{% endif %}
 </form>
 {% endblock %}

@@ -27,6 +27,10 @@
 
 <section class="panel">
   <h2>In this pack</h2>
+  {% if entries.is_empty() %}
+  <p>Every addon of this pack was removed from SurvivorsForge.</p>
+  <p><a class="button" href="/packs/new">Build a new pack</a></p>
+  {% else %}
   <div class="table-wrap">
     <table class="pack-table">
       <thead><tr><th>Addon</th><th>Version</th><th>Safety check</th><th>Folders</th></tr></thead>
@@ -42,6 +46,7 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
 </section>
-<p><a href="{{ rebuild }}">Build your own pack from this one</a></p>
+{% if !entries.is_empty() %}<p><a href="{{ rebuild }}">Build your own pack from this one</a></p>{% endif %}
 {% endblock %}
