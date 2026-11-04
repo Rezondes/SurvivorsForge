@@ -124,6 +124,8 @@ async fn download_follows_the_api_or_waits_for_the_build() {
         .await;
     let ready = web.get("/packs/AbCdE12345/download").await;
     assert_eq!((ready.status, ready.location()), (StatusCode::SEE_OTHER, "https://web.test/packs-files/abc.zip"));
+    let after_waiting = web.get("/packs/AbCdE12345/download?try=3").await;
+    assert!(after_waiting.body.contains("Your pack is ready") && after_waiting.body.contains(r#"content="0;url=https://web.test/packs-files/abc.zip""#), "the waiting page ends: {}", after_waiting.body);
 
     Mock::given(method("GET"))
         .and(path("/v1/packs/Building12/download"))

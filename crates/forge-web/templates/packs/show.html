@@ -13,7 +13,8 @@
     <p><a class="button" href="/packs/{{ id }}/download">Download the pack{% if let Some(s) = size %} ({{ s }}){% endif %}</a></p>
     <p class="muted">One zip, every addon in its own folder. Upload it in the browser version of the game.{% if size.is_none() %} Packed on the first download, which takes up to a minute.{% endif %}</p>
   {% else %}
-    <div class="notice bad">An addon of this pack is no longer available, so the pack cannot be downloaded. <a href="{{ rebuild }}">Build a new one</a> without it.</div>
+    <div class="notice bad">An addon of this pack is no longer available, so the pack cannot be downloaded.
+      {% if can_edit %}<a href="/packs/{{ id }}/edit">Remove it from the pack</a>: the link stays the same.{% else %}<a href="{{ rebuild }}">Build a new one</a> without it.{% endif %}</div>
   {% endif %}
   {% if can_edit %}<p><a class="button secondary" href="/packs/{{ id }}/edit">Edit the pack</a></p>{% endif %}
   <label for="link">Link to share</label>

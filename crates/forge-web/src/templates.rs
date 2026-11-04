@@ -982,6 +982,8 @@ pub struct PackEditPage {
     /// Packable addons not in the pack yet.
     pub others: Vec<PackChoice>,
     pub error: Option<String>,
+    /// Addons of the pack that can no longer be packed; saving drops them.
+    pub unavailable: usize,
 }
 
 #[derive(Template)]
@@ -1053,6 +1055,8 @@ pub struct PackBuildingPage {
     pub failed: Option<String>,
     /// The try the page asks for next; `None` once it gave up waiting.
     pub next_try: Option<u32>,
+    /// The built zip, once it is there.
+    pub ready: Option<String>,
 }
 
 #[derive(Template)]

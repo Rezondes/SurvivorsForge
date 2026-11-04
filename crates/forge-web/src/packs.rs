@@ -217,7 +217,8 @@ async fn edit_page(state: &AppState, user: Visitor, csrf: String, id: String, p:
     let entries = entries(p);
     let mut others = choices(state, added).await?;
     others.retain(|c| !entries.iter().any(|e| e.slug.eq_ignore_ascii_case(&c.slug)));
-    Ok(PackEditPage { user: Some(user), csrf, id, name: s(&p["name"]), listed: p["listed"] == true, entries, others, error })
+    let unavailable = entries.iter().filter(|e| !e.available).count();
+    Ok(PackEditPage { user: Some(user), csrf, id, name: s(&p["name"]), listed: p["listed"] == true, entries, others, error, unavailable })
 }
 
 /// `GET /packs/{id}/edit`: its creator renames the pack, picks versions and adds or removes addons.
@@ -289,6 +290,12 @@ pub async fn download(
     valid_id(&id)?;
     let tries: u32 = values(raw.as_deref(), "try").first().and_then(|t| t.parse().ok()).unwrap_or(0);
     let (status, failed) = match state.api.get_or_redirect(&format!("/v1/packs/{id}/download")).await {
+        // Built after the waiting page asked: say so and start the file, instead of leaving
+        // "Building" on screen next to a finished download.
+        Ok(Err(location)) if tries > 0 => {
+            let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+            return Ok(render(&PackBuildingPage { user, csrf: csrf.0, id, failed: None, next_try: None, ready: Some(location) }).into_response());
+        }
         Ok(Err(location)) => return Ok(Redirect::to(&location).into_response()),
         Ok(Ok(_)) => (StatusCode::OK, None),
         Err(ApiError::Api { code, message, .. }) if code == "build_failed" => (StatusCode::UNPROCESSABLE_ENTITY, Some(message)),
@@ -296,7 +303,7 @@ pub async fn download(
     };
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
     let next_try = (failed.is_none() && tries < MAX_TRIES).then_some(tries + 1);
-    Ok((status, render(&PackBuildingPage { user, csrf: csrf.0, id, failed, next_try })).into_response())
+    Ok((status, render(&PackBuildingPage { user, csrf: csrf.0, id, failed, next_try, ready: None })).into_response())
 }
 
 #[cfg(test)]

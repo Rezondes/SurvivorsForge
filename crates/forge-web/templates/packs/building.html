@@ -1,13 +1,20 @@
 {% extends "base.html" %}
-{% block title %}{% if failed.is_some() %}The pack could not be built{% else %}Building the pack{% endif %} - SurvivorsForge{% endblock %}
-{% block head %}<meta name="robots" content="noindex">{% if let Some(n) = next_try %}<meta http-equiv="refresh" content="3;url=/packs/{{ id }}/download?try={{ n }}">{% endif %}{% endblock %}
+{% block title %}{% if ready.is_some() %}Your pack is ready{% else if failed.is_some() %}The pack could not be built{% else %}Building the pack{% endif %} - SurvivorsForge{% endblock %}
+{% block head %}<meta name="robots" content="noindex">{% if let Some(url) = ready %}<meta http-equiv="refresh" content="0;url={{ url }}">{% else if let Some(n) = next_try %}<meta http-equiv="refresh" content="3;url=/packs/{{ id }}/download?try={{ n }}">{% endif %}{% endblock %}
 {% block content %}
-{% if let Some(message) = failed %}
+{% if let Some(url) = ready %}
+<h1>Your pack is ready</h1>
+<section class="panel">
+  <p>The download starts on its own.</p>
+  <p><a class="button" href="{{ url }}">Download the zip</a></p>
+  <p><a href="/packs/{{ id }}">Back to the pack</a></p>
+</section>
+{% else if let Some(message) = failed %}
 <h1>The pack could not be built</h1>
 <section class="panel">
   <div class="notice bad">{{ message }}</div>
-  <p>A download after an hour builds it again, in case GitHub was only down.</p>
-  <p><a href="/packs/{{ id }}">Back to the pack</a></p>
+  <p>Try the download again in an hour; the pack is built anew then, in case GitHub was only down.</p>
+  <p><a class="button" href="/packs/{{ id }}">Back to the pack</a></p>
 </section>
 {% else if next_try.is_some() %}
 <h1>Building the pack</h1>
