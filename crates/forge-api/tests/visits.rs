@@ -46,6 +46,9 @@ async fn batches_add_up_and_visitors_count_once(pool: PgPool) {
 #[sqlx::test]
 async fn search_misses_are_kept_90_days(pool: PgPool) {
     let app = setup(pool);
+    let addon = post(&app, WEBSITE, json!([row("addon_referrer", "reddit.com", "lucky", 1, &["aa01"]), row("addon_country", "DE", "lucky", 1, &["aa01"])])).await;
+    assert_eq!(addon.status, StatusCode::NO_CONTENT, "{}", addon.body);
+    sqlx::query("DELETE FROM web_counts").execute(&app.pool).await.unwrap();
     let reply = post(&app, WEBSITE, json!([row("search_miss", "dragon ui", "", 2, &["aa01", "bb02"])])).await;
     assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.body);
     assert_eq!(counts(&app).await, [("search_miss".into(), "dragon ui".into(), "".into(), 2, 2)]);

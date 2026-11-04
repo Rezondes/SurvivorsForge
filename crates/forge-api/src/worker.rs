@@ -41,6 +41,7 @@ pub fn platform(state: AppState) -> Worker {
     let downloads_state = state.clone();
     let visits_state = state.clone();
     let jobs_state = state.clone();
+    let snapshot_state = state.clone();
     let prune_state = state;
     Worker::default()
         .handle(sync::SYNC_ADDON, move |job| {
@@ -90,6 +91,10 @@ pub fn platform(state: AppState) -> Worker {
             let state = visits_state.clone();
             async move { crate::routes::visits::prune(&state.pool, (state.clock)()).await }
         })
+        .handle(crate::downloads::SNAPSHOT_GITHUB, move |_| {
+            let state = snapshot_state.clone();
+            async move { crate::downloads::snapshot_github(&state.pool, (state.clock)()).await }
+        })
         .handle(crate::jobs::PRUNE, move |_| {
             let state = jobs_state.clone();
             async move { crate::jobs::prune(&state.pool, (state.clock)()).await }
@@ -103,6 +108,8 @@ pub fn platform(state: AppState) -> Worker {
         .every(crate::downloads::PRUNE, Duration::days(1))
         .every(crate::routes::visits::PRUNE, Duration::days(1))
         .every(crate::jobs::PRUNE, Duration::days(1))
+        // After the 6-hourly source check has refreshed the counts at least once a day.
+        .every(crate::downloads::SNAPSHOT_GITHUB, Duration::hours(6))
 }
 
 impl Worker {

@@ -7,6 +7,23 @@ use std::net::IpAddr;
 
 /// The daily job that deletes old dedupe rows.
 pub const PRUNE: &str = "prune_downloads";
+/// The job that writes down GitHub's download count of every version for the day.
+pub const SNAPSHOT_GITHUB: &str = "snapshot_github_downloads";
+
+/// Keeps the download count of every listed version for the day of `now`; a later run that day
+/// replaces it. `versions` itself holds only the current total.
+pub async fn snapshot_github(pool: &sqlx::PgPool, now: DateTime<Utc>) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO version_downloads (day, version_id, downloads)
+         SELECT $1, v.id, v.download_count FROM versions v JOIN addons a ON a.id = v.addon_id WHERE a.deleted_at IS NULL
+         ON CONFLICT (day, version_id) DO UPDATE SET downloads = EXCLUDED.downloads",
+    )
+    .bind(now.date_naive())
+    .execute(pool)
+    .await
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Source {

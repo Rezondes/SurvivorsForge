@@ -644,6 +644,40 @@
       },
       "options": {},
       "description": "Launchers that installed a version older than the newest by hand. Many rollbacks to one version hint at a broken newer release."
+    },
+    {
+      "id": 19,
+      "title": "New GitHub downloads per addon and day",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "WITH d AS (SELECT vd.day, v.addon_id, sum(vd.downloads) AS total FROM version_downloads vd JOIN versions v ON v.id = vd.version_id GROUP BY 1, 2), x AS (SELECT day, addon_id, total - lag(total) OVER (PARTITION BY addon_id ORDER BY day) AS new FROM d), top AS (SELECT addon_id FROM x WHERE $__timeFilter(day::timestamptz) GROUP BY 1 ORDER BY sum(new) DESC NULLS LAST LIMIT 10) SELECT x.day::timestamptz AS time, a.slug::text AS metric, greatest(x.new, 0) AS value FROM x JOIN top USING (addon_id) JOIN addons a ON a.id = x.addon_id WHERE x.new IS NOT NULL AND $__timeFilter(x.day::timestamptz) ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Downloads GitHub counted since the day before, for the ten addons with the most. Starts with the first snapshot (snapshot_github_downloads)."
     }
   ]
 }

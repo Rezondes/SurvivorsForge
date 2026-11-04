@@ -40,7 +40,7 @@ fn invalid(what: &str) -> ApiError {
 pub async fn record(State(state): State<AppState>, _: FromWebsite, Json(batch): Json<Batch>) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
     for row in &batch.rows {
-        if !matches!(row.kind.as_str(), "site" | "page" | "referrer" | "country" | "device" | "search_miss") {
+        if !matches!(row.kind.as_str(), "site" | "page" | "referrer" | "country" | "device" | "search_miss" | "addon_referrer" | "addon_country") {
             return Err(invalid("kind"));
         }
         if row.value.len() > 200 || row.target.len() > 100 || row.views < 0 {

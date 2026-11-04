@@ -126,13 +126,21 @@ impl Visits {
 
     pub fn record(&self, day: NaiveDate, ip: IpAddr, view: View) {
         let sender = self.sender(day, ip);
+        // An addon's own visitors too, for its statistics.
+        let addon = view.route.starts_with("/addons/{slug}").then(|| view.target.clone()).filter(|t| !t.is_empty());
         let mut rows: Vec<(&'static str, String, String)> = vec![
             ("site", String::new(), String::new()),
             ("page", view.route, view.target),
-            ("country", view.country, String::new()),
+            ("country", view.country.clone(), String::new()),
             ("device", view.device.to_string(), String::new()),
         ];
+        if let Some(addon) = &addon {
+            rows.push(("addon_country", view.country.clone(), addon.clone()));
+        }
         if let Some(referrer) = view.referrer {
+            if let Some(addon) = addon {
+                rows.push(("addon_referrer", referrer.clone(), addon));
+            }
             rows.push(("referrer", referrer, String::new()));
         }
         let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
@@ -200,6 +208,18 @@ pub async fn middleware(State(state): State<AppState>, request: Request, next: N
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn addon_pages_count_referrer_and_country_per_addon() {
+        let visits = Visits::default();
+        let day = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let view = |route: &str, target: &str| View { route: route.into(), target: target.into(), referrer: Some("reddit.com".into()), country: "DE".into(), device: "desktop" };
+        visits.record(day, [203, 0, 113, 7].into(), view("/addons/{slug}/versions", "lucky"));
+        visits.record(day, [203, 0, 113, 7].into(), view("/packs/{id}", "abc"));
+        let mut kinds: Vec<(String, String, String)> = visits.take().iter().map(|r| (r["kind"].as_str().unwrap().into(), r["value"].as_str().unwrap().into(), r["target"].as_str().unwrap().into())).filter(|(k, _, _): &(String, String, String)| k.starts_with("addon_")).collect();
+        kinds.sort();
+        assert_eq!(kinds, [("addon_country".into(), "DE".into(), "lucky".into()), ("addon_referrer".into(), "reddit.com".into(), "lucky".into())]);
+    }
 
     #[test]
     fn search_terms_are_short_and_plain() {

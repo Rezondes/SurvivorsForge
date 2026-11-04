@@ -32,6 +32,24 @@ async fn total(app: &TestApp) -> i64 {
 }
 
 #[sqlx::test]
+async fn github_downloads_are_kept_per_version_and_day(pool: PgPool) {
+    let app = setup(pool).await;
+    let snapshot = |at| forge_api::downloads::snapshot_github(&app.pool, at);
+    let now = chrono::Utc::now();
+    sqlx::query("INSERT INTO versions (addon_id, tag, published_at, asset_name, asset_url, created_at) SELECT id, 'v1', now(), 'a.zip', 'https://x/a.zip', now() FROM addons")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE versions SET download_count = 10").execute(&app.pool).await.unwrap();
+    snapshot(now).await.unwrap();
+    sqlx::query("UPDATE versions SET download_count = 15").execute(&app.pool).await.unwrap();
+    snapshot(now).await.unwrap();
+    snapshot(now + Duration::days(1)).await.unwrap();
+    let rows: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as("SELECT day, downloads FROM version_downloads ORDER BY day").fetch_all(&app.pool).await.unwrap();
+    assert_eq!(rows, [(now.date_naive(), 15), ((now + Duration::days(1)).date_naive(), 15)], "one row a day, the latest count wins");
+}
+
+#[sqlx::test]
 async fn website_download_counted(pool: PgPool) {
     let app = setup(pool).await;
     assert_eq!(report(&app, WEBSITE, "203.0.113.7", "lucky").await.status, StatusCode::NO_CONTENT);
