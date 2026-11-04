@@ -235,6 +235,17 @@ impl Core {
         }
     }
 
+    /// Keeps the platform's issue frame of `rid`: the Issues tab (`here`) and whether bugs go to
+    /// the platform (`ready`). True when that changed what the details show.
+    fn take_issue_frame(&mut self, rid: &str, here: bool, ready: bool) -> bool {
+        let mut changed = self.platform.issues_ready.insert(rid.to_string(), ready) != Some(ready);
+        if let Some(info) = self.platform.info.get_mut(rid).filter(|i| i.issues_on != here) {
+            info.issues_on = here;
+            changed = true;
+        }
+        changed
+    }
+
     /// Shows running work in the busy toast; the next step of it changes its text.
     // ponytail: one busy toast for all work, as the old status line; one per job if they overlap often.
     fn set_status(&mut self, text: String) -> i32 {
@@ -518,8 +529,25 @@ fn detail_pictures(info: &controller::AddonInfo) -> (Vec<String>, Vec<String>) {
     (info.icon.clone().into_iter().collect(), shots)
 }
 
+/// Where bugs go, asked on every open of the details: a creator may turn the Issues tab on or let
+/// the App write issues while the launcher runs. Until the platform says it takes them, the button
+/// sends them to GitHub; offline the stored answer stays.
+fn ask_issue_frame(weak: &slint::Weak<AppWindow>, shared: &Shared, client: &Client, api: &str, rid: &str) {
+    let Some((here, ready)) = client.get_text_quick(&format!("{api}/v1/addons/{rid}/issues/frame")).ok().and_then(|t| controller::issue_frame(&t)) else {
+        return;
+    };
+    let mut core = lock(shared);
+    if core.take_issue_frame(rid, here, ready) {
+        core.save_platform();
+        drop(core);
+        let redraw = shared.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+    }
+}
+
 /// Opens the detail view of a row. What was stored shows at once, its pictures from the disk; the
-/// platform is asked once per start in the background and replaces it when it answers.
+/// platform is asked once per start in the background and replaces it when it answers. Where bugs
+/// go is asked on every open.
 fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
     ui.set_comments_open(false);
     let job = {
@@ -528,21 +556,22 @@ fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
         core.detail = Some((id.clone(), ui.get_page() == 1));
         registry_entry(&core, &id).map(|a| a.id.clone()).map(|rid| {
             let ask = !core.refreshed.contains(&rid) && core.fetching.insert(rid.clone());
-            (core.platform.info.get(&rid).cloned(), ask.then(|| (core.client(), core.api_url())), rid)
+            (core.platform.info.get(&rid).cloned(), ask, core.client(), core.api_url(), rid)
         })
     };
     refresh(ui, shared);
     ui.set_detail_page(ui.get_page());
-    let Some((stored, ask, rid)) = job else { return };
+    let Some((stored, ask, client, api, rid)) = job else { return };
     let (weak, shared) = (ui.as_weak(), shared.clone());
-    let client = ask.as_ref().map_or_else(|| lock(&shared).client(), |(c, _)| c.clone());
     std::thread::spawn(move || {
         if let Some(stored) = &stored {
             let (icon, shots) = detail_pictures(stored);
             load_pictures(&weak, &shared, &client, icon, ICON_EDGE);
             load_pictures(&weak, &shared, &client, shots, SHOT_EDGE);
         }
-        let Some((_, api)) = ask else { return };
+        if !ask {
+            return ask_issue_frame(&weak, &shared, &client, &api, &rid);
+        }
         // Offline the stored page stays (or the summary without one); the next start asks again.
         let fresh = client.get_text(&format!("{api}/v1/addons/{rid}")).ok().and_then(|t| controller::addon_info(&t));
         {
@@ -561,18 +590,7 @@ fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
         }
         let redraw = shared.clone();
         let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
-        // Where bugs go: until the platform says it takes them, the button sends them to GitHub.
-        if fresh.as_ref().is_some_and(|i| i.issues_on)
-            && let Some(ready) = client.get_text_quick(&format!("{api}/v1/addons/{rid}/issues/frame")).ok().and_then(|t| controller::issues_ready(&t))
-        {
-            let mut core = lock(&shared);
-            if core.platform.issues_ready.insert(rid.clone(), ready) != Some(ready) {
-                core.save_platform();
-            }
-            drop(core);
-            let redraw = shared.clone();
-            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
-        }
+        ask_issue_frame(&weak, &shared, &client, &api, &rid);
         if let Some(info) = fresh {
             let (icon, shots) = detail_pictures(&info);
             load_pictures(&weak, &shared, &client, icon, ICON_EDGE);
@@ -2248,6 +2266,18 @@ fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
 #[cfg(test)]
 mod card_tests {
     use super::*;
+
+    #[test]
+    fn a_new_issue_frame_replaces_what_was_stored() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::new(dir.path().to_path_buf(), None);
+        core.platform.info.insert("dragon".into(), controller::AddonInfo::default());
+        core.platform.issues_ready.insert("dragon".into(), false);
+        assert!(core.take_issue_frame("dragon", true, true), "the tab was turned on and the App may write issues");
+        assert!(core.platform.info["dragon"].issues_on);
+        assert!(core.platform.issues_ready["dragon"]);
+        assert!(!core.take_issue_frame("dragon", true, true), "the same answer changes nothing");
+    }
 
     #[test]
     fn running_work_shows_in_one_toast_that_turns_into_its_result() {

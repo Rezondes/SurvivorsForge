@@ -479,10 +479,11 @@ pub fn addon_info(json: &str) -> Option<AddonInfo> {
     })
 }
 
-/// Whether the platform takes bug reports for an addon (`/v1/addons/{slug}/issues/frame`): its
-/// Issues tab is on and the App may write issues in the repo.
-pub fn issues_ready(json: &str) -> Option<bool> {
-    serde_json::from_str::<serde_json::Value>(json).ok()?["ready"].as_bool()
+/// `/v1/addons/{slug}/issues/frame`: whether the Issues tab is on (`issues_here`) and whether the
+/// platform takes bug reports (`ready`: the tab is on and the App may write issues in the repo).
+pub fn issue_frame(json: &str) -> Option<(bool, bool)> {
+    let v = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    Some((v["issues_here"].as_bool()?, v["ready"].as_bool()?))
 }
 
 /// The bug button of an addon, as on the website: the platform's form once everything works,
@@ -1259,9 +1260,10 @@ mod tests {
         assert_eq!(bug_report("https://w", "lucky", "alice/lucky", true, Some(false)), github, "the App may not write issues");
         assert_eq!(bug_report("https://w", "lucky", "alice/lucky", true, None), github, "not known yet, or offline");
         assert_eq!(bug_report("https://w", "lucky", "alice/lucky", false, Some(true)), github, "the Issues tab is off");
-        assert_eq!(issues_ready(r#"{"issues_here":true,"ready":true}"#), Some(true));
-        assert_eq!(issues_ready(r#"{"issues_here":false,"ready":false}"#), Some(false));
-        assert_eq!(issues_ready("not json"), None);
+        assert_eq!(issue_frame(r#"{"issues_here":true,"ready":true}"#), Some((true, true)));
+        assert_eq!(issue_frame(r#"{"issues_here":true,"ready":false}"#), Some((true, false)), "the App may not write issues");
+        assert_eq!(issue_frame(r#"{"issues_here":false,"ready":false}"#), Some((false, false)));
+        assert_eq!(issue_frame("not json"), None);
     }
 
     #[test]
