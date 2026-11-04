@@ -503,6 +503,8 @@ pre code { color: var(--text); word-break: normal; }
 .subnav a[aria-current="page"] { border-color: var(--outline-active); background: var(--crimson); color: var(--gold-bright); }
 .danger-link { color: var(--bad); }
 .danger-zone { border-color: var(--bad); }
+/* A panel with one message and one button, such as the login hand-over. */
+.panel.centered { text-align: center; }
 .danger-zone h2 { color: var(--bad); }
 .danger-link:hover { color: var(--bad); }
 label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
