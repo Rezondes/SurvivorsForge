@@ -1,7 +1,8 @@
 //! Counts of API requests per hour, route, method, status and client. They gather in memory, go to
 //! `api_request_stats` once a minute, and also feed the Prometheus metrics on `METRICS_BIND_ADDR`.
 //! Launchers that send their installation ID are also noted per hour with their version and
-//! platform (`launcher_active`), for the active launchers in Grafana.
+//! platform (`launcher_active`), for the active launchers in Grafana. Other clients of the public API
+//! are counted per hour by their User-Agent's first word and country (`public_api_stats`).
 
 use axum::extract::{MatchedPath, Request, State};
 use axum::http::{header, Method};
@@ -55,6 +56,26 @@ pub fn launcher_build(user_agent: &str) -> Option<(String, &'static str)> {
     version_ok.then(|| (version.to_string(), os))
 }
 
+/// The routes of the public API for other launchers (docs/public-api.md).
+pub const PUBLIC_ROUTES: [&str; 4] = ["/v1/registry", "/v1/addons/{slug}", "/v1/addons/{slug}/versions", "/v1/addons/{slug}/versions/{tag}/findings"];
+
+/// Who calls the public API: the first word of the User-Agent (`MyLauncher/1.2`), as its rules ask;
+/// `none` without one and `unknown` for an odd one, so no client fills the table with labels.
+pub fn public_client(user_agent: Option<&str>) -> String {
+    let Some(first) = user_agent.and_then(|ua| ua.split_whitespace().next()) else { return "none".into() };
+    let fine = first.len() <= 48 && first.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-+/".contains(&b));
+    if fine { first.to_string() } else { "unknown".into() }
+}
+
+/// The country Cloudflare reports (`CF-IPCountry`, two letters), else `unknown`; never the address.
+pub fn country(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get("cf-ipcountry")
+        .and_then(|v| v.to_str().ok())
+        .filter(|c| c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .map_or_else(|| "unknown".into(), str::to_ascii_uppercase)
+}
+
 /// The launcher sends `SurvivorsForge/<version>`; the website calls from `WEBSITE_IP`.
 pub fn classify(user_agent: Option<&str>, peer: IpAddr, website: Option<IpAddr>) -> Client {
     if user_agent.is_some_and(|ua| ua.starts_with("SurvivorsForge/")) {
@@ -91,11 +112,21 @@ struct Active {
     os: &'static str,
 }
 
-/// The counts and the active launchers since the last flush.
+/// An hour's public API requests of one client from one country on one route.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PublicKey {
+    hour: DateTime<Utc>,
+    route: String,
+    client: String,
+    country: String,
+}
+
+/// The counts, the active launchers and the public API use since the last flush.
 #[derive(Default)]
 pub struct RequestStats {
     pending: Mutex<HashMap<Key, Bucket>>,
     active: Mutex<HashSet<Active>>,
+    public: Mutex<HashMap<PublicKey, i64>>,
 }
 
 impl RequestStats {
@@ -115,8 +146,24 @@ impl RequestStats {
         self.active.lock().unwrap_or_else(|e| e.into_inner()).insert(Active { hour, install_id, version, os });
     }
 
+    /// Counts a request of another client to a public route in the hour of `at`.
+    pub fn record_public(&self, at: DateTime<Utc>, route: &str, client: String, country: String) {
+        let hour = at.duration_trunc(TimeDelta::hours(1)).unwrap_or(at);
+        *self.public.lock().unwrap_or_else(|e| e.into_inner()).entry(PublicKey { hour, route: route.to_string(), client, country }).or_default() += 1;
+    }
+
     /// Writes the gathered counts and starts over; on an error they are kept for the next try.
     pub async fn flush(&self, pool: &PgPool) -> sqlx::Result<()> {
+        let public = std::mem::take(&mut *self.public.lock().unwrap_or_else(|e| e.into_inner()));
+        if !public.is_empty()
+            && let Err(e) = write_public(pool, &public).await
+        {
+            let mut kept = self.public.lock().unwrap_or_else(|e| e.into_inner());
+            for (key, count) in public {
+                *kept.entry(key).or_default() += count;
+            }
+            return Err(e);
+        }
         let active = std::mem::take(&mut *self.active.lock().unwrap_or_else(|e| e.into_inner()));
         if !active.is_empty()
             && let Err(e) = write_active(pool, &active).await
@@ -140,6 +187,24 @@ impl RequestStats {
         }
         result
     }
+}
+
+async fn write_public(pool: &PgPool, counts: &HashMap<PublicKey, i64>) -> sqlx::Result<()> {
+    let mut tx = pool.begin().await?;
+    for (k, count) in counts {
+        sqlx::query(
+            "INSERT INTO public_api_stats (hour, route, client, country, count) VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (hour, route, client, country) DO UPDATE SET count = public_api_stats.count + EXCLUDED.count",
+        )
+        .bind(k.hour)
+        .bind(&k.route)
+        .bind(&k.client)
+        .bind(&k.country)
+        .bind(count)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
 }
 
 /// One row per launcher and hour; a later request in the hour names the newer version.
@@ -187,7 +252,7 @@ async fn write(pool: &PgPool, buckets: &HashMap<Key, Bucket>) -> sqlx::Result<()
 
 /// Deletes buckets of API and GitHub requests older than `KEEP_DAYS`. The job `prune_request_stats`.
 pub async fn prune(pool: &PgPool, now: DateTime<Utc>) -> Result<(), String> {
-    for table in ["api_request_stats", "github_request_stats"] {
+    for table in ["api_request_stats", "github_request_stats", "public_api_stats"] {
         sqlx::query(&format!("DELETE FROM {table} WHERE hour < $1"))
             .bind(now - TimeDelta::days(KEEP_DAYS))
             .execute(pool)
@@ -223,6 +288,9 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let method = method_label(request.method()).to_string();
     let user_agent = request.headers().get(header::USER_AGENT).and_then(|v| v.to_str().ok());
     let client = classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website);
+    if client == Client::Other && PUBLIC_ROUTES.contains(&route.as_str()) {
+        recorder.stats.record_public((recorder.clock)(), &route, public_client(user_agent), country(request.headers()));
+    }
     // One span per request (OpenTelemetry, `forge_trace`), continuing the website's trace.
     let span = tracing::info_span!("request", method = %method, route = %route, client = client.as_str(), install_id = tracing::field::Empty, status = tracing::field::Empty, trace_id = tracing::field::Empty);
     if let Some(id) = crate::routes::telemetry::install_id(request.headers()) {
@@ -299,6 +367,14 @@ mod tests {
         assert_eq!(launcher_build("SurvivorsForge/<script>"), None);
         assert_eq!(launcher_build(&format!("SurvivorsForge/{}", "9".repeat(40))), None);
         assert_eq!(launcher_build("curl/8.0"), None);
+    }
+
+    #[test]
+    fn names_public_clients_by_their_user_agent() {
+        assert_eq!(public_client(Some("MyLauncher/1.2 (+https://github.com/me/mylauncher)")), "MyLauncher/1.2");
+        assert_eq!(public_client(None), "none");
+        assert_eq!(public_client(Some("<script>alert(1)</script>")), "unknown");
+        assert_eq!(public_client(Some(&"a".repeat(60))), "unknown");
     }
 
     #[test]

@@ -67,6 +67,43 @@ async fn active_launchers_are_counted_per_hour_platform_and_version(pool: PgPool
 }
 
 #[sqlx::test]
+async fn public_api_use_is_counted_by_client_and_country(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let call = |uri: &str, agent: Option<&str>, country: Option<&str>| {
+        let mut request = Request::get(uri);
+        if let Some(agent) = agent {
+            request = request.header("user-agent", agent);
+        }
+        if let Some(country) = country {
+            request = request.header("cf-ipcountry", country);
+        }
+        request.body(Body::empty()).unwrap()
+    };
+    for request in [
+        call("/v1/registry", Some("MyLauncher/1.2 (+https://github.com/me/mylauncher)"), Some("de")),
+        call("/v1/registry", Some("MyLauncher/1.2 (+https://github.com/me/mylauncher)"), Some("DE")),
+        call("/v1/addons/lucky", Some("curl/8.0"), Some("US")),
+        call("/v1/registry", None, Some("nonsense")),
+        // Not public: the launcher and other routes are counted elsewhere.
+        call("/v1/registry", Some("SurvivorsForge/0.6.4 (windows)"), Some("DE")),
+        call("/v1/stats", Some("MyLauncher/1.2"), Some("DE")),
+    ] {
+        send(&app.router, request).await;
+    }
+    app.app_state.request_stats.flush(&app.pool).await.unwrap();
+    let counted: Vec<(String, String, String, i64)> =
+        sqlx::query_as("SELECT route, client, country, count FROM public_api_stats ORDER BY route, client").fetch_all(&app.pool).await.unwrap();
+    assert_eq!(
+        counted,
+        [
+            ("/v1/addons/{slug}".into(), "curl/8.0".into(), "US".into(), 1),
+            ("/v1/registry".into(), "MyLauncher/1.2".into(), "DE".into(), 2),
+            ("/v1/registry".into(), "none".into(), "unknown".into(), 1),
+        ]
+    );
+}
+
+#[sqlx::test]
 async fn unknown_paths_are_unmatched(pool: PgPool) {
     let app = TestApp::new(pool);
     send(&app.router, get("/wp-admin/setup.php", "bot")).await;

@@ -26,7 +26,7 @@ Anyone may use this API on these conditions:
 - **`/v1/registry`:** fetch it when your launcher starts, then at most once every 5 minutes. Once an hour is plenty. Always send the `ETag` of your last copy as `If-None-Match`: an unchanged list answers `304 Not Modified` without a body. The answer carries `Cache-Control: public, max-age=300`. Download counts are refreshed about every 15 minutes, so the list (and its `ETag`) changes that often while people download addons.
 - **The other three:** fetch them when a user opens an addon or is about to install a version. Do not poll them.
 - **Limit:** 120 requests per minute and IP address, counted over all routes. Above it the API answers `429` with the error code `rate_limited`. Wait a minute before the next request, and back off the same way on `5xx` answers.
-- **User-Agent:** send one with your launcher's name, version and a URL, e.g. `MyLauncher/1.2 (+https://github.com/me/mylauncher)`. That lets us reach you before a change hits you.
+- **User-Agent:** send one with your launcher's name, version and a URL, e.g. `MyLauncher/1.2 (+https://github.com/me/mylauncher)`. That lets us reach you before a change hits you. The platform counts requests to these routes per hour by the first word of the User-Agent (`MyLauncher/1.2`) and the country Cloudflare reports; it stores no IP address.
 
 ## Rules for clients
 

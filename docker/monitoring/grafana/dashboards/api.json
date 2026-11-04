@@ -248,6 +248,85 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 8,
+      "title": "Public API by client and country",
+      "description": "Requests of other clients to the public routes (docs/public-api.md) in the time range: the first word of their User-Agent and the country Cloudflare reports. No IP address is stored.",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT client AS \"Client\", country AS \"Country\", route AS \"Route\", sum(count) AS \"Requests\" FROM public_api_stats WHERE $__timeFilter(hour) GROUP BY 1, 2, 3 ORDER BY 4 DESC",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": [
+            "Requests"
+          ],
+          "countRows": false
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Public API requests per hour by client",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT hour AS time, client AS metric, sum(count) AS requests FROM public_api_stats WHERE $__timeFilter(hour) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
     }
   ]
 }
