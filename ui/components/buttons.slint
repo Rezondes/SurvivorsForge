@@ -11,6 +11,11 @@ export component ActionButton inherits Rectangle {
     in property <bool> large;
     callback clicked;
 
+    // A dialog puts the focus on its safe button.
+    public function focus-button() {
+        focus.focus();
+    }
+
     accessible-role: button;
     accessible-label: root.text;
     accessible-enabled: root.enabled;

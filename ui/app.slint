@@ -498,565 +498,607 @@ export component AppWindow inherits Window {
     in property <bool> self-update-in-place: true;
     callback self-update();
 
-    Rectangle {
-        background: Theme.bg-glow;
-    }
-
-    if root.needs-setup : SetupView {
-        y: root.title-height;
+    // Keys no control takes come here: Escape closes what is on top (the picture, a dialog, the
+    // details). It holds the focus at start, so Escape works before anything was tabbed to.
+    keys := FocusScope {
         width: parent.width;
-        height: parent.height - root.title-height;
-        path <=> root.setup-path;
-        error: root.setup-error;
-        warning: root.setup-warning;
-        example: root.addons-example;
-        suggestions: root.setup-suggestions;
-        searching: root.setup-searching;
-        file-dialog: root.file-dialog;
-        game-mode: root.game-mode;
-        browse => { root.setup-browse(); }
-        pick(path) => { root.setup-path = path; root.setup-confirm(); }
-        confirm => { root.setup-confirm(); }
-        quit => { root.close-window(); }
-    }
+        height: parent.height;
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if (event.text != Key.Escape) {
+                return reject;
+            }
+            if (root.zoom-open) {
+                root.zoom-open = false;
+            } else if (root.confirm-open) {
+                if (root.confirm-info) {
+                    root.confirm-accept();
+                } else {
+                    root.confirm-cancel();
+                }
+            } else if (root.repo-open) {
+                if (!root.repo-busy) {
+                    root.repo-cancel();
+                }
+            } else if (root.showing-detail) {
+                root.detail-page = -1;
+            } else {
+                return reject;
+            }
+            accept
+        }
 
-    if !root.needs-setup : VerticalLayout {
-        y: root.title-height;
-        width: parent.width;
-        height: parent.height - root.title-height;
-        padding-left: 28px;
-        padding-right: 28px;
-        padding-bottom: 8px;
-        spacing: 14px;
-
-        // The logo in the middle, the game's start button on the right, apart from the tabs.
         Rectangle {
-            height: max(logo.preferred-height, launch.preferred-height);
-            logo := Text {
-                text: "SurvivorsForge";
-                font-family: Theme.font-display;
-                font-size: Theme.logo;
-                color: Theme.gold-heading;
-                horizontal-alignment: center;
-            }
-            launch := VerticalLayout {
-                x: parent.width - self.width;
-                // Wider than the label for more room around it; the hint wraps to the same width.
-                width: 220px;
-                alignment: center;
-                spacing: 4px;
-                ActionButton {
-                    text: root.game-running ? "Game running" : root.game-updating ? (root.game-step != "" ? root.game-step : "Updating the game...") : root.game-update != "" ? root.game-update : "Launch game";
-                    primary: true;
-                    large: true;
-                    // Off at once on the click, before the game's window shows up.
-                    enabled: (root.game-missing == "" || root.game-update != "") && !root.game-running && !root.game-updating;
-                    clicked => {
-                        if root.game-update != "" {
-                            root.update-game();
-                        } else {
-                            root.launch-game();
-                        }
-                    }
-                }
-                // One slot for the bar while the game updates and the link before: the header keeps its height.
-                if root.game-updating || root.game-update != "" || root.game-hint != "" : Rectangle {
-                    height: Theme.touch ? 44px : 22px;
-                    if root.game-updating : ProgressBar {
-                        y: (parent.height - self.height) / 2;
-                        width: parent.width;
-                        value: root.game-progress;
-                    }
-                    if !root.game-updating && root.game-update != "" && root.game-missing == "" && !root.game-running : LinkButton {
-                        width: parent.width;
-                        height: parent.height;
-                        text: "Start without updating";
-                        clicked => { root.launch-game(); }
-                    }
-                }
-                if root.game-hint != "" : Text {
-                    text: root.game-hint;
-                    font-size: Theme.meta;
-                    color: Theme.text-muted;
+            background: Theme.bg-glow;
+        }
+
+        if root.needs-setup : SetupView {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            path <=> root.setup-path;
+            error: root.setup-error;
+            warning: root.setup-warning;
+            example: root.addons-example;
+            suggestions: root.setup-suggestions;
+            searching: root.setup-searching;
+            file-dialog: root.file-dialog;
+            game-mode: root.game-mode;
+            browse => { root.setup-browse(); }
+            pick(path) => { root.setup-path = path; root.setup-confirm(); }
+            confirm => { root.setup-confirm(); }
+            quit => { root.close-window(); }
+        }
+
+        if !root.needs-setup : VerticalLayout {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            padding-left: 28px;
+            padding-right: 28px;
+            padding-bottom: 8px;
+            spacing: 14px;
+
+            // The logo in the middle, the game's start button on the right, apart from the tabs.
+            Rectangle {
+                height: max(logo.preferred-height, launch.preferred-height);
+                logo := Text {
+                    text: "SurvivorsForge";
+                    font-family: Theme.font-display;
+                    font-size: Theme.logo;
+                    color: Theme.gold-heading;
                     horizontal-alignment: center;
-                    wrap: word-wrap;
                 }
-                if root.game-missing != "" : Text {
-                    text: root.game-missing;
-                    font-size: Theme.meta;
-                    color: Theme.text-muted;
-                    horizontal-alignment: right;
-                    wrap: word-wrap;
-                }
-            }
-        }
-
-        HorizontalLayout {
-            alignment: center;
-            spacing: 10px;
-            TabButton {
-                text: "Installed (" + root.installed-total + ")";
-                active: root.page == 0;
-                clicked => { root.open-page(0); }
-            }
-            TabButton {
-                text: "Browse";
-                active: root.page == 1;
-                clicked => { root.open-page(1); }
-            }
-            TabButton {
-                text: "Settings";
-                active: root.page == 2;
-                clicked => { root.open-page(2); }
-            }
-            // Game Mode has no title bar, so give it its own way out.
-            if root.game-mode : TabButton {
-                text: "Quit";
-                clicked => { root.close-window(); }
-            }
-        }
-
-        if root.self-update-version != "" : Rectangle {
-            height: 48px;
-            border-radius: Theme.radius;
-            border-width: 1px;
-            border-color: Theme.outline-hover;
-            background: Theme.crimson;
-            HorizontalLayout {
-                padding-left: 18px;
-                padding-right: 8px;
-                spacing: 16px;
-                Text {
-                    text: "SurvivorsForge " + root.self-update-version + " is available.";
-                    font-size: Theme.body;
-                    color: Theme.gold-bright;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                VerticalLayout {
+                launch := VerticalLayout {
+                    x: parent.width - self.width;
+                    // Wider than the label for more room around it; the hint wraps to the same width.
+                    width: 220px;
                     alignment: center;
+                    spacing: 4px;
                     ActionButton {
-                        text: root.self-update-busy ? "Updating..." : root.self-update-in-place ? "Update and restart" : "Open download page";
-                        enabled: !root.self-update-busy;
-                        clicked => { root.self-update(); }
-                    }
-                }
-            }
-        }
-
-        Panel {
-            vertical-stretch: 1;
-            VerticalLayout {
-                padding: 20px;
-                spacing: 16px;
-
-                if root.page != 2 && !root.showing-detail : HorizontalLayout {
-                    spacing: Theme.gap-tight;
-                    Field {
-                        horizontal-stretch: 1;
-                        placeholder: "Search name or author";
-                        label: "Search addons";
-                        text <=> root.search;
-                        edited(text) => { root.search-changed(text); }
-                    }
-                    // Icons named by their tooltips, as tall as the search field.
-                    if root.page == 0 : GlyphButton {
-                        height: Theme.touch ? 44px : 38px;
-                        label: root.checking ? "Checking for updates..." : "Check for updates";
-                        // Two arrows around a circle.
-                        glyph: "M 13.5 8 A 5.5 5.5 0 1 1 11.6 3.8 M 12.2 1 L 12 4.2 L 8.8 4";
-                        enabled: !root.checking;
-                        clicked => { root.check-updates(); }
-                    }
-                    if root.page == 0 && root.file-dialog : GlyphButton {
-                        height: Theme.touch ? 44px : 38px;
-                        label: "Install zip";
-                        // An archive box with its lid and handle.
-                        glyph: "M 2.5 6 L 13.5 6 L 13.5 14 L 2.5 14 Z M 1.5 2.5 L 14.5 2.5 L 14.5 6 L 1.5 6 Z M 6 9 L 10 9";
-                        clicked => { root.install-zip(); }
-                    }
-                    if root.page == 0 : GlyphButton {
-                        height: Theme.touch ? 44px : 38px;
-                        label: "Add GitHub repo";
-                        // A plus.
-                        glyph: "M 8 2.5 L 8 13.5 M 2.5 8 L 13.5 8";
-                        clicked => { root.add-repo(); }
-                    }
-                    if root.page == 0 : GlyphButton {
-                        height: Theme.touch ? 44px : 38px;
-                        label: root.update-count > 0 ? "Update all (" + root.update-count + ")" : root.checking ? "Update all" : "All up to date";
-                        // An arrow into a tray, or a tick when there is nothing to update.
-                        glyph: root.update-count > 0 || root.checking ? "M 8 2 L 8 10.5 M 4.5 7 L 8 10.5 L 11.5 7 M 2.5 13.5 L 13.5 13.5" : "M 3 8.5 L 6.5 12 L 13 4.5";
-                        badge: root.update-count > 0 ? root.update-count : "";
-                        primary: root.update-count > 0;
-                        enabled: root.update-count > 0;
-                        clicked => { root.update-all(); }
-                    }
-                }
-
-                // Filters and order as on the website, for both lists; GitHub and zip addons have no
-                // category or safety check, so a chosen one hides them. Tiles or rows at the right end.
-                if root.page != 2 && !root.showing-detail : HorizontalLayout {
-                    spacing: Theme.gap-tight;
-                    Dropdown {
-                        width: 220px;
-                        label: "Category";
-                        model: root.category-labels;
-                        list-labels: root.category-list-labels;
-                        levels: root.category-levels;
-                        current-index <=> root.category-index;
-                        selected => { root.category-changed(self.current-index); }
-                    }
-                    Dropdown {
-                        width: 190px;
-                        label: "Safety check";
-                        model: root.safety-labels;
-                        current-index <=> root.safety-index;
-                        selected => { root.safety-changed(self.current-index); }
-                    }
-                    Dropdown {
-                        width: 190px;
-                        label: "Sort by";
-                        model: root.sort-labels;
-                        current-index <=> root.sort-index;
-                        selected => { root.sort-changed(self.current-index); }
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                    if root.page == 0 : ViewToggle {
-                        tiles <=> root.installed-tiles;
-                        changed(on) => { root.view-changed(0, on); }
-                    }
-                    if root.page == 1 : ViewToggle {
-                        tiles <=> root.browse-tiles;
-                        changed(on) => { root.view-changed(1, on); }
-                    }
-                }
-
-                if root.showing-detail : DetailView {
-                    // The Overview fills the page; another tab's list does under the header.
-                    vertical-stretch: root.detail-tab <= 1 ? 1 : 0;
-                    detail: root.detail;
-                    tab <=> root.detail-tab;
-                    tab-changed(tab) => { root.detail-tab-changed(tab); }
-                    links-enabled: !root.game-mode;
-                    back => { root.detail-page = -1; }
-                    action => { root.row-action(root.detail.row.id); }
-                    remove => { root.row-remove(root.detail.row.id); }
-                    open => { root.row-open(root.detail.row.id); }
-                    website => { root.detail-website(); }
-                    link(page) => { root.detail-link(page); }
-                    scan => { root.detail-scan(); }
-                    auto-update => { root.detail-auto-update(); }
-                    enlarge-shot(i) => {
-                        root.zoom-shots = root.detail.shots;
-                        root.zoom-index = i;
-                        root.zoom-open = true;
-                    }
-                    enlarge(image, caption) => {
-                        root.zoom-shots = [{ image: image, caption: caption }];
-                        root.zoom-index = 0;
-                        root.zoom-open = true;
-                    }
-                }
-
-                if root.showing-detail && root.detail-tab == 2 : IssuesView {
-                    vertical-stretch: 1;
-                    rows: root.issues-rows;
-                    open-count: root.issues-open;
-                    loading: root.issues-loading;
-                    failed: root.issues-failed;
-                    links-enabled: !root.game-mode;
-                    open(number) => { root.detail-link(number == 0 ? "issues" : "issues/" + number); }
-                    report => { root.detail-link("bug"); }
-                    retry => { root.detail-retry(2); }
-                }
-
-                if root.showing-detail && root.detail-tab == 3 : CommentsView {
-                    vertical-stretch: 1;
-                    embedded: true;
-                    name: root.detail.row.name;
-                    rows: root.comments-rows;
-                    waiting: root.comments-waiting;
-                    failed: root.comments-failed;
-                    off: root.comments-off;
-                    more: root.comments-more;
-                    loading-more: root.comments-loading-more;
-                    links-enabled: !root.game-mode;
-                    write => { root.detail-link("comments"); }
-                    older => { root.comments-older(); }
-                    retry => { root.comments-retry(); }
-                }
-
-                if root.showing-detail && root.detail-tab == 4 : VersionsView {
-                    vertical-stretch: 1;
-                    rows: root.versions-rows;
-                    loading: root.versions-loading;
-                    failed: root.versions-failed;
-                    busy: root.detail.row.busy;
-                    retry => { root.detail-retry(4); }
-                    install(tag) => { root.version-install(tag); }
-                }
-
-                if root.page == 0 && !root.showing-detail : ScrollPanel {
-                    vertical-stretch: 1;
-                    if root.installed-tiles : AddonTiles {
-                        rows: root.installed-rows;
-                        action(id) => { root.row-action(id); }
-                        remove(id) => { root.row-remove(id); }
-                        open(id) => { root.row-open(id); }
-                        details(id) => { root.row-details(id); }
-                    }
-                    if !root.installed-tiles : VerticalLayout {
-                        spacing: 6px;
-                        for row in root.installed-rows : AddonRowView {
-                            addon: row;
-                            action => { root.row-action(row.id); }
-                            remove => { root.row-remove(row.id); }
-                            open => { root.row-open(row.id); }
-                            details => { root.row-details(row.id); }
+                        text: root.game-running ? "Game running" : root.game-updating ? (root.game-step != "" ? root.game-step : "Updating the game...") : root.game-update != "" ? root.game-update : "Launch game";
+                        primary: true;
+                        large: true;
+                        // Off at once on the click, before the game's window shows up.
+                        enabled: (root.game-missing == "" || root.game-update != "") && !root.game-running && !root.game-updating;
+                        clicked => {
+                            if root.game-update != "" {
+                                root.update-game();
+                            } else {
+                                root.launch-game();
+                            }
                         }
                     }
-                    if root.installed-rows.length == 0 : Text {
-                        text: root.search != "" ? "No installed addon matches your search." : "No addons installed yet. Browse the verified addons, install a zip or add a GitHub repo.";
-                        font-size: Theme.body;
+                    // One slot for the bar while the game updates and the link before: the header keeps its height.
+                    if root.game-updating || root.game-update != "" || root.game-hint != "" : Rectangle {
+                        height: Theme.touch ? 44px : 22px;
+                        if root.game-updating : ProgressBar {
+                            y: (parent.height - self.height) / 2;
+                            width: parent.width;
+                            value: root.game-progress;
+                        }
+                        if !root.game-updating && root.game-update != "" && root.game-missing == "" && !root.game-running : LinkButton {
+                            width: parent.width;
+                            height: parent.height;
+                            text: "Start without updating";
+                            clicked => { root.launch-game(); }
+                        }
+                    }
+                    if root.game-hint != "" : Text {
+                        text: root.game-hint;
+                        font-size: Theme.meta;
                         color: Theme.text-muted;
-                        wrap: word-wrap;
                         horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if root.game-missing != "" : Text {
+                        text: root.game-missing;
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        horizontal-alignment: right;
+                        wrap: word-wrap;
                     }
                 }
+            }
 
-                // One zip with every picked addon, for the browser version of the game.
-                if root.page == 1 && !root.showing-detail && root.picked-count > 0 : HorizontalLayout {
-                    spacing: 10px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 10px;
+                TabButton {
+                    text: "Installed (" + root.installed-total + ")";
+                    active: root.page == 0;
+                    clicked => { root.open-page(0); }
+                }
+                TabButton {
+                    text: "Browse";
+                    active: root.page == 1;
+                    clicked => { root.open-page(1); }
+                }
+                TabButton {
+                    text: "Settings";
+                    active: root.page == 2;
+                    clicked => { root.open-page(2); }
+                }
+                // Game Mode has no title bar, so give it its own way out.
+                if root.game-mode : TabButton {
+                    text: "Quit";
+                    clicked => { root.close-window(); }
+                }
+            }
+
+            if root.self-update-version != "" : Rectangle {
+                height: 48px;
+                border-radius: Theme.radius;
+                border-width: 1px;
+                border-color: Theme.outline-hover;
+                background: Theme.crimson;
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 8px;
+                    spacing: 16px;
                     Text {
-                        text: root.picked-count == 1 ? "1 addon picked for a pack" : root.picked-count + " addons picked for a pack";
+                        text: "SurvivorsForge " + root.self-update-version + " is available.";
                         font-size: Theme.body;
-                        color: Theme.gold;
+                        color: Theme.gold-bright;
                         vertical-alignment: center;
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                    ActionButton {
-                        text: root.pack-busy ? "Packing..." : "Save as zip";
-                        primary: true;
-                        enabled: !root.pack-busy;
-                        clicked => { root.pack-save(); }
-                    }
-                    ActionButton {
-                        text: "Share as link";
-                        enabled: !root.pack-busy && !root.game-mode;
-                        clicked => { root.pack-share(); }
+                        horizontal-stretch: 1;
                     }
                     VerticalLayout {
                         alignment: center;
-                        LinkButton {
-                            text: "Clear";
-                            clicked => { root.pack-clear(); }
+                        ActionButton {
+                            text: root.self-update-busy ? "Updating..." : root.self-update-in-place ? "Update and restart" : "Open download page";
+                            enabled: !root.self-update-busy;
+                            clicked => { root.self-update(); }
                         }
                     }
                 }
+            }
 
-                if root.page == 1 && !root.showing-detail : ScrollPanel {
-                    vertical-stretch: 1;
-                    if root.browse-tiles : AddonTiles {
-                        rows: root.browse-rows;
-                        action(id) => { root.row-action(id); }
-                        remove(id) => { root.row-remove(id); }
-                        open(id) => { root.row-open(id); }
-                        details(id) => { root.row-details(id); }
-                        pick(id) => { root.row-pick(id); }
-                    }
-                    if !root.browse-tiles : VerticalLayout {
-                        spacing: 6px;
-                        for row in root.browse-rows : AddonRowView {
-                            addon: row;
-                            action => { root.row-action(row.id); }
-                            remove => { root.row-remove(row.id); }
-                            open => { root.row-open(row.id); }
-                            details => { root.row-details(row.id); }
-                            pick => { root.row-pick(row.id); }
+            Panel {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 16px;
+
+                    if root.page != 2 && !root.showing-detail : HorizontalLayout {
+                        spacing: Theme.gap-tight;
+                        Field {
+                            horizontal-stretch: 1;
+                            placeholder: "Search name or author";
+                            label: "Search addons";
+                            text <=> root.search;
+                            edited(text) => { root.search-changed(text); }
+                        }
+                        // Icons named by their tooltips, as tall as the search field.
+                        if root.page == 0 : GlyphButton {
+                            height: Theme.touch ? 44px : 38px;
+                            label: root.checking ? "Checking for updates..." : "Check for updates";
+                            // Two arrows around a circle.
+                            glyph: "M 13.5 8 A 5.5 5.5 0 1 1 11.6 3.8 M 12.2 1 L 12 4.2 L 8.8 4";
+                            enabled: !root.checking;
+                            clicked => { root.check-updates(); }
+                        }
+                        if root.page == 0 && root.file-dialog : GlyphButton {
+                            height: Theme.touch ? 44px : 38px;
+                            label: "Install zip";
+                            // An archive box with its lid and handle.
+                            glyph: "M 2.5 6 L 13.5 6 L 13.5 14 L 2.5 14 Z M 1.5 2.5 L 14.5 2.5 L 14.5 6 L 1.5 6 Z M 6 9 L 10 9";
+                            clicked => { root.install-zip(); }
+                        }
+                        if root.page == 0 : GlyphButton {
+                            height: Theme.touch ? 44px : 38px;
+                            label: "Add GitHub repo";
+                            // A plus.
+                            glyph: "M 8 2.5 L 8 13.5 M 2.5 8 L 13.5 8";
+                            clicked => { root.add-repo(); }
+                        }
+                        if root.page == 0 : GlyphButton {
+                            height: Theme.touch ? 44px : 38px;
+                            label: root.update-count > 0 ? "Update all (" + root.update-count + ")" : root.checking ? "Update all" : "All up to date";
+                            // An arrow into a tray, or a tick when there is nothing to update.
+                            glyph: root.update-count > 0 || root.checking ? "M 8 2 L 8 10.5 M 4.5 7 L 8 10.5 L 11.5 7 M 2.5 13.5 L 13.5 13.5" : "M 3 8.5 L 6.5 12 L 13 4.5";
+                            badge: root.update-count > 0 ? root.update-count : "";
+                            primary: root.update-count > 0;
+                            enabled: root.update-count > 0;
+                            clicked => { root.update-all(); }
                         }
                     }
-                    if root.browse-rows.length == 0 : Text {
-                        text: "No verified addon matches your search.";
-                        font-size: Theme.body;
-                        color: Theme.text-muted;
-                        horizontal-alignment: center;
+
+                    // Filters and order as on the website, for both lists; GitHub and zip addons have no
+                    // category or safety check, so a chosen one hides them. Tiles or rows at the right end.
+                    if root.page != 2 && !root.showing-detail : HorizontalLayout {
+                        spacing: Theme.gap-tight;
+                        Dropdown {
+                            width: 220px;
+                            label: "Category";
+                            model: root.category-labels;
+                            list-labels: root.category-list-labels;
+                            levels: root.category-levels;
+                            current-index <=> root.category-index;
+                            selected => { root.category-changed(self.current-index); }
+                        }
+                        Dropdown {
+                            width: 190px;
+                            label: "Safety check";
+                            model: root.safety-labels;
+                            current-index <=> root.safety-index;
+                            selected => { root.safety-changed(self.current-index); }
+                        }
+                        Dropdown {
+                            width: 190px;
+                            label: "Sort by";
+                            model: root.sort-labels;
+                            current-index <=> root.sort-index;
+                            selected => { root.sort-changed(self.current-index); }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        if root.page == 0 : ViewToggle {
+                            tiles <=> root.installed-tiles;
+                            changed(on) => { root.view-changed(0, on); }
+                        }
+                        if root.page == 1 : ViewToggle {
+                            tiles <=> root.browse-tiles;
+                            changed(on) => { root.view-changed(1, on); }
+                        }
+                    }
+
+                    if root.showing-detail : DetailView {
+                        // The Overview fills the page; another tab's list does under the header.
+                        vertical-stretch: root.detail-tab <= 1 ? 1 : 0;
+                        detail: root.detail;
+                        tab <=> root.detail-tab;
+                        tab-changed(tab) => { root.detail-tab-changed(tab); }
+                        links-enabled: !root.game-mode;
+                        back => { root.detail-page = -1; }
+                        action => { root.row-action(root.detail.row.id); }
+                        remove => { root.row-remove(root.detail.row.id); }
+                        open => { root.row-open(root.detail.row.id); }
+                        website => { root.detail-website(); }
+                        link(page) => { root.detail-link(page); }
+                        scan => { root.detail-scan(); }
+                        auto-update => { root.detail-auto-update(); }
+                        enlarge-shot(i) => {
+                            root.zoom-shots = root.detail.shots;
+                            root.zoom-index = i;
+                            root.zoom-open = true;
+                        }
+                        enlarge(image, caption) => {
+                            root.zoom-shots = [{ image: image, caption: caption }];
+                            root.zoom-index = 0;
+                            root.zoom-open = true;
+                        }
+                    }
+
+                    if root.showing-detail && root.detail-tab == 2 : IssuesView {
+                        vertical-stretch: 1;
+                        rows: root.issues-rows;
+                        open-count: root.issues-open;
+                        loading: root.issues-loading;
+                        failed: root.issues-failed;
+                        links-enabled: !root.game-mode;
+                        open(number) => { root.detail-link(number == 0 ? "issues" : "issues/" + number); }
+                        report => { root.detail-link("bug"); }
+                        retry => { root.detail-retry(2); }
+                    }
+
+                    if root.showing-detail && root.detail-tab == 3 : CommentsView {
+                        vertical-stretch: 1;
+                        embedded: true;
+                        name: root.detail.row.name;
+                        rows: root.comments-rows;
+                        waiting: root.comments-waiting;
+                        failed: root.comments-failed;
+                        off: root.comments-off;
+                        more: root.comments-more;
+                        loading-more: root.comments-loading-more;
+                        links-enabled: !root.game-mode;
+                        write => { root.detail-link("comments"); }
+                        older => { root.comments-older(); }
+                        retry => { root.comments-retry(); }
+                    }
+
+                    if root.showing-detail && root.detail-tab == 4 : VersionsView {
+                        vertical-stretch: 1;
+                        rows: root.versions-rows;
+                        loading: root.versions-loading;
+                        failed: root.versions-failed;
+                        busy: root.detail.row.busy;
+                        retry => { root.detail-retry(4); }
+                        install(tag) => { root.version-install(tag); }
+                    }
+
+                    if root.page == 0 && !root.showing-detail : ScrollPanel {
+                        vertical-stretch: 1;
+                        if root.installed-tiles : AddonTiles {
+                            rows: root.installed-rows;
+                            action(id) => { root.row-action(id); }
+                            remove(id) => { root.row-remove(id); }
+                            open(id) => { root.row-open(id); }
+                            details(id) => { root.row-details(id); }
+                        }
+                        if !root.installed-tiles : VerticalLayout {
+                            spacing: 6px;
+                            for row in root.installed-rows : AddonRowView {
+                                addon: row;
+                                action => { root.row-action(row.id); }
+                                remove => { root.row-remove(row.id); }
+                                open => { root.row-open(row.id); }
+                                details => { root.row-details(row.id); }
+                            }
+                        }
+                        if root.installed-rows.length == 0 : Text {
+                            text: root.search != "" ? "No installed addon matches your search." : "No addons installed yet. Browse the verified addons, install a zip or add a GitHub repo.";
+                            font-size: Theme.body;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // One zip with every picked addon, for the browser version of the game.
+                    if root.page == 1 && !root.showing-detail && root.picked-count > 0 : HorizontalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: root.picked-count == 1 ? "1 addon picked for a pack" : root.picked-count + " addons picked for a pack";
+                            font-size: Theme.body;
+                            color: Theme.gold;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        ActionButton {
+                            text: root.pack-busy ? "Packing..." : "Save as zip";
+                            primary: true;
+                            enabled: !root.pack-busy;
+                            clicked => { root.pack-save(); }
+                        }
+                        ActionButton {
+                            text: "Share as link";
+                            enabled: !root.pack-busy && !root.game-mode;
+                            clicked => { root.pack-share(); }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            LinkButton {
+                                text: "Clear";
+                                clicked => { root.pack-clear(); }
+                            }
+                        }
+                    }
+
+                    if root.page == 1 && !root.showing-detail : ScrollPanel {
+                        vertical-stretch: 1;
+                        if root.browse-tiles : AddonTiles {
+                            rows: root.browse-rows;
+                            action(id) => { root.row-action(id); }
+                            remove(id) => { root.row-remove(id); }
+                            open(id) => { root.row-open(id); }
+                            details(id) => { root.row-details(id); }
+                            pick(id) => { root.row-pick(id); }
+                        }
+                        if !root.browse-tiles : VerticalLayout {
+                            spacing: 6px;
+                            for row in root.browse-rows : AddonRowView {
+                                addon: row;
+                                action => { root.row-action(row.id); }
+                                remove => { root.row-remove(row.id); }
+                                open => { root.row-open(row.id); }
+                                details => { root.row-details(row.id); }
+                                pick => { root.row-pick(row.id); }
+                            }
+                        }
+                        if root.browse-rows.length == 0 : Text {
+                            text: "No verified addon matches your search.";
+                            font-size: Theme.body;
+                            color: Theme.text-muted;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    if root.page == 2 : SettingsView {
+                        vertical-stretch: 1;
+                        path <=> root.settings-path;
+                        game-versions: root.settings-game-versions;
+                        game-index <=> root.settings-game-index;
+                        api-url <=> root.settings-api-url;
+                        web-url <=> root.settings-web-url;
+                        api-default: root.settings-api-default;
+                        web-default: root.settings-web-default;
+                        telemetry <=> root.settings-telemetry;
+                        send-install-id <=> root.settings-send-install-id;
+                        auto-update <=> root.settings-auto-update;
+                        version: root.app-version;
+                        file-dialog: root.file-dialog;
+                        game-mode: root.game-mode;
+                        browse => { root.settings-browse(); }
+                        save => { root.settings-save(); }
                     }
                 }
+            }
 
-                if root.page == 2 : SettingsView {
-                    vertical-stretch: 1;
-                    path <=> root.settings-path;
-                    game-versions: root.settings-game-versions;
-                    game-index <=> root.settings-game-index;
-                    api-url <=> root.settings-api-url;
-                    web-url <=> root.settings-web-url;
-                    api-default: root.settings-api-default;
-                    web-default: root.settings-web-default;
-                    telemetry <=> root.settings-telemetry;
-                    send-install-id <=> root.settings-send-install-id;
-                    auto-update <=> root.settings-auto-update;
-                    version: root.app-version;
-                    file-dialog: root.file-dialog;
-                    game-mode: root.game-mode;
-                    browse => { root.settings-browse(); }
-                    save => { root.settings-save(); }
-                }
-            }
-        }
-
-        HorizontalLayout {
-            height: 20px;
-            spacing: 16px;
-            Text {
-                text: "AddOns: " + root.addons-dir;
-                font-size: Theme.meta;
-                vertical-alignment: center;
-                color: Theme.text-muted;
-                overflow: elide;
-                horizontal-stretch: 1;
-            }
-            Text {
-                text: "v" + root.app-version;
-                font-size: 11px;
-                vertical-alignment: center;
-                color: Theme.text-muted;
-            }
-        }
-    }
-
-    // Above the pages and the bottom line, under the dialogs.
-    ToastStack {
-        x: parent.width - self.width - 24px;
-        y: parent.height - self.height - 40px;
-        width: 380px;
-        height: self.preferred-height;
-        toasts: root.toasts;
-        style: {
-            background: Theme.panel,
-            border: Theme.outline,
-            text: Theme.text,
-            muted: Theme.text-muted,
-            info: Theme.info,
-            success: Theme.ok,
-            warning: Theme.warn,
-            error: Theme.danger,
-            busy: Theme.gold,
-            font-size: Theme.body,
-            radius: 4px,
-        };
-        dismiss(id) => { root.toast-dismiss(id); }
-    }
-
-    if root.repo-open : Overlay {
-        y: root.title-height;
-        width: parent.width;
-        height: parent.height - root.title-height;
-        DialogCard {
-            title: "Add GitHub Repo";
-            Text {
-                text: "SurvivorsForge checks the latest release, then the newest tag, then the default branch for an addon.";
-                font-size: Theme.body;
-                color: Theme.text;
-                wrap: word-wrap;
-            }
-            Field {
-                text <=> root.repo-input;
-                placeholder: "owner/repo or https://github.com/owner/repo";
-                label: "GitHub repo";
-                enabled: !root.repo-busy;
-                init => { self.focus-input(); }
-                accepted => { root.repo-submit(); }
-            }
-            if root.repo-error != "" : Text {
-                text: root.repo-error;
-                font-size: Theme.body;
-                color: Theme.danger;
-                wrap: word-wrap;
-            }
             HorizontalLayout {
-                alignment: end;
-                spacing: Theme.gap-tight;
-                ActionButton {
-                    text: "Cancel";
+                height: 20px;
+                spacing: 16px;
+                Text {
+                    text: "AddOns: " + root.addons-dir;
+                    font-size: Theme.meta;
+                    vertical-alignment: center;
+                    color: Theme.text-muted;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "v" + root.app-version;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    color: Theme.text-muted;
+                }
+            }
+        }
+
+        // Above the pages and the bottom line, under the dialogs.
+        ToastStack {
+            x: parent.width - self.width - 24px;
+            y: parent.height - self.height - 40px;
+            width: 380px;
+            height: self.preferred-height;
+            toasts: root.toasts;
+            style: {
+                background: Theme.panel,
+                border: Theme.outline,
+                text: Theme.text,
+                muted: Theme.text-muted,
+                info: Theme.info,
+                success: Theme.ok,
+                warning: Theme.warn,
+                error: Theme.danger,
+                busy: Theme.gold,
+                font-size: Theme.body,
+                radius: 4px,
+            };
+            dismiss(id) => { root.toast-dismiss(id); }
+        }
+
+        if root.repo-open : Overlay {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            DialogCard {
+                title: "Add GitHub Repo";
+                Text {
+                    text: "SurvivorsForge checks the latest release, then the newest tag, then the default branch for an addon.";
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    wrap: word-wrap;
+                }
+                Field {
+                    text <=> root.repo-input;
+                    placeholder: "owner/repo or https://github.com/owner/repo";
+                    label: "GitHub repo";
                     enabled: !root.repo-busy;
-                    clicked => { root.repo-cancel(); }
+                    init => { self.focus-input(); }
+                    accepted => { root.repo-submit(); }
                 }
-                ActionButton {
-                    text: root.repo-busy ? "Checking..." : "Check repo";
-                    primary: true;
-                    enabled: !root.repo-busy && root.repo-input != "";
-                    clicked => { root.repo-submit(); }
+                if root.repo-error != "" : Text {
+                    text: root.repo-error;
+                    font-size: Theme.body;
+                    color: Theme.danger;
+                    wrap: word-wrap;
                 }
-            }
-        }
-    }
-
-    if root.zoom-open : PictureViewer {
-        y: root.title-height;
-        width: parent.width;
-        height: parent.height - root.title-height;
-        shots: root.zoom-shots;
-        index <=> root.zoom-index;
-        close => { root.zoom-open = false; }
-    }
-
-    if root.confirm-open : Overlay {
-        y: root.title-height;
-        width: parent.width;
-        height: parent.height - root.title-height;
-        DialogCard {
-            title: root.confirm-title;
-            Text {
-                text: root.confirm-text;
-                font-size: Theme.body;
-                color: Theme.text;
-                wrap: word-wrap;
-            }
-            HorizontalLayout {
-                alignment: end;
-                spacing: Theme.gap-tight;
-                if !root.confirm-info : ActionButton {
-                    text: "Cancel";
-                    clicked => { root.confirm-cancel(); }
-                }
-                if root.confirm-extra != "" : ActionButton {
-                    text: root.confirm-extra;
-                    clicked => { root.confirm-extra-accept(); }
-                }
-                ActionButton {
-                    text: root.confirm-ok;
-                    primary: !root.confirm-danger;
-                    danger: root.confirm-danger;
-                    clicked => { root.confirm-accept(); }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: Theme.gap-tight;
+                    ActionButton {
+                        text: "Cancel";
+                        enabled: !root.repo-busy;
+                        clicked => { root.repo-cancel(); }
+                    }
+                    ActionButton {
+                        text: root.repo-busy ? "Checking..." : "Check repo";
+                        primary: true;
+                        enabled: !root.repo-busy && root.repo-input != "";
+                        clicked => { root.repo-submit(); }
+                    }
                 }
             }
         }
-    }
 
-    if !root.game-mode : TitleBar {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        title: root.title;
-        maximized: root.maximized;
-        start-drag => { root.start-drag(); }
-        minimize => { root.minimize(); }
-        toggle-maximize => { root.toggle-maximize(); }
-        close => { root.close-window(); }
-    }
+        if root.zoom-open : PictureViewer {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            shots: root.zoom-shots;
+            index <=> root.zoom-index;
+            close => { root.zoom-open = false; }
+        }
 
-    if !root.maximized && !root.game-mode : ResizeEdges {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: parent.height;
-        start-resize(direction) => { root.start-resize(direction); }
-    }
+        if root.confirm-open : Overlay {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            DialogCard {
+                title: root.confirm-title;
+                Text {
+                    text: root.confirm-text;
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: Theme.gap-tight;
+                    if !root.confirm-info : ActionButton {
+                        text: "Cancel";
+                        // Return on a dangerous question keeps things as they are.
+                        init => {
+                            if (root.confirm-danger) {
+                                self.focus-button();
+                            }
+                        }
+                        clicked => { root.confirm-cancel(); }
+                    }
+                    if root.confirm-extra != "" : ActionButton {
+                        text: root.confirm-extra;
+                        clicked => { root.confirm-extra-accept(); }
+                    }
+                    ActionButton {
+                        text: root.confirm-ok;
+                        primary: !root.confirm-danger;
+                        danger: root.confirm-danger;
+                        init => {
+                            if (!root.confirm-danger || root.confirm-info) {
+                                self.focus-button();
+                            }
+                        }
+                        clicked => { root.confirm-accept(); }
+                    }
+                }
+            }
+        }
 
-    // Last, so a tooltip shows above everything; it takes no input.
-    TooltipLayer {
-        width: parent.width;
-        height: parent.height;
+        if !root.game-mode : TitleBar {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            title: root.title;
+            maximized: root.maximized;
+            start-drag => { root.start-drag(); }
+            minimize => { root.minimize(); }
+            toggle-maximize => { root.toggle-maximize(); }
+            close => { root.close-window(); }
+        }
+
+        if !root.maximized && !root.game-mode : ResizeEdges {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            start-resize(direction) => { root.start-resize(direction); }
+        }
+
+        // Last, so a tooltip shows above everything; it takes no input.
+        TooltipLayer {
+            width: parent.width;
+            height: parent.height;
+        }
     }
 }

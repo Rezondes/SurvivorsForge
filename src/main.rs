@@ -2767,6 +2767,24 @@ mod layout_tests {
         }
 
         #[test]
+        fn escape_closes_a_dialog_and_return_keeps_a_dangerous_one_safe() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let (cancelled, accepted) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+            let (c, a) = (cancelled.clone(), accepted.clone());
+            ui.on_confirm_cancel(move || c.set(c.get() + 1));
+            ui.on_confirm_accept(move || a.set(a.get() + 1));
+            ui.show().unwrap();
+            ui.set_confirm_danger(true);
+            ui.set_confirm_ok("Quit anyway".into());
+            ui.set_confirm_open(true);
+            press(&ui, &slint::SharedString::from(Key::Return));
+            assert_eq!((cancelled.get(), accepted.get()), (1, 0), "Return presses Cancel, which has the focus");
+            press(&ui, &slint::SharedString::from(Key::Escape));
+            assert_eq!((cancelled.get(), accepted.get()), (2, 0), "Escape cancels too");
+        }
+
+        #[test]
         fn a_toast_shows_bottom_right_and_closes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
