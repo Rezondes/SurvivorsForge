@@ -5,13 +5,17 @@
 <h1>{{ name }}</h1>
 {% include "admin/flash.html" %}
 <section class="panel">
+  {% if locked || repo != "" %}
+  <p>{% if repo != "" %}Repo: <a href="https://github.com/{{ repo }}" rel="external noopener">{{ repo }}</a>{% endif %}
+    {% if locked %}<span class="badge warn">Repo not reachable</span> <span class="muted">The last sync could not read it: private, renamed or deleted on GitHub. It clears itself once the repo is back.</span>{% endif %}</p>
+  {% endif %}
   <h2>Owner</h2>
   <p>{% if owner != "" %}{{ owner }}{% else %}Nobody yet (the author can claim it){% endif %}</p>
   <form method="post" action="/admin/addons/{{ slug }}/owner" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label for="new-owner">New owner (GitHub login of someone who logged in here)</label>
     <input id="new-owner" name="login" required>
-    <label for="owner-note">Note</label>
+    <label for="owner-note">Note for the audit log (not public)</label>
     <input id="owner-note" name="note" required>
     <button type="submit" class="danger" data-confirm="Hand over this addon? The new owner gets every right to it.">Hand over</button>
   </form>

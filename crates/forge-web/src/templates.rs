@@ -837,6 +837,10 @@ pub struct AdminAddonPage {
     pub slug: String,
     pub name: String,
     pub owner: String,
+    /// `owner/name` on GitHub, empty when unknown.
+    pub repo: String,
+    /// The repo could not be reached on the last sync.
+    pub locked: bool,
     pub blocked: bool,
     pub block_reason: String,
     pub msg: Option<String>,

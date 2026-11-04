@@ -437,8 +437,11 @@ pub async fn addon(
     Path(slug): Path<String>,
     Query(flash): Query<Flash>,
 ) -> WebResult<Html<String>> {
-    let (user, _) = admin(&state, &jar).await?;
+    let (user, token) = admin(&state, &jar).await?;
     let a = state.api.get(&format!("/v1/addons/{slug}"), None).await?;
+    // The public answer of a blocked addon leaves out its owner and repo; the admin list has them.
+    let listed = state.api.get(&format!("/v1/admin/addons?{}", crate::issues::query(&[("q", slug.as_str())])), Some(&token)).await.ok();
+    let row = listed.as_ref().and_then(|l| l["addons"].as_array()?.iter().find(|r| s(&r["slug"]).eq_ignore_ascii_case(&slug)).cloned()).unwrap_or_default();
     let versions = state
         .api
         .get(&format!("/v1/addons/{slug}/versions"), None)
@@ -462,7 +465,9 @@ pub async fn addon(
         versions,
         slug,
         name: s(&a["name"]),
-        owner: if a["owner"].is_object() { s(&a["owner"]["login"]) } else { String::new() },
+        owner: if a["owner"].is_object() { s(&a["owner"]["login"]) } else { s(&row["owner"]) },
+        repo: s(&row["repo"]),
+        locked: row["locked"] == true,
         blocked: a["blocked"] == true,
         block_reason: s(&a["block_reason"]),
         msg: flash.msg,
