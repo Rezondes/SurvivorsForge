@@ -2,11 +2,12 @@ import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox,
-    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer
+    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
+    IssueLine, IssuesView, VersionLine, VersionsView
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, VersionLine }
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
 export struct Suggestion {
@@ -399,8 +400,19 @@ export component AppWindow inherits Window {
     callback row-details(string);
     callback detail-website();
     callback detail-link(string);
-    // The comments page of the detail view; its rows and how loading them goes.
-    in-out property <bool> comments-open;
+    // The detail view's sub page: 0 Overview, 1 Issues, 2 Comments, 3 Versions.
+    in-out property <int> detail-tab;
+    callback detail-tab-changed(int);
+    // A list page that failed, asked again.
+    callback detail-retry(int);
+    in property <[IssueLine]> issues-rows;
+    in property <int> issues-open;
+    in property <bool> issues-loading;
+    in property <bool> issues-failed;
+    in property <[VersionLine]> versions-rows;
+    in property <bool> versions-loading;
+    in property <bool> versions-failed;
+    // The Comments tab; its rows and how loading them goes.
     in property <[CommentRow]> comments-rows;
     in property <int> comments-waiting;
     in property <bool> comments-failed;
@@ -683,25 +695,12 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if root.showing-detail && root.comments-open : CommentsView {
-                    vertical-stretch: 1;
-                    name: root.detail.row.name;
-                    rows: root.comments-rows;
-                    waiting: root.comments-waiting;
-                    failed: root.comments-failed;
-                    off: root.comments-off;
-                    more: root.comments-more;
-                    loading-more: root.comments-loading-more;
-                    links-enabled: !root.game-mode;
-                    back => { root.comments-open = false; }
-                    write => { root.detail-link("comments"); }
-                    older => { root.comments-older(); }
-                    retry => { root.comments-retry(); }
-                }
-
-                if root.showing-detail && !root.comments-open : DetailView {
-                    vertical-stretch: 1;
+                if root.showing-detail : DetailView {
+                    // The Overview fills the page; another tab's list does under the header.
+                    vertical-stretch: root.detail-tab == 0 ? 1 : 0;
                     detail: root.detail;
+                    tab <=> root.detail-tab;
+                    tab-changed(tab) => { root.detail-tab-changed(tab); }
                     links-enabled: !root.game-mode;
                     back => { root.detail-page = -1; }
                     action => { root.row-action(root.detail.row.id); }
@@ -709,7 +708,6 @@ export component AppWindow inherits Window {
                     open => { root.row-open(root.detail.row.id); }
                     website => { root.detail-website(); }
                     link(page) => { root.detail-link(page); }
-                    comments => { root.comments-show(); }
                     scan => { root.detail-scan(); }
                     auto-update => { root.detail-auto-update(); }
                     enlarge-shot(i) => {
@@ -722,6 +720,42 @@ export component AppWindow inherits Window {
                         root.zoom-index = 0;
                         root.zoom-open = true;
                     }
+                }
+
+                if root.showing-detail && root.detail-tab == 1 : IssuesView {
+                    vertical-stretch: 1;
+                    rows: root.issues-rows;
+                    open-count: root.issues-open;
+                    loading: root.issues-loading;
+                    failed: root.issues-failed;
+                    links-enabled: !root.game-mode;
+                    open(number) => { root.detail-link(number == 0 ? "issues" : "issues/" + number); }
+                    report => { root.detail-link("bug"); }
+                    retry => { root.detail-retry(1); }
+                }
+
+                if root.showing-detail && root.detail-tab == 2 : CommentsView {
+                    vertical-stretch: 1;
+                    embedded: true;
+                    name: root.detail.row.name;
+                    rows: root.comments-rows;
+                    waiting: root.comments-waiting;
+                    failed: root.comments-failed;
+                    off: root.comments-off;
+                    more: root.comments-more;
+                    loading-more: root.comments-loading-more;
+                    links-enabled: !root.game-mode;
+                    write => { root.detail-link("comments"); }
+                    older => { root.comments-older(); }
+                    retry => { root.comments-retry(); }
+                }
+
+                if root.showing-detail && root.detail-tab == 3 : VersionsView {
+                    vertical-stretch: 1;
+                    rows: root.versions-rows;
+                    loading: root.versions-loading;
+                    failed: root.versions-failed;
+                    retry => { root.detail-retry(3); }
                 }
 
                 if root.page == 0 && !root.showing-detail : ScrollPanel {

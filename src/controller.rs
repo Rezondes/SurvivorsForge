@@ -503,9 +503,71 @@ pub fn addon_link(web: &str, slug: &str, page: &str) -> Option<String> {
         "issues" => "/issues".into(),
         "comments" => "/comments".into(),
         "abuse" => "/report".into(),
+        // One issue of the Issues tab.
+        p if p.strip_prefix("issues/").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) => format!("/{p}"),
         _ => return None,
     };
     Some(format!("{web}/addons/{slug}{path}"))
+}
+
+/// An open issue on the detail view's Issues tab.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IssueLine {
+    pub number: u64,
+    pub title: String,
+    pub author: String,
+    pub comments: u64,
+    /// The day it was opened, `YYYY-MM-DD`.
+    pub date: String,
+}
+
+/// The open issues of `/v1/addons/{slug}/issues` and how many are open; none while the tab is off.
+pub fn issue_lines(json: &str) -> Option<(Vec<IssueLine>, u64)> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let issues = v["issues"].as_array().into_iter().flatten().filter_map(|i| {
+        Some(IssueLine {
+            number: i["number"].as_u64()?,
+            title: i["title"].as_str()?.to_string(),
+            author: i["author"]["login"].as_str().unwrap_or_default().to_string(),
+            comments: i["comments"].as_u64().unwrap_or_default(),
+            date: i["created_at"].as_str().unwrap_or_default().chars().take(10).collect(),
+        })
+    });
+    Some((issues.collect(), v["counts"]["open"].as_u64().unwrap_or_default()))
+}
+
+/// A version on the detail view's Versions tab.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersionLine {
+    pub tag: String,
+    /// The release name, the tag without one.
+    pub name: String,
+    /// The day it was published, `YYYY-MM-DD`.
+    pub date: String,
+    pub trust: Trust,
+    pub downloads: u64,
+    pub prerelease: bool,
+}
+
+/// Every version of `/v1/addons/{slug}/versions`, newest first as the platform sends them.
+pub fn version_lines(json: &str) -> Option<Vec<VersionLine>> {
+    let list: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
+    Some(
+        list.iter()
+            .filter_map(|v| {
+                let tag = v["tag"].as_str()?.to_string();
+                let name = v["name"].as_str().filter(|n| !n.is_empty()).map_or_else(|| tag.clone(), str::to_string);
+                Some(VersionLine {
+                    name,
+                    date: v["published_at"].as_str().unwrap_or_default().chars().take(10).collect(),
+                    trust: serde_json::from_value(v["trust"].clone()).unwrap_or(Trust::Unscanned),
+                    downloads: v["downloads"].as_u64().unwrap_or_default(),
+                    prerelease: v["prerelease"] == true,
+                    tag,
+                })
+            })
+            .collect(),
+    )
 }
 
 /// Comments the API sends on one page; it sends one more when older ones exist.
@@ -1267,7 +1329,31 @@ mod tests {
     }
 
     #[test]
+    fn the_issues_tab_reads_the_open_issues() {
+        let json = r#"{"issues_here":true,"counts":{"open":1,"closed":9,"all":10},"issues":[
+            {"number":69,"title":"Suggested improvements","author":{"login":"bob"},"comments":2,"created_at":"2026-10-30T05:24:16Z","kind":"other","status":"open"}]}"#;
+        let (issues, open) = issue_lines(json).unwrap();
+        assert_eq!(open, 1);
+        assert_eq!(issues, [IssueLine { number: 69, title: "Suggested improvements".into(), author: "bob".into(), comments: 2, date: "2026-10-30".into() }]);
+        assert_eq!(issue_lines(r#"{"issues_here":false}"#), Some((Vec::new(), 0)), "the tab is off: nothing to list");
+        assert_eq!(issue_lines("not json"), None);
+    }
+
+    #[test]
+    fn the_versions_tab_reads_every_version_newest_first() {
+        let json = r#"[
+            {"tag":"v2","name":"Lucky 2","published_at":"2026-11-04T12:41:27+00:00","trust":"scanned","downloads":278,"prerelease":false,"source":"available"},
+            {"tag":"v1","name":"","published_at":"2026-10-01T10:00:00+00:00","trust":"blocked","downloads":5,"prerelease":true,"source":"deleted"}]"#;
+        let versions = version_lines(json).unwrap();
+        assert_eq!(versions[0], VersionLine { tag: "v2".into(), name: "Lucky 2".into(), date: "2026-11-04".into(), trust: Trust::Scanned, downloads: 278, prerelease: false });
+        assert_eq!((versions[1].name.as_str(), versions[1].trust), ("v1", Trust::Blocked), "without a name the tag stands in");
+        assert_eq!(version_lines("{}"), None);
+    }
+
+    #[test]
     fn the_detail_view_links_the_addon_pages_on_the_website() {
+        assert_eq!(addon_link("https://w", "lucky", "issues/69").as_deref(), Some("https://w/addons/lucky/issues/69"));
+        assert_eq!(addon_link("https://w", "lucky", "issues/x"), None, "only issue numbers");
         assert_eq!(addon_link("https://w", "lucky", "website").as_deref(), Some("https://w/addons/lucky"));
         assert_eq!(addon_link("https://w", "lucky", "issues").as_deref(), Some("https://w/addons/lucky/issues"));
         assert_eq!(addon_link("https://w", "lucky", "comments").as_deref(), Some("https://w/addons/lucky/comments"));

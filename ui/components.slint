@@ -84,6 +84,27 @@ export struct AddonDetail {
     comments-on: bool,
 }
 
+// An open issue on the detail view's Issues tab.
+export struct IssueLine {
+    number: int,
+    title: string,
+    author: string,
+    comments: int,
+    date: string,
+}
+
+// A version on the detail view's Versions tab.
+export struct VersionLine {
+    tag: string,
+    name: string,
+    date: string,
+    // The platform's trust label ("Checked", "Flagged") and its colour: 1 ok, 2 warn, 3 danger.
+    trust: string,
+    trust-kind: int,
+    downloads: int,
+    prerelease: bool,
+}
+
 // One comment of an addon's discussion, in reading order; `depth` indents replies (0 to 3).
 export struct CommentRow {
     author: string,
@@ -1079,7 +1100,10 @@ export component DetailView inherits VerticalLayout {
     callback website();
     // A page of the addon on the website or GitHub: "bug", "issues", "abuse".
     callback link(string);
-    callback comments();
+    // The sub page, as on the website: 0 Overview, 1 Issues, 2 Comments, 3 Versions. Only the
+    // Overview is drawn here; the app places the other pages under the view.
+    in-out property <int> tab;
+    callback tab-changed(int);
     // The browser cannot open here (Game Mode): the website buttons are greyed out.
     in property <bool> links-enabled: true;
     // Scan the installed folders with forge-scan on this computer.
@@ -1212,12 +1236,6 @@ export component DetailView inherits VerticalLayout {
             enabled: root.links-enabled;
             clicked => { root.link("issues"); }
         }
-        if root.detail.on-website && root.detail.comments-on : GlyphButton {
-            label: "Comments";
-            // A speech bubble.
-            glyph: "M 2 3 L 14 3 L 14 11 L 7 11 L 4 14 L 4 11 L 2 11 Z";
-            clicked => { root.comments(); }
-        }
         if root.detail.on-website : GlyphButton {
             label: "Report abuse";
             // A flag.
@@ -1259,7 +1277,39 @@ export component DetailView inherits VerticalLayout {
         wrap: word-wrap;
     }
 
-    ScrollPanel {
+    if root.detail.on-website : HorizontalLayout {
+        alignment: start;
+        spacing: Theme.gap-tight;
+        TabButton {
+            text: "Overview";
+            active: root.tab == 0;
+            clicked => { root.open-tab(0); }
+        }
+        if root.detail.issues-ready : TabButton {
+            text: "Issues";
+            active: root.tab == 1;
+            clicked => { root.open-tab(1); }
+        }
+        if root.detail.comments-on : TabButton {
+            text: "Comments";
+            active: root.tab == 2;
+            clicked => { root.open-tab(2); }
+        }
+        TabButton {
+            text: "Versions";
+            active: root.tab == 3;
+            clicked => { root.open-tab(3); }
+        }
+    }
+
+    function open-tab(tab: int) {
+        if root.tab != tab {
+            root.tab = tab;
+            root.tab-changed(tab);
+        }
+    }
+
+    if root.tab == 0 : ScrollPanel {
         vertical-stretch: 1;
         spacing: 18px;
         // Screenshots first, then the description, as on the website.
@@ -1862,6 +1912,8 @@ export component CommentsView inherits VerticalLayout {
     in property <bool> more;
     in property <bool> loading-more;
     in property <bool> links-enabled: true;
+    // A tab of the detail view: its header names the addon, so no back link and title here.
+    in property <bool> embedded;
     callback back();
     callback write();
     callback older();
@@ -1869,7 +1921,7 @@ export component CommentsView inherits VerticalLayout {
 
     spacing: 14px;
 
-    HorizontalLayout {
+    if !root.embedded : HorizontalLayout {
         alignment: start;
         LinkButton {
             text: "< Back to " + root.name;
@@ -1882,7 +1934,7 @@ export component CommentsView inherits VerticalLayout {
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
-            Text {
+            if !root.embedded : Text {
                 text: "Comments";
                 font-size: 26px;
                 color: Theme.gold-heading;
@@ -2014,6 +2066,196 @@ export component CommentsView inherits VerticalLayout {
                 text: root.loading-more ? "Loading" : "Older comments";
                 enabled: !root.loading-more;
                 clicked => { root.older(); }
+            }
+        }
+    }
+}
+
+// A list page of the detail view while it loads, after it failed, or with nothing in it.
+component ListState inherits VerticalLayout {
+    in property <bool> loading;
+    in property <bool> failed;
+    in property <bool> empty;
+    in property <string> what;
+    in property <string> none;
+    callback retry();
+
+    spacing: 8px;
+    if root.loading : VerticalLayout {
+        spacing: 8px;
+        accessible-role: text;
+        accessible-label: "Loading the " + root.what;
+        for i in 3 : Placeholder { height: 40px; }
+    }
+    if root.failed : HorizontalLayout {
+        spacing: 12px;
+        Text {
+            text: "The " + root.what + " could not be loaded. Check the connection.";
+            font-size: Theme.body;
+            color: Theme.danger;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        ActionButton {
+            text: "Try again";
+            clicked => { root.retry(); }
+        }
+    }
+    if !root.loading && !root.failed && root.empty : Text {
+        text: root.none;
+        font-size: Theme.body;
+        color: Theme.text-muted;
+    }
+}
+
+// The Issues tab: the open issues, each opening on the website, where writing needs its login.
+export component IssuesView inherits VerticalLayout {
+    in property <[IssueLine]> rows;
+    in property <int> open-count;
+    in property <bool> loading;
+    in property <bool> failed;
+    in property <bool> links-enabled: true;
+    // An issue's number, or 0 for the whole list on the website.
+    callback open(int);
+    callback report();
+    callback retry();
+
+    spacing: 12px;
+
+    HorizontalLayout {
+        spacing: 12px;
+        Text {
+            text: root.loading ? "Open issues" : root.open-count == 1 ? "1 open issue" : root.open-count + " open issues";
+            font-size: Theme.body;
+            color: Theme.gold;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        LinkButton {
+            text: "All issues on the website";
+            clicked => { root.open(0); }
+        }
+        ActionButton {
+            text: "Report a bug";
+            primary: true;
+            enabled: root.links-enabled;
+            clicked => { root.report(); }
+        }
+    }
+    ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 6px;
+        ListState {
+            loading: root.loading;
+            failed: root.failed;
+            empty: root.rows.length == 0;
+            what: "issues";
+            none: "No open issues.";
+            retry => { root.retry(); }
+        }
+        for issue in root.rows : Rectangle {
+            accessible-role: button;
+            accessible-label: "#" + issue.number + " " + issue.title;
+            height: 52px;
+            border-radius: Theme.radius;
+            border-width: 1px;
+            border-color: touch.has-hover && root.links-enabled ? Theme.outline-hover : Theme.line;
+            background: touch.has-hover && root.links-enabled ? Theme.row-hover : Theme.row;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: issue.title;
+                        font-size: Theme.body;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: "#" + issue.number + " opened " + issue.date + (issue.author != "" ? " by " + issue.author : "");
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        overflow: elide;
+                    }
+                }
+                if issue.comments > 0 : Text {
+                    text: issue.comments == 1 ? "1 comment" : issue.comments + " comments";
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+            }
+            touch := TouchArea {
+                enabled: root.links-enabled;
+                mouse-cursor: pointer;
+                clicked => { root.open(issue.number); }
+            }
+        }
+    }
+}
+
+// The Versions tab: every version the platform knows, newest first.
+export component VersionsView inherits VerticalLayout {
+    in property <[VersionLine]> rows;
+    in property <bool> loading;
+    in property <bool> failed;
+    callback retry();
+
+    spacing: 12px;
+
+    Text {
+        text: "Versions";
+        font-size: Theme.body;
+        color: Theme.gold;
+    }
+    ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 6px;
+        ListState {
+            loading: root.loading;
+            failed: root.failed;
+            empty: root.rows.length == 0;
+            what: "versions";
+            none: "No versions yet.";
+            retry => { root.retry(); }
+        }
+        for version in root.rows : Rectangle {
+            height: 52px;
+            border-radius: Theme.radius;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.row;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: version.name + (version.prerelease ? "  (pre-release)" : "");
+                        font-size: Theme.body;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: version.date + "   " + (version.downloads == 1 ? "1 download" : version.downloads + " downloads");
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                    }
+                }
+                Text {
+                    text: version.trust;
+                    font-size: Theme.meta;
+                    vertical-alignment: center;
+                    color: version.trust-kind == 1 ? Theme.ok : version.trust-kind == 2 ? Theme.warn : version.trust-kind == 3 ? Theme.danger : Theme.text-muted;
+                }
             }
         }
     }

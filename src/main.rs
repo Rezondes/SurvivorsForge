@@ -90,6 +90,9 @@ struct Core {
     pictures: HashMap<String, Option<Pixels>>,
     /// The comments page of the detail view, while it is open.
     comments: Option<Comments>,
+    /// The Issues and Versions tabs of the detail view, once opened.
+    issues: Option<Listing<(Vec<controller::IssueLine>, u64)>>,
+    versions: Option<Listing<Vec<controller::VersionLine>>>,
 }
 
 /// The comments of one addon loaded so far, and how the next page is coming.
@@ -161,6 +164,8 @@ impl Core {
             refreshed: HashSet::new(),
             pictures: HashMap::new(),
             comments: None,
+            issues: None,
+            versions: None,
         };
         if let Some(config) = config {
             core.switch_config(config);
@@ -549,10 +554,12 @@ fn ask_issue_frame(weak: &slint::Weak<AppWindow>, shared: &Shared, client: &Clie
 /// platform is asked once per start in the background and replaces it when it answers. Where bugs
 /// go is asked on every open.
 fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
-    ui.set_comments_open(false);
+    ui.set_detail_tab(0);
     let job = {
         let mut core = lock(shared);
         core.comments = None;
+        core.issues = None;
+        core.versions = None;
         core.detail = Some((id.clone(), ui.get_page() == 1));
         registry_entry(&core, &id).map(|a| a.id.clone()).map(|rid| {
             let ask = !core.refreshed.contains(&rid) && core.fetching.insert(rid.clone());
@@ -640,6 +647,24 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         // Removed meanwhile: back to the list.
         None => ui.set_detail_page(-1),
     }
+    let (issues, open, loading, failed) = match &core.issues {
+        Some(Listing { rows: Some((rows, open)), .. }) => (rows.iter().map(issue_line).collect(), *open as i32, false, false),
+        Some(l) => (Vec::new(), 0, !l.failed, l.failed),
+        None => (Vec::new(), 0, false, false),
+    };
+    ui.set_issues_rows(ModelRc::new(VecModel::from(issues)));
+    ui.set_issues_open(open);
+    ui.set_issues_loading(loading);
+    ui.set_issues_failed(failed);
+    let verified_author = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).is_some_and(|a| a.verified_author == Some(true));
+    let (versions, loading, failed) = match &core.versions {
+        Some(Listing { rows: Some(rows), .. }) => (rows.iter().map(|v| version_line(v, verified_author)).collect(), false, false),
+        Some(l) => (Vec::new(), !l.failed, l.failed),
+        None => (Vec::new(), false, false),
+    };
+    ui.set_versions_rows(ModelRc::new(VecModel::from(versions)));
+    ui.set_versions_loading(loading);
+    ui.set_versions_failed(failed);
     if let Some(c) = &core.comments {
         let rows: Vec<CommentRow> = controller::comment_threads(c.loaded.clone()).into_iter().map(|m| comment_row(&core, m)).collect();
         ui.set_comments_rows(ModelRc::new(VecModel::from(rows)));
@@ -1997,6 +2022,11 @@ fn main() -> Result<(), slint::PlatformError> {
     on!(on_detail_website, |ui, shared| on_detail_link(&ui, shared, "website"));
     on!(on_detail_link, |ui, shared, page| on_detail_link(&ui, shared, &page));
     on!(on_comments_show, |ui, shared| on_comments_show(&ui, shared));
+    on!(on_detail_tab_changed, |ui, shared, tab| match tab {
+        2 => on_comments_show(&ui, shared),
+        _ => load_detail_list(&ui, shared, tab),
+    });
+    on!(on_detail_retry, |ui, shared, tab| load_detail_list(&ui, shared, tab));
     on!(on_comments_older, |ui, shared| load_comments(&ui, shared, true));
     on!(on_comments_retry, |ui, shared| {
         let older = lock(shared).comments.as_ref().is_some_and(|c| !c.loaded.is_empty());
@@ -2124,6 +2154,28 @@ fn main() -> Result<(), slint::PlatformError> {
 }
 
 /// One comment for the comments page; its avatar shows once it is loaded.
+fn issue_line(i: &controller::IssueLine) -> IssueLine {
+    IssueLine { number: i.number as i32, title: i.title.as_str().into(), author: i.author.as_str().into(), comments: i.comments as i32, date: i.date.as_str().into() }
+}
+
+fn version_line(v: &controller::VersionLine, verified_author: bool) -> VersionLine {
+    use forge_core::trust::Trust;
+    let trust_kind = match v.trust {
+        Trust::Verified | Trust::Scanned => 1,
+        Trust::Flagged | Trust::Unscanned => 2,
+        Trust::Blocked | Trust::SourceChanged => 3,
+    };
+    VersionLine {
+        tag: v.tag.as_str().into(),
+        name: v.name.as_str().into(),
+        date: v.date.as_str().into(),
+        trust: controller::trust_label(v.trust, verified_author).into(),
+        trust_kind,
+        downloads: v.downloads as i32,
+        prerelease: v.prerelease,
+    }
+}
+
 fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {
     let avatar = (!c.avatar_url.is_empty()).then_some(c.avatar_url.as_str());
     CommentRow {
@@ -2171,6 +2223,48 @@ fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
     });
 }
 
+/// A list page of the detail view: `rows` once the platform answered, `failed` when it did not.
+struct Listing<T> {
+    slug: String,
+    rows: Option<T>,
+    failed: bool,
+}
+
+/// Loads the Issues (`tab` 1) or Versions (3) page of the detail view's addon on a thread; an
+/// answer for another addon is dropped.
+fn load_detail_list(ui: &AppWindow, shared: &Shared, tab: i32) {
+    let job = {
+        let mut core = lock(shared);
+        let Some(slug) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).map(|a| a.id.clone()) else { return };
+        match tab {
+            1 => core.issues = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
+            3 => core.versions = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
+            _ => return,
+        }
+        (slug, core.api_url(), core.client())
+    };
+    refresh(ui, shared);
+    let (slug, api, client) = job;
+    let path = if tab == 1 { "issues" } else { "versions" };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let answer = client.get_text_quick(&format!("{api}/v1/addons/{slug}/{path}")).ok();
+        {
+            let mut core = lock(&shared);
+            if tab == 1 {
+                if let Some(l) = core.issues.as_mut().filter(|l| l.slug == slug) {
+                    l.rows = answer.as_deref().and_then(controller::issue_lines);
+                    l.failed = l.rows.is_none();
+                }
+            } else if let Some(l) = core.versions.as_mut().filter(|l| l.slug == slug) {
+                l.rows = answer.as_deref().and_then(controller::version_lines);
+                l.failed = l.rows.is_none();
+            }
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+    });
+}
+
 /// Opens the comments page of the detail view's addon and loads its newest comments.
 fn on_comments_show(ui: &AppWindow, shared: &Shared) {
     let slug = {
@@ -2179,7 +2273,6 @@ fn on_comments_show(ui: &AppWindow, shared: &Shared) {
     };
     let Some(slug) = slug else { return };
     lock(shared).comments = Some(Comments { slug, loaded: Vec::new(), older: None, asked: None, failed: false, off: false, request: 0 });
-    ui.set_comments_open(true);
     load_comments(ui, shared, false);
 }
 
@@ -2468,10 +2561,15 @@ mod layout_tests {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             }
-            for label in ["Open on the website", "GitHub", "Scan locally", "Remove Lucky", "Report a bug", "Issues", "Report abuse"] {
+            for label in ["Open on the website", "GitHub", "Scan locally", "Remove Lucky", "Report a bug", "Report abuse"] {
                 let button = find(label).unwrap_or_else(|| panic!("{label} is there"));
                 let size = button.size();
                 assert!((size.width - size.height).abs() < 1.0, "{label} is a square icon button: {size:?}");
+            }
+            let role = |label: &str, role| ElementHandle::find_by_accessible_label(&ui, label).any(|e| e.accessible_role() == Some(role));
+            assert!(!role("Comments", i_slint_backend_testing::AccessibleRole::Button), "Comments is a tab now, not also a button");
+            for tab in ["Overview", "Issues", "Comments", "Versions"] {
+                assert!(role(tab, i_slint_backend_testing::AccessibleRole::Tab), "{tab} tab");
             }
         }
     }
