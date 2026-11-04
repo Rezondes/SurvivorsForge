@@ -7,18 +7,31 @@ use sqlx::PgPool;
 /// The hourly job that copies the counts from GitHub.
 pub const POLL: &str = "poll_launcher_releases";
 
+/// The launchers seen in the last 30 days (`$1` is the first day) with the version they ran last:
+/// from their install and update events and from `launcher_active`, so a launcher that only checks
+/// for updates counts too. A query uses it as `WITH latest AS (...)`.
+pub const LATEST_LAUNCHERS: &str = "
+    SELECT DISTINCT ON (id) id, version FROM (
+        SELECT install_id::text AS id, launcher_version AS version, created_at AS at FROM telemetry_events
+        WHERE install_id IS NOT NULL AND day >= $1
+        UNION ALL
+        SELECT install_id, version, hour FROM launcher_active WHERE hour >= $1::date::timestamptz
+    ) seen ORDER BY id, at DESC";
+
 /// Replaces the stored counts with GitHub's. On a GitHub error the old ones stay. Each run also
 /// keeps a row in `launcher_counts` for the curves in Grafana.
 pub async fn poll(state: &AppState) -> Result<(), String> {
     let now = (state.clock)();
     // Counted like `active_installations_30d` on /v1/stats, and kept even when GitHub fails.
     sqlx::query(
-        "INSERT INTO launcher_counts (at, active_30d)
-         SELECT $1, count(DISTINCT install_id) FROM telemetry_events WHERE install_id IS NOT NULL AND day >= $2
-         ON CONFLICT (at) DO UPDATE SET active_30d = EXCLUDED.active_30d",
+        &format!(
+            "WITH latest AS ({LATEST_LAUNCHERS})
+             INSERT INTO launcher_counts (at, active_30d) SELECT $2, count(*) FROM latest
+             ON CONFLICT (at) DO UPDATE SET active_30d = EXCLUDED.active_30d"
+        ),
     )
-    .bind(now)
     .bind((now - chrono::TimeDelta::days(30)).date_naive())
+    .bind(now)
     .execute(&state.pool)
     .await
     .map_err(|e| e.to_string())?;

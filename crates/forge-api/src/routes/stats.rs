@@ -42,20 +42,18 @@ pub async fn stats(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let since = (now - TimeDelta::days(30)).date_naive();
     let launcher = crate::launcher_stats::totals(&state.pool).await?;
     let current = launcher.current_tag.as_deref().map(|t| t.trim_start_matches('v').to_string());
-    let telemetry: Value = sqlx::query_scalar(
-        "WITH latest AS (
-             SELECT DISTINCT ON (install_id) install_id, launcher_version FROM telemetry_events
-             WHERE install_id IS NOT NULL AND day >= $1 ORDER BY install_id, created_at DESC
-         )
+    let telemetry: Value = sqlx::query_scalar(&format!(
+        "WITH latest AS ({})
          SELECT json_build_object(
              'installs', count(*) FILTER (WHERE kind = 'install'),
              'updates', count(*) FILTER (WHERE kind = 'update'),
              'installs_30d', count(*) FILTER (WHERE kind = 'install' AND day >= $1),
              'updates_30d', count(*) FILTER (WHERE kind = 'update' AND day >= $1),
              'active_installations_30d', (SELECT count(*) FROM latest),
-             'on_current_launcher_30d', (SELECT count(*) FROM latest WHERE launcher_version = $2))
+             'on_current_launcher_30d', (SELECT count(*) FROM latest WHERE version = $2))
          FROM telemetry_events",
-    )
+        crate::launcher_stats::LATEST_LAUNCHERS
+    ))
     .bind(since)
     .bind(&current)
     .fetch_one(&state.pool)

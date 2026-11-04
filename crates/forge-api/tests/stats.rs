@@ -98,3 +98,21 @@ async fn checks_from_jobs_table(pool: PgPool) {
     sqlx::query("INSERT INTO jobs (kind, run_at) VALUES ('poll_releases', $1)").bind(at).execute(&app.pool).await.unwrap();
     assert_eq!(app.get("/v1/stats", None).await.json()["checks"]["releases"]["next"], json!("2026-10-31T10:07:00Z"), "running now");
 }
+
+#[sqlx::test]
+async fn launchers_that_only_check_for_updates_count_as_active(pool: PgPool) {
+    let app = TestApp::new(pool);
+    app.publish(1, "alice", "lucky").await;
+    event(&app, "install", Some("3f2504e0-4f89-41d3-9a0c-0305e82c3301"), "0.4.2", 3).await;
+    sqlx::query("INSERT INTO launcher_releases (tag, asset, published_at, prerelease, download_count, fetched_at) VALUES ('v0.4.3', 'a.exe', now(), false, 7, now())")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    // The same launcher updated itself since, and one more only asked for updates.
+    sqlx::query("INSERT INTO launcher_active (hour, install_id, version, os) VALUES (date_trunc('hour', now()), '3f2504e0-4f89-41d3-9a0c-0305e82c3301', '0.4.3', 'windows'), (date_trunc('hour', now()), 'b2', '0.4.3', 'linux')")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    let addons = app.get("/v1/stats", None).await.json()["addons"].clone();
+    assert_eq!((addons["active_installations_30d"].as_i64(), addons["on_current_launcher_30d"].as_i64()), (Some(2), Some(2)), "{addons}");
+}
