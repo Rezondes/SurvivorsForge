@@ -24,8 +24,8 @@
   {% if errors.get("name") != "" %}<p class="field-error" id="name-error">{{ errors.get("name") }}</p>{% endif %}
 
   <label for="slug">Address on this site</label>
-  <input id="slug"{% if errors.get("slug") != "" %} aria-invalid="true" aria-describedby="slug-error"{% endif %} name="slug" value="{{ form.slug }}" placeholder="lucky-odds" pattern="[a-z0-9][a-z0-9-]{1,48}" required>
-  <p class="muted">Lowercase letters, digits and dashes. It cannot be changed later.</p>
+  <input id="slug"{% if errors.get("slug") != "" %} aria-invalid="true" aria-describedby="slug-error"{% endif %} name="slug" value="{{ form.slug }}" placeholder="lucky-odds" pattern="[a-z0-9][a-z0-9-]{1,48}" title="2 to 49 lowercase letters, digits and dashes, starting with a letter or digit" required>
+  <p class="muted">Lowercase letters, digits and dashes, 2 to 49 characters. It cannot be changed later.</p>
   {% if errors.get("slug") != "" %}<p class="field-error" id="slug-error">{{ errors.get("slug") }}</p>{% endif %}
 
   <label for="summary">Short description</label>

@@ -10,6 +10,7 @@
 {% if rows.is_empty() %}
 <section class="panel">
   <p>You have no addons here yet. Publish one from your GitHub repo, or ask an owner to add you as a contributor.</p>
+  <p class="actions"><a class="button" href="/addons/new">Publish your first addon</a> <a href="/docs/creator-guide">How to prepare a GitHub repo</a></p>
 </section>
 {% else %}
 <div class="table-wrap list">
@@ -20,9 +21,9 @@
     <tr>
       <td><a href="/addons/{{ r.slug }}">{{ r.name }}</a>
         {% if r.blocked %} <span class="badge bad">Blocked</span>{% endif %}
-        {% if r.locked %} <span class="badge warn">Repo not reachable</span>{% endif %}</td>
+        {% if r.locked %} <span class="badge warn">Repo not reachable</span> <span class="muted">The repo is private, renamed or deleted on GitHub; make it public again.</span>{% endif %}</td>
       <td>{% if r.role == "claimable" %}not claimed yet{% else %}{{ r.role }}{% endif %}</td>
-      <td>{% if r.has_version %}<span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span>{% if r.findings > 0 %} {{ r.findings }} finding{% if r.findings != 1 %}s{% endif %}{% endif %}{% else %}<span class="muted">No release yet</span>{% endif %}</td>
+      <td>{% if r.has_version %}<span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span>{% if r.findings > 0 %} {{ r.findings }} finding{% if r.findings != 1 %}s{% endif %}{% endif %}{% else %}<a class="muted" href="/docs/creator-guide">No release yet: create one on GitHub</a>{% endif %}</td>
       <td class="row-actions">{% if r.role == "claimable" %}
         <form method="post" action="/addons/{{ r.slug }}/claim" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/me/addons">

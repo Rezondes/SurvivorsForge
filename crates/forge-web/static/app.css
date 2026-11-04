@@ -118,6 +118,15 @@ h3 { font-size: 17px; color: var(--gold); }
 /* The release zip name means nothing for the source zip of a tag. */
 form:has(#source_type option[value="tag"]:checked) :is(label[for="asset_pattern"], #asset_pattern, .asset-hint) { display: none; }
 
+/* My addons on a phone: each addon a block, its buttons under it. */
+@media (max-width: 560px) {
+  .list table, .list tbody, .list tr, .list td { display: block; }
+  .list thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .list tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .list td { border: none; padding: 2px 0; }
+  .list td.row-actions { text-align: left; white-space: normal; }
+}
+
 /* An admin tile with work waiting. */
 .tile.due { border-color: var(--outline-active); }
 
