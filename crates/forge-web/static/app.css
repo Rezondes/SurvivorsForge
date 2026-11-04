@@ -115,6 +115,9 @@ h1::after { background: linear-gradient(90deg, var(--outline), transparent); }
 h2 { font-size: var(--heading); color: var(--gold); margin: 20px 0 8px; }
 h3 { font-size: 17px; color: var(--gold); }
 
+/* The release zip name means nothing for the source zip of a tag. */
+form:has(#source_type option[value="tag"]:checked) :is(label[for="asset_pattern"], #asset_pattern, .asset-hint) { display: none; }
+
 /* `hidden` wins over the display of buttons and layouts below. */
 [hidden] { display: none !important; }
 

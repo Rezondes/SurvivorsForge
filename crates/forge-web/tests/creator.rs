@@ -34,6 +34,7 @@ async fn wizard_happy_path_and_field_errors() {
     let mut web = logged_in(owner()).await;
     let page = web.get("/addons/new").await;
     assert!(page.body.contains(">Unit Frames</option>") && !page.body.contains(">Classes</option>"), "only categories without subcategories");
+    assert!(page.body.contains(r#"<option value="" disabled selected>Choose a category</option>"#), "no category is picked for the creator");
     assert!(!page.body.contains("Install the GitHub App"), "repos of the own account need no App");
 
     Mock::given(method("POST"))

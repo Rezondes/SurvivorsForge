@@ -22,7 +22,8 @@
   <label for="summary">One line about it</label>
   <input id="summary" name="summary" value="{{ form.base.summary }}" maxlength="200">
   <label for="category">Category</label>
-  <select id="category" name="category">
+  <select id="category" name="category" required>
+    <option value="" disabled{% if form.base.category == "" %} selected{% endif %}>Choose a category</option>
     {% for c in categories %}<option value="{{ c.name }}" {% if c.name.eq_ignore_ascii_case(form.base.category) %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
   </select>
   <label for="source_type">Downloads come from</label>
@@ -32,6 +33,7 @@
   </select>
   <label for="asset_pattern">Release zip name</label>
   <input id="asset_pattern" name="asset_pattern" value="{{ form.base.asset_pattern }}">
+  <p class="muted asset-hint">For example <code>LuckyOdds-v*.zip</code>: <code>*</code> stands for the version.</p>
   <label for="folders">Addon folders, one per line</label>
   <textarea id="folders" name="folders" rows="3" required>{{ form.base.folders }}</textarea>
   <p><button type="submit">Add</button></p>

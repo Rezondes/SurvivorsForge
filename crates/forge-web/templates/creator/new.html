@@ -34,7 +34,8 @@
   {% if errors.get("summary") != "" %}<p class="field-error" id="summary-error">{{ errors.get("summary") }}</p>{% endif %}
 
   <label for="category">Category</label>
-  <select id="category"{% if errors.get("category") != "" %} aria-invalid="true" aria-describedby="category-error"{% endif %} name="category">
+  <select id="category"{% if errors.get("category") != "" %} aria-invalid="true" aria-describedby="category-error"{% endif %} name="category" required>
+    <option value="" disabled{% if form.category == "" %} selected{% endif %}>Choose a category</option>
     {% for c in categories %}<option value="{{ c.name }}" {% if c.name.eq_ignore_ascii_case(form.category) %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
   </select>
   {% if errors.get("category") != "" %}<p class="field-error" id="category-error">{{ errors.get("category") }}</p>{% endif %}
@@ -47,7 +48,7 @@
 
   <label for="asset_pattern">Release zip name</label>
   <input id="asset_pattern"{% if errors.get("asset_pattern") != "" %} aria-invalid="true" aria-describedby="asset_pattern-error"{% endif %} name="asset_pattern" value="{{ form.asset_pattern }}" placeholder="LuckyOdds-v*.zip">
-  <p class="muted">For releases only. <code>*</code> stands for the version.</p>
+  <p class="muted asset-hint">For example <code>LuckyOdds-v*.zip</code>: <code>*</code> stands for the version.</p>
   {% if errors.get("asset_pattern") != "" %}<p class="field-error" id="asset_pattern-error">{{ errors.get("asset_pattern") }}</p>{% endif %}
 
   <label for="folders">Addon folders in the zip</label>

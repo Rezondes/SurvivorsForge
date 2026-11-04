@@ -25,6 +25,7 @@
   </select>
   <label for="asset_pattern">Release zip name</label>
   <input id="asset_pattern"{% if errors.get("asset_pattern") != "" %} aria-invalid="true" aria-describedby="asset_pattern-error"{% endif %} name="asset_pattern" value="{{ asset_pattern }}">
+  <p class="muted asset-hint">For example <code>LuckyOdds-v*.zip</code>: <code>*</code> stands for the version.</p>
   {% if errors.get("asset_pattern") != "" %}<p class="field-error" id="asset_pattern-error">{{ errors.get("asset_pattern") }}</p>{% endif %}
   <label for="folders">Addon folders</label>
   <textarea id="folders"{% if errors.get("folders") != "" %} aria-invalid="true" aria-describedby="folders-error"{% endif %} name="folders" rows="3">{{ folders }}</textarea>
