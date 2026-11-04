@@ -22,7 +22,8 @@
 <div class="notice"><a href="{{ crate::app::login_href() }}">Log in with GitHub</a> to write a comment.</div>
 {% endif %}
 
-{% if comments.is_empty() && !off %}<p class="muted">No comments yet.</p>{% endif %}
+{% if paged %}<p><a class="button secondary" href="/addons/{{ slug }}/comments">Newest comments</a></p>{% endif %}
+{% if comments.is_empty() && !off %}<p class="muted">No comments yet.{% if user.is_some() %} Ask a question or tell the creator what you think.{% else %} Log in to write the first one.{% endif %}</p>{% endif %}
 <div class="comments">
 {% for c in comments %}
 <article class="panel post comment depth-{{ c.depth }}" id="comment-{{ c.id }}">
@@ -55,7 +56,7 @@
         <label for="edit-{{ c.id }}" class="sr-only">Comment</label>
         <textarea id="edit-{{ c.id }}" name="body" rows="4" maxlength="5000" required{% if self.draft_error("edit", c.id) != "" %} aria-invalid="true" aria-describedby="edit-{{ c.id }}-error"{% endif %}>{{ self.draft_body("edit", c.id, c.body) }}</textarea>
         {% if self.draft_error("edit", c.id) != "" %}<p class="field-error" id="edit-{{ c.id }}-error">{{ self.draft_error("edit", c.id) }}</p>{% endif %}
-        <button type="submit">Save</button>
+        <button type="submit">Save changes</button>
       </form>
     </details>
     {% endif %}
@@ -64,7 +65,7 @@
       <summary>Delete</summary>
       <form method="post" action="/addons/{{ slug }}/comments/{{ c.id }}/delete">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <p>Replies stay, the comment shows as deleted.</p>
+        <p>Delete this comment? This cannot be undone. Replies stay; the comment shows as deleted.</p>
         <button type="submit" class="danger">Delete comment</button>
       </form>
     </details>

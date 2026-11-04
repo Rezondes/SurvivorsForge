@@ -714,3 +714,35 @@
   });
   if (had) history.replaceState(history.state, "", url.pathname + url.search + url.hash);
 })();
+
+// Text fields with a limit say how much is left once it gets close, instead of cutting a paste
+// off without a word. A form opened under Reply or Edit puts the cursor into its field.
+(function () {
+  document.addEventListener("input", function (event) {
+    var field = event.target;
+    if (!(field instanceof HTMLTextAreaElement) || !field.maxLength || field.maxLength < 0) return;
+    var note = field.nextElementSibling && field.nextElementSibling.classList.contains("chars-left") ? field.nextElementSibling : null;
+    var left = field.maxLength - field.value.length;
+    if (left > field.maxLength / 10) {
+      if (note) note.remove();
+      return;
+    }
+    if (!note) {
+      note = document.createElement("p");
+      note.className = "muted chars-left";
+      note.setAttribute("aria-live", "polite");
+      field.after(note);
+    }
+    note.textContent = left + (left === 1 ? " character" : " characters") + " left";
+  });
+  document.addEventListener(
+    "toggle",
+    function (event) {
+      var details = event.target;
+      if (!(details instanceof HTMLDetailsElement) || !details.open || !details.closest(".post-tools")) return;
+      var field = details.querySelector("textarea, select");
+      if (field) field.focus();
+    },
+    true
+  );
+})();

@@ -66,6 +66,8 @@ pub struct CommentsPage {
     pub error: Option<String>,
     /// Text the API refused, back in its field with the reason.
     pub draft: Option<Draft>,
+    /// An older page: it links back to the newest comments.
+    pub paged: bool,
 }
 
 /// A refused comment: `form` is `new`, `reply` (to comment `id`) or `edit` (of comment `id`).
@@ -156,6 +158,7 @@ async fn page(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, slug: S
         done: q.done.clone(),
         error: q.error.clone(),
         draft: None,
+        paged: q.before.is_some(),
     };
     if addon["comments_enabled"] != true {
         return Ok(render(&page(session.map(|(u, _)| u), Vec::new(), None)));
@@ -271,7 +274,7 @@ pub async fn edit(
         let draft = Draft { form: "edit", id, body: form.body, error: message.clone() };
         return refused(&state, &jar, csrf, slug, draft).await;
     }
-    Ok(back(&slug, Some(id), result, "The comment is changed.")?.into_response())
+    Ok(back(&slug, Some(id), result, "Your changes are saved.")?.into_response())
 }
 
 pub async fn delete(State(state): State<AppState>, jar: PrivateCookieJar, Path((slug, id)): Path<(String, i64)>) -> WebResult<Redirect> {
