@@ -308,6 +308,66 @@ pub fn browse_rows(registry: &Registry, state: &State) -> Vec<BrowseRow> {
         .collect()
 }
 
+/// The order of Browse and Installed, as the website offers it; most downloads first by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Sort {
+    #[default]
+    Downloads,
+    Updated,
+    Name,
+}
+
+/// The sort dropdown's choices, in `Sort`'s order.
+pub const SORT_LABELS: [&str; 3] = ["Most downloads", "Recently updated", "Name"];
+
+impl Sort {
+    pub fn from_index(index: i32) -> Sort {
+        match index {
+            1 => Sort::Updated,
+            2 => Sort::Name,
+            _ => Sort::Downloads,
+        }
+    }
+}
+
+/// What a list sorts an addon by; GitHub and zip addons have no downloads or release date.
+pub struct SortKey<'a> {
+    pub name: &'a str,
+    pub downloads: Option<i64>,
+    /// When its newest version came out, as the platform writes it (sorts as text).
+    pub updated: Option<&'a str>,
+}
+
+/// Unknown values go last; ties by name, ignoring case.
+pub fn compare(sort: Sort, a: &SortKey, b: &SortKey) -> std::cmp::Ordering {
+    let by_name = || a.name.to_lowercase().cmp(&b.name.to_lowercase());
+    let first = match sort {
+        Sort::Downloads => b.downloads.unwrap_or(-1).cmp(&a.downloads.unwrap_or(-1)),
+        Sort::Updated => b.updated.cmp(&a.updated),
+        Sort::Name => std::cmp::Ordering::Equal,
+    };
+    first.then_with(by_name)
+}
+
+/// The safety check dropdown's choices, as the website's filter offers them.
+pub const SAFETY_LABELS: [&str; 5] = ["Any safety check", "Verified", "Checked", "Flagged", "Not checked"];
+
+/// The trust level the dropdown at `index` keeps; `None` for any.
+pub fn safety_filter(index: i32) -> Option<Trust> {
+    match index {
+        1 => Some(Trust::Verified),
+        2 => Some(Trust::Scanned),
+        3 => Some(Trust::Flagged),
+        4 => Some(Trust::Unscanned),
+        _ => None,
+    }
+}
+
+/// Whether an addon whose newest version has `level` passes the filter.
+pub fn passes_safety(filter: Option<Trust>, level: Option<Trust>) -> bool {
+    filter.is_none_or(|f| level == Some(f))
+}
+
 /// A category of the platform; `parent` for subcategories (Classes -> Warrior).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Category {
@@ -1094,6 +1154,32 @@ mod tests {
             });
         }
         registry
+    }
+
+    #[test]
+    fn lists_sort_and_filter_as_on_the_website() {
+        fn key(name: &'static str, downloads: Option<i64>, updated: Option<&'static str>) -> SortKey<'static> {
+            SortKey { name, downloads, updated }
+        }
+        fn names(rows: &[SortKey<'static>]) -> Vec<&'static str> {
+            rows.iter().map(|k| k.name).collect()
+        }
+        let mut rows = vec![key("Zeta", Some(5), Some("2026-10-01")), key("alpha", None, None), key("Beta", Some(50), Some("2026-09-01")), key("Gamma", Some(5), None)];
+        rows.sort_by(|a, b| compare(Sort::Downloads, a, b));
+        assert_eq!(names(&rows), ["Beta", "Gamma", "Zeta", "alpha"], "most downloads first, ties and unknown by name");
+        rows.sort_by(|a, b| compare(Sort::Updated, a, b));
+        assert_eq!(names(&rows), ["Zeta", "Beta", "alpha", "Gamma"], "newest release first, unknown last");
+        rows.sort_by(|a, b| compare(Sort::Name, a, b));
+        assert_eq!(names(&rows), ["alpha", "Beta", "Gamma", "Zeta"], "ignoring case");
+        assert_eq!(Sort::from_index(0), Sort::Downloads, "the default, as on the website");
+        assert_eq!(SORT_LABELS, ["Most downloads", "Recently updated", "Name"]);
+
+        assert_eq!(SAFETY_LABELS, ["Any safety check", "Verified", "Checked", "Flagged", "Not checked"]);
+        assert_eq!(safety_filter(0), None);
+        assert!(passes_safety(safety_filter(2), Some(Trust::Scanned)));
+        assert!(!passes_safety(safety_filter(1), Some(Trust::Scanned)));
+        assert!(!passes_safety(safety_filter(3), None), "a zip or GitHub addon has no safety check");
+        assert!(passes_safety(None, None));
     }
 
     #[test]

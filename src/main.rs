@@ -57,6 +57,9 @@ struct Core {
     categories: Vec<controller::Category>,
     /// The Browse category filter, `None` for all.
     category: Option<String>,
+    /// The safety check filter and the order of Browse and Installed, as on the website.
+    safety: Option<forge_core::trust::Trust>,
+    sort: controller::Sort,
     /// Browse addons picked for an addon pack.
     picked: std::collections::BTreeSet<String>,
     pack_busy: bool,
@@ -146,6 +149,8 @@ impl Core {
             offline: false,
             categories: Vec::new(),
             category: None,
+            safety: None,
+            sort: controller::Sort::default(),
             picked: Default::default(),
             pack_busy: false,
             game_running: false,
@@ -610,6 +615,17 @@ fn on_row_details(ui: &AppWindow, shared: &Shared, id: String) {
     });
 }
 
+/// The order of two addons (id, name) in Browse and Installed, by the platform's downloads and newest
+/// release; GitHub and zip addons have neither.
+fn list_order<'a>(core: &'a Core, a: (&str, &'a str), b: (&str, &'a str)) -> std::cmp::Ordering {
+    let key = |(id, name): (&str, &'a str)| {
+        let entry = registry_entry(core, id);
+        let updated = entry.and_then(|e| e.latest.as_ref()).and_then(|l| l.published_at.as_deref());
+        controller::SortKey { name, downloads: entry.and_then(|e| e.downloads), updated }
+    };
+    controller::compare(core.sort, &key(a), &key(b))
+}
+
 fn refresh(ui: &AppWindow, shared: &Shared) {
     let core = lock(shared);
     // The game version list arrives with the update check; fill it once it is there.
@@ -618,13 +634,17 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     }
     let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
     ui.set_installed_total(rows.len() as i32);
-    ui.set_installed_rows(model(
-        rows.iter()
-            .filter(|r| controller::matches(&core.search, &r.name, &r.author))
-            .map(|r| installed_row(r, &core))
-            .collect(),
-    ));
     let choices = controller::category_choices(&core.categories, &core.registry);
+    // Search, category and safety check narrow both lists; both sort the same way.
+    let shown = |id: &str, name: &str, author: &str, category: Option<&str>| {
+        let entry = registry_entry(&core, id);
+        controller::matches(&core.search, name, author)
+            && core.category.as_deref().is_none_or(|w| category.is_some_and(|c| controller::in_category(c, w, &choices)))
+            && controller::passes_safety(core.safety, entry.and_then(|a| a.latest.as_ref()).map(|l| l.trust))
+    };
+    let mut installed: Vec<&Row> = rows.iter().filter(|r| shown(&r.id, &r.name, &r.author, registry_entry(&core, &r.id).map(|a| a.category.as_str()))).collect();
+    installed.sort_by(|a, b| list_order(&core, (&a.id, &a.name), (&b.id, &b.name)));
+    ui.set_installed_rows(model(installed.into_iter().map(|r| installed_row(r, &core)).collect()));
     if slint::Model::row_count(&ui.get_category_labels()) != choices.len() + 1 {
         let mut labels: Vec<SharedString> = vec!["All categories".into()];
         labels.extend(choices.iter().map(|c| SharedString::from(c.label())));
@@ -638,14 +658,10 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     }
     ui.set_picked_count(core.picked.len() as i32);
     ui.set_pack_busy(core.pack_busy);
-    ui.set_browse_rows(model(
-        controller::browse_rows(&core.registry, &core.state)
-            .into_iter()
-            .filter(|b| controller::matches(&core.search, &b.name, &b.author))
-            .filter(|b| core.category.as_deref().is_none_or(|w| controller::in_category(&b.category, w, &choices)))
-            .map(|b| browse_row(b, &core, &rows))
-            .collect(),
-    ));
+    let mut browse: Vec<controller::BrowseRow> =
+        controller::browse_rows(&core.registry, &core.state).into_iter().filter(|b| shown(&b.id, &b.name, &b.author, Some(&b.category))).collect();
+    browse.sort_by(|a, b| list_order(&core, (&a.id, &a.name), (&b.id, &b.name)));
+    ui.set_browse_rows(model(browse.into_iter().map(|b| browse_row(b, &core, &rows)).collect()));
     match detail(&core, &rows) {
         Some(detail) => ui.set_detail(detail),
         // Removed meanwhile: back to the list.
@@ -1939,6 +1955,9 @@ fn main() -> Result<(), slint::PlatformError> {
         }));
     }
     ui.set_app_version(APP_VERSION.into());
+    let labels = |list: &[&str]| ModelRc::new(VecModel::from(list.iter().map(|l| SharedString::from(*l)).collect::<Vec<_>>()));
+    ui.set_safety_labels(labels(&controller::SAFETY_LABELS));
+    ui.set_sort_labels(labels(&controller::SORT_LABELS));
     ui.set_self_update_in_place(self_update::can_replace_self());
 
     let game_mode = config::is_game_mode(
@@ -2097,6 +2116,14 @@ fn main() -> Result<(), slint::PlatformError> {
             let choices = controller::category_choices(&core.categories, &core.registry);
             core.category = usize::try_from(index - 1).ok().and_then(|i| choices.get(i)).map(|c| c.name.clone());
         }
+        refresh(&ui, shared);
+    });
+    on!(on_safety_changed, |ui, shared, index| {
+        lock(shared).safety = controller::safety_filter(index);
+        refresh(&ui, shared);
+    });
+    on!(on_sort_changed, |ui, shared, index| {
+        lock(shared).sort = controller::Sort::from_index(index);
         refresh(&ui, shared);
     });
     on!(on_row_pick, |ui, shared, id| {

@@ -87,6 +87,23 @@ async fn addons_without_a_download_count_show_their_last_update() {
     assert!(page.body.contains(r#"<span class="sr-only">Updated </span>2026-05-01"#) && !page.body.contains("downloads</span>"), "{}", page.body);
 }
 
+#[tokio::test]
+async fn the_list_sorts_by_downloads_unless_told_otherwise() {
+    let mut web = TestWeb::new().await;
+    mock(&web, "/v1/categories", categories()).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/addons"))
+        .and(query_param("sort", "downloads"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 0, "addons": [] })))
+        .expect(1)
+        .mount(&web.api)
+        .await;
+    let page = web.get("/addons").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(!page.body.contains("Best match"), "no relevance sort to choose");
+    assert!(page.body.contains(r#"<option value="downloads" selected>Most downloads</option>"#), "{}", page.body);
+}
+
 fn categories() -> Value {
     json!([
         { "name": "Classes", "parent": null, "selectable": false, "sort_key": 10 },

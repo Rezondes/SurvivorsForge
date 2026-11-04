@@ -403,6 +403,14 @@ export component AppWindow inherits Window {
     // The detail view's sub page: 0 Overview, 1 Screenshots, 2 Issues, 3 Comments, 4 Versions.
     in-out property <int> detail-tab;
     callback detail-tab-changed(int);
+    // Browse and Installed: the safety check filter and the order, their choices from
+    // `controller::SAFETY_LABELS` and `controller::SORT_LABELS`.
+    in property <[string]> safety-labels;
+    in property <[string]> sort-labels;
+    in-out property <int> safety-index;
+    in-out property <int> sort-index;
+    callback safety-changed(int);
+    callback sort-changed(int);
     // A list page that failed, asked again.
     callback detail-retry(int);
     // Install exactly this version of the detail view's addon (an older one, after a confirmation).
@@ -640,18 +648,10 @@ export component AppWindow inherits Window {
                 if root.page != 2 && !root.showing-detail : HorizontalLayout {
                     spacing: Theme.gap-tight;
                     Field {
-                        width: 280px;
+                        horizontal-stretch: 1;
                         placeholder: "Search name or author";
                         text <=> root.search;
                         edited(text) => { root.search-changed(text); }
-                    }
-                    if root.page == 1 : Dropdown {
-                        width: 220px;
-                        model: root.category-labels;
-                        list-labels: root.category-list-labels;
-                        levels: root.category-levels;
-                        current-index <=> root.category-index;
-                        selected => { root.category-changed(self.current-index); }
                     }
                     if root.page == 0 : ViewToggle {
                         tiles <=> root.installed-tiles;
@@ -661,7 +661,6 @@ export component AppWindow inherits Window {
                         tiles <=> root.browse-tiles;
                         changed(on) => { root.view-changed(1, on); }
                     }
-                    Rectangle { horizontal-stretch: 1; }
                     // Icons named by their tooltips, as tall as the search field.
                     if root.page == 0 : GlyphButton {
                         height: Theme.touch ? 44px : 38px;
@@ -694,6 +693,33 @@ export component AppWindow inherits Window {
                         primary: root.update-count > 0;
                         enabled: root.update-count > 0;
                         clicked => { root.update-all(); }
+                    }
+                }
+
+                // Filters and order as on the website, for both lists; GitHub and zip addons have no
+                // category or safety check, so a chosen one hides them.
+                if root.page != 2 && !root.showing-detail : HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.gap-tight;
+                    Dropdown {
+                        width: 220px;
+                        model: root.category-labels;
+                        list-labels: root.category-list-labels;
+                        levels: root.category-levels;
+                        current-index <=> root.category-index;
+                        selected => { root.category-changed(self.current-index); }
+                    }
+                    Dropdown {
+                        width: 190px;
+                        model: root.safety-labels;
+                        current-index <=> root.safety-index;
+                        selected => { root.safety-changed(self.current-index); }
+                    }
+                    Dropdown {
+                        width: 190px;
+                        model: root.sort-labels;
+                        current-index <=> root.sort-index;
+                        selected => { root.sort-changed(self.current-index); }
                     }
                 }
 

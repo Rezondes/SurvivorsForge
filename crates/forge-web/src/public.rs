@@ -132,7 +132,10 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
     let param = |k: &str| params.iter().find(|(key, v)| key == k && !v.is_empty()).map(|(_, v)| v.clone());
     // Every ticked category goes along; the other filters once.
     let chosen_categories: Vec<String> = params.iter().filter(|(k, v)| k == "category" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
-    let mut query: Vec<(&str, String)> = ["q", "trust", "sort", "author", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
+    // No relevance sort to choose: the list starts with the most downloaded addons.
+    let sort = param("sort").unwrap_or_else(|| "downloads".into());
+    let mut query: Vec<(&str, String)> = ["q", "trust", "author", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
+    query.push(("sort", sort.clone()));
     query.extend(chosen_categories.iter().map(|c| ("category", c.clone())));
     let api_query = reqwest::Url::parse_with_params("http://x/v1/addons", &query).map(|u| u.query().unwrap_or_default().to_string()).unwrap_or_default();
     let list = state.api.get(&format!("/v1/addons?{api_query}"), None).await?;
@@ -153,7 +156,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         q: param("q").unwrap_or_default(),
         chosen_categories,
         trust: param("trust").unwrap_or_default(),
-        sort: param("sort").unwrap_or_default(),
+        sort,
         author: param("author").unwrap_or_default(),
         total,
         categories: crate::templates::CategoryOption::groups(crate::app::categories(&state).await?),

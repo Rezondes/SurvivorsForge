@@ -57,7 +57,6 @@
     <div class="result-tools">
       <label for="sort" class="sr-only">Sort</label>
       <select id="sort" name="sort" form="search">
-        <option value="" {% if sort == "" %}selected{% endif %}>Best match</option>
         <option value="downloads" {% if sort == "downloads" %}selected{% endif %}>Most downloads</option>
         <option value="updated" {% if sort == "updated" %}selected{% endif %}>Recently updated</option>
         <option value="name" {% if sort == "name" %}selected{% endif %}>Name</option>
