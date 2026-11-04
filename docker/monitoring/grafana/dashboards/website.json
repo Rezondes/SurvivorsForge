@@ -209,6 +209,42 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 7,
+      "title": "Addon page views and downloads",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "WITH views AS (SELECT target AS slug, sum(views) AS views, sum(visitors) AS visits FROM web_counts WHERE kind = 'page' AND value = '/addons/{slug}' AND $__timeFilter(day::timestamptz) GROUP BY 1), web AS (SELECT target_id AS addon_id, sum(count) AS downloads FROM download_counts WHERE source = 'website' AND $__timeFilter(day::timestamptz) GROUP BY 1), launcher AS (SELECT addon_id, count(*) AS installs FROM telemetry_events WHERE kind = 'install' AND $__timeFilter(created_at) GROUP BY 1) SELECT a.slug AS \"Addon\", coalesce(v.views, 0) AS \"Page views\", coalesce(v.visits, 0) AS \"Visits\", coalesce(w.downloads, 0) AS \"Website downloads\", coalesce(l.installs, 0) AS \"Launcher installs\", round(100.0 * coalesce(w.downloads, 0) / nullif(v.visits, 0), 1) AS \"Downloads per 100 visits\" FROM addons a LEFT JOIN views v ON v.slug = a.slug::text LEFT JOIN web w ON w.addon_id = a.id LEFT JOIN launcher l ON l.addon_id = a.id WHERE a.deleted_at IS NULL AND (v.views IS NOT NULL OR w.downloads IS NOT NULL OR l.installs IS NOT NULL) ORDER BY 2 DESC LIMIT 50",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "Views of an addon's main page next to its downloads from the website and installs by the launcher. Few downloads per 100 visits on a much viewed page can mean the page does not convince or the download is hard to find."
     }
   ]
 }
