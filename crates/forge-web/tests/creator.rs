@@ -660,7 +660,7 @@ async fn creators_force_an_update_check() {
     ]))
     .await;
     let page = web.get("/me/addons").await;
-    assert!(page.body.contains(r#"action="/addons/lucky/sync""#) && page.body.contains("Force Refresh"), "{}", page.body);
+    assert!(page.body.contains(r#"action="/addons/lucky/sync""#) && page.body.contains("Check for releases"), "{}", page.body);
     assert!(!page.body.contains("/addons/gone/sync"), "not for a blocked addon");
 
     Mock::given(method("POST")).and(path("/v1/addons/lucky/sync")).respond_with(ResponseTemplate::new(202)).expect(1).mount(&web.api).await;

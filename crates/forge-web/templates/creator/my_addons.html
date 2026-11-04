@@ -3,7 +3,7 @@
 {% block content %}
 <div class="title-row">
   <h1>My addons</h1>
-  <span><a class="button" href="/scan">Test a zip</a> <a class="button" href="/addons/new">Publish an addon</a></span>
+  <span><a class="button secondary" href="/scan">Test a zip</a> <a class="button" href="/addons/new">Publish an addon</a></span>
 </div>
 {% if let Some(m) = msg %}<div class="notice ok" role="status">{{ m }}</div>{% endif %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
@@ -31,7 +31,7 @@
       {% else %}<a class="button secondary" href="/addons/{{ r.slug }}/edit">Edit</a>
         {% if !r.blocked %}<form method="post" action="/addons/{{ r.slug }}/sync" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf }}">
-          <button type="submit" title="Check GitHub for new releases now. Once every 5 minutes.">Force Refresh</button>
+          <button type="submit" class="secondary" title="Check GitHub for new releases now. Once every 5 minutes.">Check for releases</button>
         </form>{% endif %}{% endif %}</td>
     </tr>
   {% endfor %}

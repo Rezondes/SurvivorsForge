@@ -51,7 +51,7 @@
   <form method="post" action="/admin/addons/{{ slug }}/unblock" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label for="unblock-note">Note</label><input id="unblock-note" name="note" required>
-    <button type="submit">Unblock</button>
+    <button type="submit" class="secondary">Unblock</button>
   </form>
   {% else %}
   <form method="post" action="/admin/addons/{{ slug }}/block" class="admin-actions">

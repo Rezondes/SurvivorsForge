@@ -242,7 +242,7 @@ async fn admins_find_addons_by_name() {
         "v1.2.0",
         "2 findings",
         r#"<a class="button secondary" href="/addons/lucky/edit">Edit</a>"#,
-        r#"<a class="button" href="/admin/addons/lucky">Moderate</a>"#,
+        r#"<a class="button secondary" href="/admin/addons/lucky">Moderate</a>"#,
         r#"<span class="badge bad">Blocked</span>"#,
         r#"<span class="badge warn">Repo not reachable</span>"#,
         "someone (not claimed)",

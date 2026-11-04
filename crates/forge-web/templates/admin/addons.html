@@ -32,7 +32,7 @@
         <br><a class="muted" href="https://github.com/{{ r.repo }}" rel="noopener">{{ r.repo }}</a></td>
       <td>{% if r.owner != "" %}{{ r.owner }}{% else %}<span class="muted">{{ r.author }} (not claimed)</span>{% endif %}</td>
       <td>{% if r.latest_tag != "" %}{{ r.latest_tag }} <span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span>{% if r.findings > 0 %} {{ r.findings }} finding{% if r.findings != 1 %}s{% endif %}{% endif %}{% else %}<span class="muted">No release yet</span>{% endif %}</td>
-      <td class="row-actions"><a class="button" href="/admin/addons/{{ r.slug }}">Moderate</a> <a class="button secondary" href="/addons/{{ r.slug }}/edit">Edit</a></td>
+      <td class="row-actions"><a class="button secondary" href="/admin/addons/{{ r.slug }}">Moderate</a> <a class="button secondary" href="/addons/{{ r.slug }}/edit">Edit</a></td>
     </tr>
   {% endfor %}
   </tbody>
