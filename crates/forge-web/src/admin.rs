@@ -436,6 +436,7 @@ pub async fn addon(
             tag: s(&v["tag"]),
             published: s(&v["published_at"]).chars().take(10).collect(),
             trust: s(&v["trust"]),
+            tone: crate::trust::notice(v["trust"].as_str().unwrap_or("unscanned"), false, false).class,
             critical: v["findings"]["critical"].as_i64().unwrap_or(0),
             warn: v["findings"]["warn"].as_i64().unwrap_or(0),
         })

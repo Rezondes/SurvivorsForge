@@ -804,6 +804,8 @@ pub struct AdminVersionRow {
     pub tag: String,
     pub published: String,
     pub trust: String,
+    /// The colour of its trust badge, as everywhere else.
+    pub tone: &'static str,
     pub critical: i64,
     pub warn: i64,
 }

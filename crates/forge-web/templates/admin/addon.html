@@ -23,7 +23,7 @@
   <div class="member">
     <strong><a href="/addons/{{ slug }}/versions/{{ v.tag }}">{{ v.tag }}</a></strong>
     <span class="muted">{{ v.published }}</span>
-    <span class="badge {% if v.trust == "verified" %}ok{% else if v.trust == "flagged" || v.trust == "blocked" %}bad{% endif %}">{{ v.trust }}</span>
+    <span class="badge {{ v.tone }}">{{ v.trust }}</span>
     {% if v.critical > 0 %}<span class="muted">{{ v.critical }} critical</span>{% endif %}
     {% if v.warn > 0 %}<span class="muted">{{ v.warn }} warn</span>{% endif %}
     {% if v.trust == "blocked" %}

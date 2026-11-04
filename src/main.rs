@@ -327,6 +327,8 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         author: row.author.clone().into(),
         version: row.version.clone().into(),
         badge: row.badge.label().into(),
+        // "Verified" reads green wherever it shows, as on the website.
+        badge_tone: if row.badge == Badge::Verified { tone_kind(forge_core::trust::Tone::Ok) } else { 0 },
         description: row.description.clone().into(),
         status: status.into(),
         status_kind: kind,
@@ -374,7 +376,8 @@ fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
         name: b.name.into(),
         author: b.author.into(),
         version: SharedString::new(),
-        badge: b.trust.map(str::to_string).unwrap_or(b.category).into(),
+        badge: b.trust.map_or(b.category, |(label, _)| label.to_string()).into(),
+        badge_tone: b.trust.map_or(0, |(_, tone)| tone_kind(tone)),
         description: b.description.into(),
         status: status.into(),
         status_kind,
@@ -2170,18 +2173,24 @@ fn issue_line(i: &controller::IssueLine) -> IssueLine {
     IssueLine { number: i.number as i32, title: i.title.as_str().into(), author: i.author.as_str().into(), comments: i.comments as i32, date: i.date.as_str().into() }
 }
 
+/// A trust tag's colour as the Slint `Pill` takes it.
+fn tone_kind(tone: forge_core::trust::Tone) -> i32 {
+    use forge_core::trust::Tone;
+    match tone {
+        Tone::Plain => 0,
+        Tone::Ok => 1,
+        Tone::Warn => 2,
+        Tone::Bad => 3,
+    }
+}
+
 fn version_line(v: &controller::VersionLine, verified_author: bool, installed: &str) -> VersionLine {
-    use forge_core::trust::Trust;
-    let trust_kind = match v.trust {
-        Trust::Verified | Trust::Scanned => 1,
-        Trust::Flagged | Trust::Unscanned => 2,
-        Trust::Blocked | Trust::SourceChanged => 3,
-    };
+    let trust_kind = tone_kind(v.trust.tone(verified_author));
     VersionLine {
         tag: v.tag.as_str().into(),
         name: v.name.as_str().into(),
         date: v.date.as_str().into(),
-        trust: controller::trust_label(v.trust, verified_author).into(),
+        trust: v.trust.label(verified_author).into(),
         trust_kind,
         downloads: v.downloads as i32,
         prerelease: v.prerelease,

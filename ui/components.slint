@@ -9,6 +9,8 @@ export struct AddonRow {
     author: string,
     version: string,
     badge: string,
+    // The badge's colour, as on the website: 0 gold, 1 ok, 2 warn, 3 danger.
+    badge-tone: int,
     description: string,
     status: string,
     // 0 neutral, 1 ok, 2 update available, 3 error
@@ -100,7 +102,8 @@ export struct VersionLine {
     tag: string,
     name: string,
     date: string,
-    // The platform's trust label ("Checked", "Flagged") and its colour: 1 ok, 2 warn, 3 danger.
+    // The platform's trust tag ("Checked", "Flagged") and its colour as on the website: 0 gold, 1 ok,
+    // 2 warn, 3 danger.
     trust: string,
     trust-kind: int,
     downloads: int,
@@ -734,13 +737,17 @@ export component ScrollPanel inherits Rectangle {
     }
 }
 
+// A tag like the website's badges. `tone` colours it the same way everywhere: 0 gold (Checked, a
+// category), 1 ok (Verified, Verified author), 2 warn (Not checked), 3 danger (Flagged, Blocked).
 component Pill inherits Rectangle {
     in property <string> text;
+    in property <int> tone;
+    property <color> ink: root.tone == 1 ? Theme.ok : root.tone == 2 ? Theme.warn : root.tone == 3 ? Theme.danger : Theme.gold;
     height: 20px;
     width: label.preferred-width + 16px;
     border-radius: 10px;
     border-width: 1px;
-    border-color: Theme.outline;
+    border-color: root.tone == 0 ? Theme.outline : root.ink;
     label := Text {
         width: parent.width;
         height: parent.height;
@@ -748,7 +755,7 @@ component Pill inherits Rectangle {
         font-size: 11px;
         horizontal-alignment: center;
         vertical-alignment: center;
-        color: Theme.gold;
+        color: root.ink;
     }
 }
 
@@ -1154,7 +1161,7 @@ export component DetailView inherits VerticalLayout {
                 }
                 if root.detail.row.badge != "" : VerticalLayout {
                     alignment: center;
-                    Pill { text: root.detail.row.badge; }
+                    Pill { text: root.detail.row.badge; tone: root.detail.row.badge-tone; }
                 }
                 Rectangle { horizontal-stretch: 1; }
             }
@@ -1451,7 +1458,7 @@ export component AddonRowView inherits Rectangle {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Pill { text: root.addon.badge; }
+                    Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
                 }
                 Rectangle { horizontal-stretch: 1; }
             }
@@ -1647,7 +1654,7 @@ export component AddonTileView inherits Rectangle {
             height: 22px;
             if root.addon.badge != "" : VerticalLayout {
                 alignment: center;
-                Pill { text: root.addon.badge; }
+                Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
             }
             Text {
                 horizontal-stretch: 1;
@@ -2253,11 +2260,12 @@ export component VersionsView inherits VerticalLayout {
                         color: Theme.text-muted;
                     }
                 }
-                Text {
-                    text: version.trust;
-                    font-size: Theme.meta;
-                    vertical-alignment: center;
-                    color: version.trust-kind == 1 ? Theme.ok : version.trust-kind == 2 ? Theme.warn : version.trust-kind == 3 ? Theme.danger : Theme.text-muted;
+                VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: version.trust;
+                        tone: version.trust-kind;
+                    }
                 }
                 if version.installed : Text {
                     width: 90px;

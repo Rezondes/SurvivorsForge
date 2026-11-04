@@ -5,7 +5,7 @@ use crate::registry::{Registry, VerifiedAddon};
 use crate::scan::InstalledAddon;
 use crate::state::{Reconciled, Source, State, TOC_PREFIX};
 use crate::updates::{RemoteVersion, UpdateStatus};
-use forge_core::trust::Trust;
+use forge_core::trust::{Tone, Trust};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -273,19 +273,6 @@ pub fn dependency_plan(id: &str, registry: &Registry, state: &State) -> Dependen
     plan
 }
 
-/// The label of a platform trust level, the same words the website uses.
-pub fn trust_label(trust: Trust, verified_author: bool) -> &'static str {
-    match trust {
-        Trust::Verified => "Verified",
-        Trust::Scanned if verified_author => "Verified author",
-        Trust::Scanned => "Checked",
-        Trust::Flagged => "Flagged",
-        Trust::Unscanned => "Not checked",
-        Trust::Blocked => "Blocked",
-        Trust::SourceChanged => "File changed",
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrowseRow {
     pub id: String,
@@ -295,8 +282,9 @@ pub struct BrowseRow {
     pub category: String,
     pub repo: String,
     pub installed: bool,
-    /// The platform's trust label of the newest version; `None` from the plain verified list.
-    pub trust: Option<&'static str>,
+    /// The platform's trust tag of the newest version and its colour, as on the website; `None`
+    /// from the plain verified list.
+    pub trust: Option<(&'static str, Tone)>,
     /// False when the platform blocks the newest version.
     pub installable: bool,
 }
@@ -314,7 +302,7 @@ pub fn browse_rows(registry: &Registry, state: &State) -> Vec<BrowseRow> {
             repo: a.repo.clone(),
             // Also counts as installed when its folders came from a zip or another repo.
             installed: state.get(&a.id).is_some() || a.folders.iter().any(|f| state.owner_of(f).is_some()),
-            trust: a.latest.as_ref().map(|l| trust_label(l.trust, a.verified_author == Some(true))),
+            trust: a.latest.as_ref().map(|l| (l.trust.label(a.verified_author == Some(true)), l.trust.tone(a.verified_author == Some(true)))),
             installable: a.latest.as_ref().is_none_or(|l| l.trust.installable()),
         })
         .collect()
@@ -1110,20 +1098,9 @@ mod tests {
 
     #[test]
     fn badge_per_trust() {
-        let cases = [
-            (Trust::Verified, false, "Verified"),
-            (Trust::Scanned, true, "Verified author"),
-            (Trust::Scanned, false, "Checked"),
-            (Trust::Flagged, false, "Flagged"),
-            (Trust::Unscanned, false, "Not checked"),
-            (Trust::Blocked, false, "Blocked"),
-            (Trust::SourceChanged, false, "File changed"),
-        ];
-        for (trust, author, label) in cases {
-            assert_eq!(trust_label(trust, author), label);
-        }
+        // The words and colours themselves are forge-core's, shared with the website.
         let rows = browse_rows(&platform_registry(Trust::Flagged), &State::default());
-        assert!(rows.iter().all(|r| r.trust == Some("Flagged")));
+        assert!(rows.iter().all(|r| r.trust == Some(("Flagged", Tone::Bad))));
         let plain = browse_rows(&crate::registry::embedded(), &State::default());
         assert!(plain.iter().all(|r| r.trust.is_none() && r.installable), "the plain verified list has no trust data");
     }

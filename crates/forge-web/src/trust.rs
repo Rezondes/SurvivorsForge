@@ -1,6 +1,8 @@
 //! What the website says about each trust level. One place, so list badges, addon pages and the
 //! download confirmation never disagree.
 
+use forge_core::trust::Trust;
+
 /// The notice shown with a version. `class` is one of the CSS notice classes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Notice {
@@ -23,44 +25,23 @@ pub fn notice(trust: &str, verified_author: bool, source_missing: bool) -> Notic
             confirm: false,
         };
     }
-    match trust {
-        "verified" => Notice { class: "ok", badge: "Verified", text: "An admin checked this exact file by hand.", downloadable: true, confirm: false },
-        "scanned" if verified_author => Notice {
-            class: "",
-            badge: "Verified author",
-            text: "An admin verified an earlier version of this author; this one was checked automatically.",
-            downloadable: true,
-            confirm: false,
-        },
-        "scanned" => Notice {
-            class: "",
-            badge: "Checked",
-            text: "The automatic check found nothing. No admin has looked at it by hand.",
-            downloadable: true,
-            confirm: false,
-        },
-        "flagged" => Notice {
-            class: "bad",
-            badge: "Flagged",
-            text: "The automatic check found something suspicious. Read the findings before you install it.",
-            downloadable: true,
-            confirm: true,
-        },
-        "blocked" => Notice { class: "bad", badge: "Blocked", text: "An admin blocked this version. It cannot be downloaded.", downloadable: false, confirm: false },
-        "source_changed" => Notice {
-            class: "bad",
-            badge: "File changed",
-            text: "The file on GitHub was changed after it was checked. It cannot be downloaded until an admin looks at it.",
-            downloadable: false,
-            confirm: false,
-        },
-        _ => Notice {
-            class: "warn",
-            badge: "Not checked",
-            text: "The automatic check has not run yet. Install it at your own risk.",
-            downloadable: true,
-            confirm: true,
-        },
+    // Tag and colour come from forge-core, which the launcher uses too; an unknown level is not checked.
+    let level: Trust = serde_json::from_value(serde_json::Value::from(trust)).unwrap_or(Trust::Unscanned);
+    let text = match level {
+        Trust::Verified => "An admin checked this exact file by hand.",
+        Trust::Scanned if verified_author => "An admin verified an earlier version of this author; this one was checked automatically.",
+        Trust::Scanned => "The automatic check found nothing. No admin has looked at it by hand.",
+        Trust::Flagged => "The automatic check found something suspicious. Read the findings before you install it.",
+        Trust::Blocked => "An admin blocked this version. It cannot be downloaded.",
+        Trust::SourceChanged => "The file on GitHub was changed after it was checked. It cannot be downloaded until an admin looks at it.",
+        Trust::Unscanned => "The automatic check has not run yet. Install it at your own risk.",
+    };
+    Notice {
+        class: level.tone(verified_author).class(),
+        badge: level.label(verified_author),
+        text,
+        downloadable: level.installable(),
+        confirm: level.needs_confirmation(),
     }
 }
 
@@ -72,6 +53,8 @@ mod tests {
     fn levels() {
         assert!(notice("verified", false, false).downloadable && !notice("verified", false, false).confirm);
         assert_eq!(notice("scanned", true, false).badge, "Verified author");
+        assert_eq!(notice("scanned", true, false).class, notice("verified", false, false).class, "Verified author is as green as Verified");
+        assert_eq!(notice("whatever", false, false).badge, "Not checked", "an unknown level reads as not checked");
         assert!(notice("flagged", false, false).confirm);
         assert!(notice("unscanned", false, false).confirm);
         assert!(!notice("blocked", false, false).downloadable);
