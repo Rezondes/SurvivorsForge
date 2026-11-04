@@ -534,6 +534,11 @@ export component AppWindow inherits Window {
         height: parent.height;
         init => { self.focus(); }
         key-pressed(event) => {
+            // The shoulder buttons of a controller come as Page Up and Page Down.
+            if ((event.text == Key.PageDown || event.text == Key.PageUp) && !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open) {
+                root.open-page(mod(root.page + (event.text == Key.PageDown ? 1 : 2), 3));
+                return accept;
+            }
             if (event.text != Key.Escape) {
                 return reject;
             }

@@ -1982,6 +1982,27 @@ fn main() -> Result<(), slint::PlatformError> {
             let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &s));
         }));
     }
+    // A controller works the window like the keyboard, only while the window has the focus and
+    // the game does not run: its presses are meant for the game then.
+    {
+        let (weak, s) = (ui.as_weak(), shared.clone());
+        survivorsforge::gamepad::listen(move |pad| {
+            let s = s.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                let focused = ui.window().with_winit_window(|w| w.has_focus()).unwrap_or(false);
+                if !focused || lock(&s).game_running {
+                    return;
+                }
+                let key: SharedString = match survivorsforge::gamepad::press(pad) {
+                    survivorsforge::gamepad::Press::Focus { back: true } => slint::platform::Key::Backtab.into(),
+                    survivorsforge::gamepad::Press::Focus { back: false } => slint::platform::Key::Tab.into(),
+                    survivorsforge::gamepad::Press::Key(key) => key.into(),
+                };
+                ui.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: key.clone() });
+                ui.window().dispatch_event(slint::platform::WindowEvent::KeyReleased { text: key });
+            });
+        });
+    }
     ui.set_app_version(APP_VERSION.into());
     let labels = |list: &[&str]| ModelRc::new(VecModel::from(list.iter().map(|l| SharedString::from(*l)).collect::<Vec<_>>()));
     ui.set_safety_labels(labels(&controller::SAFETY_LABELS));

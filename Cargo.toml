@@ -32,6 +32,14 @@ sha2 = "0.11"
 flate2 = "1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 
+# A game controller as keys (src/gamepad.rs): evdev on Linux needs no system library to build
+# against, gilrs elsewhere.
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.13"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+gilrs = "0.11"
+
 [target.'cfg(windows)'.dependencies]
 # The Store version asks the Store for its updates (same version the other crates pull in).
 windows = { version = "0.62", features = ["ApplicationModel", "Foundation_Collections", "Services_Store"] }
