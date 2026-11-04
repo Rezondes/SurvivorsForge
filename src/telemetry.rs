@@ -37,7 +37,7 @@ pub fn event(update: bool, registry_id: &str, version: &str, result: Result<(), 
         addon: registry_id.to_string(),
         version: version.to_string(),
         launcher_version: crate::APP_VERSION,
-        os: if cfg!(windows) { "windows" } else { "linux" },
+        os: std::env::consts::OS,
         error_code,
     })
 }

@@ -49,6 +49,19 @@ async fn accepts_valid_events(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn stores_macos_as_its_own_platform(pool: PgPool) {
+    let app = setup(pool).await;
+    let mut mac = event("install");
+    mac["os"] = json!("macos");
+    let mut unknown = event("update");
+    unknown["os"] = json!("unknown");
+    let reply = post(&app.router, Some(ID), json!([mac, unknown])).await;
+    assert_eq!(reply.json(), json!({ "accepted": 1, "rejected": 1 }));
+    let os: String = sqlx::query_scalar("SELECT os FROM telemetry_events").fetch_one(&app.pool).await.unwrap();
+    assert_eq!(os, "macos");
+}
+
+#[sqlx::test]
 async fn rejects_unknown_addon_and_kind(pool: PgPool) {
     let app = setup(pool).await;
     let mut ghost = event("install");

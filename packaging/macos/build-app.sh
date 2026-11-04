@@ -41,7 +41,8 @@ if [[ "${actual%% *}" != "$expected" ]]; then
     exit 1
 fi
 tar -xf "$archive" --strip-components 1 -C "$resources/Wine"
-cp "$root/packaging/macos/README.md" "$resources/Wine-runtime-notes.md"
+cp "$root/packaging/macos/THIRD-PARTY-NOTICES.md" "$resources/"
+cp -R "$root/packaging/macos/licenses" "$resources/"
 
 iconset="$work/SurvivorsForge.iconset"
 mkdir "$iconset"
@@ -60,7 +61,7 @@ cat > "$app/Contents/Info.plist" <<EOF
     <key>CFBundleExecutable</key>
     <string>SurvivorsForge</string>
     <key>CFBundleIdentifier</key>
-    <string>net.rezondes.survivorsforge.local</string>
+    <string>net.rezondes.survivorsforge</string>
     <key>CFBundleName</key>
     <string>SurvivorsForge</string>
     <key>CFBundlePackageType</key>

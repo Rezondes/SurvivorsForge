@@ -4,19 +4,40 @@ use std::process::{Child, Command};
 
 use survivorsforge::game_update::GAME_EXE;
 
-/// Also catch a game launched outside SurvivorsForge or before it was reopened.
-pub fn require_game_closed() -> io::Result<()> {
-    let processes = Command::new("/bin/ps").args(["-axww", "-o", "comm="]).output()?;
+fn game_name(path: &str) -> bool {
+    path.trim().rsplit(['/', '\\']).next().is_some_and(|name| name.eq_ignore_ascii_case(GAME_EXE))
+}
+
+fn wine_game(line: &str) -> bool {
+    let Some((host, command)) = line.trim_start().split_once(char::is_whitespace) else {
+        return false;
+    };
+    if !matches!(host, "wine" | "wine64" | "wine-preloader" | "wine64-preloader" | "wineloader" | "wineloader2")
+        && !host.eq_ignore_ascii_case("AzerothSurvivors")
+    {
+        return false;
+    }
+    // ps renders argv as text. Check the first Windows executable, so a later argument naming
+    // the game does not make an unrelated Wine program count as the game.
+    command
+        .split(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+        .find(|arg| arg.rsplit_once('.').is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("exe")))
+        .is_some_and(game_name)
+}
+
+fn process_list(columns: &str) -> io::Result<String> {
+    let processes = Command::new("/bin/ps").args(["-axww", "-o", columns]).output()?;
     if !processes.status.success() {
         return Err(io::Error::other("Could not check whether Azeroth Survivors is running."));
     }
-    let running = String::from_utf8_lossy(&processes.stdout).lines().any(|path| {
-        path.trim()
-            .rsplit(['/', '\\'])
-            .next()
-            .is_some_and(|name| name.eq_ignore_ascii_case(GAME_EXE))
-    });
-    if running {
+    Ok(String::from_utf8_lossy(&processes.stdout).into_owned())
+}
+
+/// Also catch a game launched outside SurvivorsForge or before it was reopened.
+pub fn require_game_closed() -> io::Result<()> {
+    if process_list("comm=")?.lines().any(game_name)
+        || process_list("ucomm=,command=")?.lines().any(wine_game)
+    {
         return Err(io::Error::new(ErrorKind::AlreadyExists, "Close Azeroth Survivors first."));
     }
     Ok(())
@@ -65,4 +86,20 @@ pub fn start_game(exe: &Path, data_dir: &Path) -> io::Result<Child> {
                 e
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_game_processes_and_wine_preloaders() {
+        assert!(game_name("/Games/Azeroth Survivors/AzerothSurvivors.exe"));
+        assert!(wine_game(r#"wine64-preloader "Z:\Games\Azeroth Survivors\AzerothSurvivors.exe""#));
+        assert!(wine_game("wine /Applications/Wine/bin/wine /Games/Azeroth Survivors/AZEROTHSURVIVORS.EXE"));
+        assert!(wine_game("AzerothSurvivors /Games/Azeroth Survivors/AzerothSurvivors.exe"));
+        assert!(!wine_game("vim /Games/AzerothSurvivors.exe"));
+        assert!(!wine_game("wine cmd.exe /c echo AzerothSurvivors.exe"));
+        assert!(!wine_game("wine /Games/not-AzerothSurvivors.exe"));
+    }
 }

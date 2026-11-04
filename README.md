@@ -316,7 +316,7 @@ Running work and how it ended show as toasts at the bottom right: *Checking for 
 - **Launch game** starts `AzerothSurvivors.exe` next to `benilla-config`, using bundled Wine on macOS. On Linux it starts a native build whose name starts with `AzerothSurvivors`. Use Steam to start a Windows build under Proton.
 - **Game updates**: with each update check the launcher compares the game with the indexes the game updates itself by: `https://wow.aethus.pl/exe/latest.json` for the Windows exe (also under Proton), `exe/linux/latest.json` for the native Linux build `AzerothSurvivors`, `exe/data/patches.json` for the files in `Data`. The exe's SHA-256 is read once per size and time. When something differs, the launch button becomes *Update to v…* (*Start without updating* below it): the parts are joined into one gzip, unpacked, checked against size and SHA-256 and only then put in place, with the old file's permissions (`src/game_update.rs`).
 
-The website opens an addon in the launcher with a `survivorsforge://addon/<id>` link. A release build registers the scheme for the current user on every start, so it follows the executable when it moves (Windows: `HKCU\Software\Classes`, Linux: a `.desktop` file and `xdg-mime`). A launcher that already runs gets the link from the new one over `127.0.0.1:47615`, and the new one quits.
+On Windows and Linux, the website opens an addon in the launcher with a `survivorsforge://addon/<id>` link. A release build registers the scheme for the current user on every start, so it follows the executable when it moves (Windows: `HKCU\Software\Classes`, Linux: a `.desktop` file and `xdg-mime`). A launcher that already runs gets the link from the new one over `127.0.0.1:47615`, and the new one quits. On macOS, find and install addons from **Browse** in the app.
 
 ## Data locations
 
@@ -346,18 +346,18 @@ turns off the events (and with them the ID) or only the ID.
 
 ## Releases and self-update
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request: launcher tests and Clippy on Windows and Ubuntu 22.04, the platform tests against Postgres, the compose files and images, and a gitleaks secret scan.
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: launcher tests and Clippy on Windows, Ubuntu 22.04, and macOS, the platform tests against Postgres, the compose files and images, and a gitleaks secret scan.
 
 `.github/workflows/release.yml` runs on tags `v*` and on its *Run workflow* button:
 
 1. The button only: sets the typed version in `Cargo.toml` and `Cargo.lock`, commits `chore(release): bump version to <version>`, tags `v<version>` and pushes both. The jobs below build from that tag in the same run.
 2. Fails if the tag does not match the version in `Cargo.toml` and `Cargo.lock`.
 3. Builds the launcher for Windows, Linux and Apple Silicon macOS in parallel.
-4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once the launcher builds succeed.
-5. Publishes one GitHub release, only if all of that succeeded, with `compose.yaml`, `env.example` and each launcher under a name that is the same in every release:
+4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once the Windows and Linux builds succeed.
+5. Publishes the GitHub release with `compose.yaml`, `env.example`, and the Windows and Linux launchers under fixed names:
    - `SurvivorsForge-windows-x86_64.zip`
    - `SurvivorsForge-linux-x86_64.AppImage`
-   - `SurvivorsForge-macos-arm64.zip`
+6. Attaches `SurvivorsForge-macos-arm64.zip` to the same release when the Mac build succeeds. A failed Mac build or upload can be retried independently.
 
 The self-update looks for these names, and they give stable links (`releases/latest/download/<name>`). Launchers before 0.4.0 looked for versioned names (`SurvivorsForge-<version>-...`), which releases after 0.6.0 no longer carry: they must be downloaded again by hand.
 

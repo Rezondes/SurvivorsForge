@@ -60,7 +60,7 @@ impl Event {
             (Some(false), None) => true,
             _ => false,
         };
-        code_fits && short(&self.version, 64) && short(&self.launcher_version, 32) && matches!(self.os.as_str(), "windows" | "linux")
+        code_fits && short(&self.version, 64) && short(&self.launcher_version, 32) && matches!(self.os.as_str(), "windows" | "linux" | "macos")
     }
 }
 

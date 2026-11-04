@@ -113,7 +113,7 @@ jobs:
     permissions:
       contents: read
     env:
-      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      MACOSX_DEPLOYMENT_TARGET: "26.2"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,9 +135,9 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  # Push the platform images only after all launcher builds succeed.
+  # Push the platform images after the Windows and Linux launchers build.
   images:
-    needs: [version, windows, linux, macos]
+    needs: [version, windows, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -178,9 +178,9 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # Publish once every launcher build and the platform images have succeeded.
+  # Publish once the Windows and Linux launchers and the platform images have succeeded.
   publish:
-    needs: [version, windows, linux, macos, images]
+    needs: [version, windows, linux, images]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -198,10 +198,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: linux
-          path: release
-      - uses: actions/download-artifact@v4
-        with:
-          name: macos
           path: release
       # What a server needs besides the images (docs/self-hosting.md).
       - name: Add the server files
@@ -233,6 +229,23 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "SurvivorsForge ${{ needs.version.outputs.version }}" \
             --generate-notes
+
+  # Attach the Mac app independently so this job can be retried without republishing the release.
+  publish-macos:
+    needs: [version, publish, macos]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: release
+      - name: Attach the Mac app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release upload "$TAG" release/SurvivorsForge-macos-arm64.zip --repo "$GITHUB_REPOSITORY"
 
   # The Microsoft Store version: the same exe as an MSIX package, which the Store signs. Final
   # releases only, once the repository variables are set (README, "Microsoft Store"). It runs after
