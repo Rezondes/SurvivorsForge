@@ -9,6 +9,8 @@ export component ActionButton inherits Rectangle {
     in property <bool> enabled: true;
     // Display type and more height, for the one call to action of a screen.
     in property <bool> large;
+    // Off while it shows running work ("12.0 MB / 48.0 MB"): the text stays readable.
+    in property <bool> busy;
     callback clicked;
 
     // A dialog puts the focus on its safe button.
@@ -47,7 +49,8 @@ export component ActionButton inherits Rectangle {
         horizontal-alignment: center;
         vertical-alignment: center;
         overflow: elide;
-        color: !root.enabled ? Theme.text-disabled
+        color: root.busy ? Theme.text
+            : !root.enabled ? Theme.text-disabled
             : root.danger ? Theme.danger
             : root.primary ? Theme.gold-bright : Theme.gold;
     }
@@ -92,7 +95,7 @@ export component GlyphButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.label;
     accessible-enabled: root.enabled;
-    width: root.height;
+    width: Theme.touch ? 14px + 16px + 8px + caption.preferred-width + 14px : root.height;
     height: Theme.touch ? 44px : 34px;
     border-radius: Theme.radius;
     border-width: focus.has-focus ? 2px : 1px;
@@ -104,6 +107,7 @@ export component GlyphButton inherits Rectangle {
     background: root.primary && root.enabled ? (touch.has-hover ? Theme.crimson-hover : Theme.crimson) : Theme.control;
 
     Path {
+        x: Theme.touch ? 14px : (parent.width - self.width) / 2;
         width: 16px;
         height: 16px;
         viewbox-width: 16;
@@ -113,6 +117,15 @@ export component GlyphButton inherits Rectangle {
             : root.danger && touch.has-hover ? Theme.danger
             : root.primary || touch.has-hover ? Theme.gold-bright : Theme.text-muted;
         stroke-width: 1.5px;
+    }
+
+    caption := Text {
+        x: 14px + 16px + 8px;
+        visible: Theme.touch;
+        text: root.label;
+        font-size: Theme.body;
+        vertical-alignment: center;
+        color: !root.enabled ? Theme.text-disabled : root.primary ? Theme.gold-bright : Theme.gold;
     }
 
     if root.badge != "" : Rectangle {

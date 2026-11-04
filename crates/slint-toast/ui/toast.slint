@@ -20,17 +20,20 @@ export struct ToastStyle {
     busy: color,
     font-size: length,
     radius: length,
+    // The close button's edge: 26px, 44px for touch screens.
+    close-size: length,
 }
 
 component CloseButton inherits Rectangle {
     in property <color> glyph;
     in property <color> hover;
+    in property <length> size: 26px;
     callback clicked();
 
     accessible-role: button;
     accessible-label: "Close message";
-    width: 26px;
-    height: 26px;
+    width: root.size;
+    height: root.size;
     border-radius: 3px;
     border-width: focus.has-focus ? 1px : 0px;
     border-color: root.hover;
@@ -114,6 +117,7 @@ component ToastCard inherits Rectangle {
         y: (parent.height - self.height) / 2;
         glyph: root.style.muted;
         hover: root.style.text;
+        size: root.style.close-size;
         clicked => { root.dismiss(root.toast.id); }
     }
     // Work without a known end: a short bar runs along the bottom edge.
@@ -142,6 +146,7 @@ export component ToastStack inherits VerticalLayout {
         busy: #9A9AA2,
         font-size: 14px,
         radius: 4px,
+        close-size: 26px,
     };
     in property <duration> done-time: 4s;
     callback dismiss(int);

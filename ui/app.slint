@@ -573,6 +573,8 @@ export component AppWindow inherits Window {
     // Self-update banner, empty version = hidden
     in property <string> self-update-version;
     in property <bool> self-update-busy;
+    // Later was clicked: the banner waits for the next start.
+    property <bool> self-update-later;
     // False for a bare Linux binary outside an AppImage: it can't replace itself.
     in property <bool> self-update-in-place: true;
     callback self-update();
@@ -663,6 +665,7 @@ export component AppWindow inherits Window {
                         text: root.game-running ? "Game running" : root.game-updating ? (root.game-step != "" ? root.game-step : "Updating the game...") : root.game-update != "" ? root.game-update : "Launch game";
                         primary: true;
                         large: true;
+                        busy: root.game-updating;
                         // Off at once on the click, before the game's window shows up.
                         enabled: (root.game-missing == "" || root.game-update != "") && !root.game-running && !root.game-updating;
                         clicked => {
@@ -737,12 +740,13 @@ export component AppWindow inherits Window {
                 }
             }
 
-            if root.self-update-version != "" : Rectangle {
-                height: 48px;
+            // Gold on dark, not the crimson of Launch game; Later hides it until the next start.
+            if root.self-update-version != "" && !root.self-update-later : Rectangle {
+                height: Theme.touch ? 60px : 48px;
                 border-radius: Theme.radius;
                 border-width: 1px;
-                border-color: Theme.outline-hover;
-                background: Theme.crimson;
+                border-color: Theme.gold;
+                background: Theme.control;
                 HorizontalLayout {
                     padding-left: 18px;
                     padding-right: 8px;
@@ -760,6 +764,13 @@ export component AppWindow inherits Window {
                             text: root.self-update-busy ? "Updating..." : root.self-update-in-place ? "Update and restart" : "Open download page";
                             enabled: !root.self-update-busy;
                             clicked => { root.self-update(); }
+                        }
+                    }
+                    if !root.self-update-busy : VerticalLayout {
+                        alignment: center;
+                        LinkButton {
+                            text: "Later";
+                            clicked => { root.self-update-later = true; }
                         }
                     }
                 }
@@ -1114,6 +1125,7 @@ export component AppWindow inherits Window {
                 busy: Theme.gold,
                 font-size: Theme.body,
                 radius: 4px,
+                close-size: Theme.touch ? 44px : 26px,
             };
             dismiss(id) => { root.toast-dismiss(id); }
         }
