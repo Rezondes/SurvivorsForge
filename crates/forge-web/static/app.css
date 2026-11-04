@@ -615,7 +615,17 @@ input.narrow { width: 6em; flex: none; }
 @media (pointer: coarse) {
   .button, button:not(.link), .top nav > a:not(.button) { min-height: 44px; }
   input:not([type="checkbox"]), select { min-height: 44px; }
+  /* Small targets of their own: tabs, filters, list tools, contents links, tick rows. */
+  .result-tools select, .result-tools .view-toggle button, .icon-button { min-height: 44px; min-width: 44px; }
+  .subnav a, .segmented a, .post-tools summary, button.link { min-height: 44px; display: inline-flex; align-items: center; }
+  .post-tools summary, button.link { padding: 0 10px; }
+  .toc a { padding-top: 10px; padding-bottom: 10px; }
+  label.check { min-height: 44px; }
+  .cats label.check { padding-right: 48px; }
+  .subcats > summary { top: 0; width: 44px; height: 44px; }
 }
+/* Phones zoom into a field with smaller text when it gets focus. */
+@media (max-width: 640px) { input, select, textarea { font-size: 16px; } }
 
 /* Repo field of the publish forms: the account, a slash, the name; suggestions below it */
 .repo-input { display: flex; align-items: center; gap: 8px; }
