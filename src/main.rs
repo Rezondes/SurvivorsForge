@@ -863,7 +863,8 @@ fn scanned_text(report: &forge_scan::Report, before: &str) -> String {
 }
 
 /// Downloads the file `id` would install, scans it here, then offers to install exactly that file.
-fn scan_remote(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>, title: String) {
+/// `picked` is a version from the Versions tab; `None` scans the one Install would take.
+fn scan_remote(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>, title: String, picked: Option<RemoteVersion>) {
     let job_id = id.clone();
     let name = lock(shared).state.get(&id).map(|e| e.name.clone()).unwrap_or_else(|| id.clone());
     scan_then(
@@ -876,7 +877,7 @@ fn scan_remote(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>, t
                 (remote_job(&core, &job_id), core.client(), core.github(), core.downloads())
             };
             let (_, repo, spec, _, remote) = job.ok_or(Error::NotFound)??;
-            let mut remote = match remote {
+            let mut remote = match picked.or(remote) {
                 Some(remote) => remote,
                 None => updates::resolve_remote(&*github, &repo, &spec)?,
             };
@@ -1075,7 +1076,7 @@ fn on_row_action(ui: &AppWindow, shared: &Shared, id: String) {
                 let asked = title.clone();
                 let scan = move || {
                     if let Some(ui) = weak.upgrade() {
-                        scan_remote(&ui, &shared, id, deps, asked);
+                        scan_remote(&ui, &shared, id, deps, asked, None);
                     }
                 };
                 ask_or_scan(ui, &title, &text, ok, danger, scan, install);
@@ -2347,6 +2348,14 @@ fn on_version_install(ui: &AppWindow, shared: &Shared, tag: String) {
     // The same warnings, counts and closing line as for the newest version.
     let warnings = controller::version_warnings(&version);
     let (weak, shared) = (ui.as_weak(), shared.clone());
+    let scan = {
+        let (weak, shared, id, remote) = (weak.clone(), shared.clone(), id.clone(), remote.clone());
+        move |title: String| {
+            if let Some(ui) = weak.upgrade() {
+                scan_remote(&ui, &shared, id, Vec::new(), title, Some(remote));
+            }
+        }
+    };
     let install = move || {
         if let Some(ui) = weak.upgrade() {
             start_install(&ui, &shared, id, Vec::new(), Some(remote));
@@ -2363,7 +2372,13 @@ fn on_version_install(ui: &AppWindow, shared: &Shared, tag: String) {
     };
     let (_, warned, danger) = controller::warning_dialog(&name, &warnings);
     let text = if warnings.is_empty() { first } else { format!("{first}\n\n{warned}") };
-    ask(ui, &title, &text, if danger { "Install anyway" } else { "Install" }, danger, install);
+    let ok = if danger { "Install anyway" } else { "Install" };
+    if warnings.is_empty() {
+        return ask(ui, &title, &text, ok, danger, install);
+    }
+    // As for the newest version: the very file may be checked on this computer first.
+    let asked = title.clone();
+    ask_or_scan(ui, &title, &text, ok, danger, move || scan(asked), install);
 }
 
 fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {

@@ -36,13 +36,13 @@ export component SectionHeading inherits HorizontalLayout {
 export component ScrollPanel inherits Rectangle {
     in property <length> spacing: 6px;
     // Where it is scrolled to; bound outside, a list rebuilt after the detail view keeps its place.
-    in-out property <length> scroll-y <=> flick.viewport-y;
+    in-out property <length> scroll-y <=> flick.content-y;
     property <length> bar: 6px;
-    property <length> overflow: max(0px, flick.viewport-height - flick.height);
-    property <length> thumb: overflow == 0 ? root.height : max(32px, root.height * root.height / flick.viewport-height);
+    property <length> overflow: max(0px, flick.content-height - flick.height);
+    property <length> thumb: overflow == 0 ? root.height : max(32px, root.height * root.height / flick.content-height);
 
     function scroll-to(y: length) {
-        flick.viewport-y = clamp(y, -root.overflow, 0px);
+        flick.content-y = clamp(y, -root.overflow, 0px);
     }
 
     keys := FocusScope {
@@ -54,11 +54,11 @@ export component ScrollPanel inherits Rectangle {
         focus-on-tab-navigation: false;
         key-pressed(event) => {
             if (event.text == Key.DownArrow) {
-                root.scroll-to(flick.viewport-y - 48px);
+                root.scroll-to(flick.content-y - 48px);
                 return accept;
             }
             if (event.text == Key.UpArrow) {
-                root.scroll-to(flick.viewport-y + 48px);
+                root.scroll-to(flick.content-y + 48px);
                 return accept;
             }
             if (event.text == Key.Home) {
@@ -77,7 +77,7 @@ export component ScrollPanel inherits Rectangle {
             y: 0;
             width: root.width - root.bar - 10px;
             height: root.height;
-            viewport-height: max(content.preferred-height, self.height);
+            content-height: max(content.preferred-height, self.height);
             content := VerticalLayout {
                 width: flick.width;
                 spacing: root.spacing;
@@ -98,7 +98,7 @@ export component ScrollPanel inherits Rectangle {
 
         Rectangle {
             x: 0;
-            y: (-flick.viewport-y / root.overflow) * (root.height - root.thumb);
+            y: (-flick.content-y / root.overflow) * (root.height - root.thumb);
             width: root.bar;
             height: root.thumb;
             border-radius: root.bar / 2;
@@ -110,7 +110,7 @@ export component ScrollPanel inherits Rectangle {
             x: -4px;
             height: parent.height;
             function jump() {
-                flick.viewport-y = -clamp((self.mouse-y - root.thumb / 2) / (root.height - root.thumb), 0, 1) * root.overflow;
+                flick.content-y = -clamp((self.mouse-y - root.thumb / 2) / (root.height - root.thumb), 0, 1) * root.overflow;
             }
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down) {
