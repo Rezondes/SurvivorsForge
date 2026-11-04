@@ -121,6 +121,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `LAUNCHER_REPO` | no | GitHub repository of the launcher; `/stats` shows its release downloads | `Rezondes/SurvivorsForge` |
 | `GRAFANA_DB_PASSWORD` | with monitoring | Password of the read-only database role Grafana reads with | random |
 | `GRAFANA_ADMIN_PASSWORD` | with monitoring | Grafana's own admin account, for emergencies | random |
+| `GRAFANA_ALERT_WEBHOOK_URL` | no | Discord webhook for Grafana's alerts; leave it out (not empty) to see them only in Grafana | - |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | with monitoring | Where API, worker and website send traces | `http://tempo:4318` |
 | `GITHUB_API_URL` | no | GitHub REST API | `https://api.github.com` |
 | `GITHUB_READ_TOKEN` | no | Token for public reads of repos without the App; GitHub then allows 5000 instead of 60 requests per hour. A fine-grained token with *Public repositories (read-only)* and no permissions | `github_pat_...` |
@@ -269,6 +270,10 @@ Set `GRAFANA_DB_PASSWORD` (the read-only database role Grafana uses; the API set
 Metrics stay 30 days, logs and traces 14 days. A request of the website and the API calls behind it
 share one trace; API requests of the launcher carry its `install_id` when the user allows it, so
 Grafana finds them with `{ span.install_id = "<id>" }` in Tempo, and each log line links its trace.
+
+Grafana comes with five alert rules: more than 5 % server errors for 10 minutes, a runnable job
+waiting over an hour, a GitHub quota below 10 %, a disk over 90 % and more than 20 % failed
+launcher installs in an hour. They go to the Discord webhook in `GRAFANA_ALERT_WEBHOOK_URL`.
 
 Every request the platform sends to GitHub is counted by what caused it (an API route or a worker
 job), endpoint and quota (`read_token`, `anonymous`, `installation:<id>`, `app`, `oauth`, `web`,

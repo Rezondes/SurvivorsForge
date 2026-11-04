@@ -1,0 +1,147 @@
+# Alert rules of the platform. They go to the contact point "forge", a Discord webhook from
+# GRAFANA_ALERT_WEBHOOK_URL; without one (the image's placeholder) Grafana only shows them under
+# Alerting.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: forge
+    receivers:
+      - uid: forge-discord
+        type: discord
+        settings:
+          url: $GRAFANA_ALERT_WEBHOOK_URL
+          use_discord_username: false
+
+policies:
+  - orgId: 1
+    receiver: forge
+    group_by: [alertname]
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: forge
+    folder: SurvivorsForge
+    interval: 1m
+    rules:
+      - uid: forge-5xx
+        title: API answers with 5xx
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { team: forge }
+        annotations:
+          summary: "More than 5 % of the API requests failed with a server error for 10 minutes."
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model: { refId: A, instant: true, expr: 'sum(rate(forge_http_requests_total{status=~"5.."}[5m])) / sum(rate(forge_http_requests_total[5m]))' }
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0.05] } }]
+      - uid: forge-oldest-job
+        title: Job waiting too long
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { team: forge }
+        annotations:
+          summary: "A runnable job has waited more than an hour: is the worker down or stuck?"
+        data:
+          - refId: A
+            datasourceUid: postgres
+            relativeTimeRange: { from: 3600, to: 0 }
+            model: { refId: A, format: table, editorMode: code, rawQuery: true, rawSql: "SELECT coalesce(extract(epoch FROM max(now() - run_at)), 0) AS waiting FROM jobs WHERE done_at IS NULL AND failed_at IS NULL AND run_at <= now() AND (locked_until IS NULL OR locked_until < now())" }
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [3600] } }]
+      - uid: forge-github-quota
+        title: GitHub quota almost used up
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { team: forge }
+        annotations:
+          summary: "A GitHub quota has less than 10 % left until its reset."
+        data:
+          - refId: A
+            datasourceUid: postgres
+            relativeTimeRange: { from: 3600, to: 0 }
+            model: { refId: A, format: table, editorMode: code, rawQuery: true, rawSql: "SELECT coalesce(min(remaining * 100.0 / nullif(\"limit\", 0)), 100) AS left FROM github_quota WHERE reset_at > now()" }
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: lt, params: [10] } }]
+      - uid: forge-disk
+        title: Disk almost full
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { team: forge }
+        annotations:
+          summary: "A disk of the host is more than 90 % full."
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model: { refId: A, instant: true, expr: 'max(1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"})' }
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0.9] } }]
+      - uid: forge-launcher-failures
+        title: Many launcher installs fail
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels: { team: forge }
+        annotations:
+          summary: "More than 20 % of the launcher installs and updates of the last hour failed (at least 20 events)."
+        data:
+          - refId: A
+            datasourceUid: postgres
+            relativeTimeRange: { from: 3600, to: 0 }
+            model: { refId: A, format: table, editorMode: code, rawQuery: true, rawSql: "SELECT CASE WHEN count(*) < 20 THEN 0 ELSE 100.0 * count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) / count(*) END AS failed FROM telemetry_events WHERE created_at > now() - interval '1 hour'" }
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [20] } }]
