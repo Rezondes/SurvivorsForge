@@ -1,5 +1,6 @@
 fn main() {
-    slint_build::compile("ui/app.slint").expect("Slint UI compiles");
+    let config = slint_build::CompilerConfiguration::new().with_library_paths([("toast".to_string(), slint_toast::UI_DIR.into())].into());
+    slint_build::compile_with_config("ui/app.slint", config).expect("Slint UI compiles");
 
     // Icon and version info of the .exe (Explorer, taskbar pin, Alt+Tab before the window shows).
     #[cfg(windows)]

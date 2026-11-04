@@ -21,6 +21,7 @@ use survivorsforge::state::{Reconciled, Source, State};
 use survivorsforge::updates::{self, RemoteVersion, UpdateStatus};
 use survivorsforge::telemetry::{self, ApiSender};
 use survivorsforge::{archive, unique_name, Error, APP_REPO, APP_VERSION};
+use slint_toast::{Kind, Toasts};
 
 slint::include_modules!();
 
@@ -36,8 +37,12 @@ struct Core {
     busy: HashSet<String>,
     checking: bool,
     search: String,
-    status: String,
-    status_error: bool,
+    /// Running work and how things ended, bottom right.
+    toasts: Toasts,
+    /// The busy toast of the running work (checking, installing), which turns into how it ended.
+    work: Option<i32>,
+    /// The toast of the last invalid setting, closed once the settings are valid again.
+    settings_error: Option<i32>,
     self_update: Option<Available>,
     /// The platform's game versions, oldest first; empty without the platform.
     game_versions: Vec<controller::GameVersion>,
@@ -125,8 +130,9 @@ impl Core {
             busy: HashSet::new(),
             checking: false,
             search: String::new(),
-            status: String::new(),
-            status_error: false,
+            toasts: Toasts::default(),
+            work: None,
+            settings_error: None,
             self_update: None,
             game_versions: Vec::new(),
             offline: false,
@@ -164,7 +170,7 @@ impl Core {
         self.state = state;
         self.statuses.clear();
         if note.is_some() {
-            self.set_status("state.json was damaged and saved as state.json.bak; starting fresh.".into(), true);
+            self.notify("state.json was damaged and saved as state.json.bak; starting fresh.".into(), Kind::Error);
         }
         // Leftovers of downloads that were never installed (cancelled dialogs, crashes).
         let _ = std::fs::remove_dir_all(self.downloads());
@@ -214,19 +220,34 @@ impl Core {
                 self.reconciled = self.state.reconcile(&scan);
                 self.scan = scan;
             }
-            Err(e) => self.set_status(format!("Cannot read the AddOns folder: {e}"), true),
+            Err(e) => self.notify(format!("Cannot read the AddOns folder: {e}"), Kind::Error),
         }
     }
 
     fn save_state(&mut self) {
         if let Err(e) = self.state.save(&self.data_dir, &self.config.addons_dir) {
-            self.set_status(format!("Could not save state.json: {e}"), true);
+            self.notify(format!("Could not save state.json: {e}"), Kind::Error);
         }
     }
 
-    fn set_status(&mut self, text: String, error: bool) {
-        self.status = text;
-        self.status_error = error;
+    /// Shows running work in the busy toast; the next step of it changes its text.
+    // ponytail: one busy toast for all work, as the old status line; one per job if they overlap often.
+    fn set_status(&mut self, text: String) -> i32 {
+        match self.work.filter(|id| self.toasts.get(*id).is_some()) {
+            Some(id) => {
+                self.toasts.set_text(id, text);
+                id
+            }
+            None => *self.work.insert(self.toasts.busy(text)),
+        }
+    }
+
+    /// How something ended: the busy toast turns into it, else it comes as a new toast.
+    fn notify(&mut self, text: String, kind: Kind) {
+        match self.work.take() {
+            Some(id) => self.toasts.finish(id, text, kind),
+            None => self.toasts.push(text, kind),
+        };
     }
 
     fn repo_of(&self, id: &str) -> Option<String> {
@@ -635,8 +656,13 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     let (step, bar) = core.game_step.clone().unwrap_or_default();
     ui.set_game_step(step.into());
     ui.set_game_progress(bar);
-    ui.set_status_text(core.status.clone().into());
-    ui.set_status_error(core.status_error);
+    // Row by row into the same model: a toast that stays keeps its timer.
+    let toasts: Vec<Toast> = core.toasts.items().iter().map(|t| Toast { id: t.id, text: t.text.as_str().into(), kind: t.kind as i32 }).collect();
+    let model = ui.get_toasts();
+    match slint::Model::as_any(&model).downcast_ref::<VecModel<Toast>>() {
+        Some(rows) => slint_toast::sync(rows, toasts, |t| t.id),
+        None => ui.set_toasts(ModelRc::new(VecModel::from(toasts))),
+    }
     ui.set_addons_dir(core.config.addons_dir.to_string_lossy().into_owned().into());
     ui.set_self_update_version(core.self_update.as_ref().map(|a| a.version.clone()).unwrap_or_default().into());
 }
@@ -656,8 +682,8 @@ fn run_bg(
                 core.busy.remove(id);
             }
             match result {
-                Ok(message) => core.set_status(message, false),
-                Err(e) => core.set_status(e.to_string(), true),
+                Ok(message) => core.notify(message, Kind::Success),
+                Err(e) => core.notify(e.to_string(), Kind::Error),
             }
         }
         let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
@@ -704,7 +730,7 @@ fn scan_then<T: Send + 'static>(
     job: impl FnOnce(&Shared) -> survivorsforge::Result<T> + Send + 'static,
     then: impl FnOnce(&AppWindow, &Shared, T) + Send + 'static,
 ) {
-    lock(shared).set_status(format!("Scanning {name} locally..."), false);
+    lock(shared).set_status(format!("Scanning {name} locally..."));
     refresh(ui, shared);
     let (weak, shared, name) = (ui.as_weak(), shared.clone(), name.to_string());
     std::thread::spawn(move || {
@@ -712,10 +738,10 @@ fn scan_then<T: Send + 'static>(
         let _ = weak.upgrade_in_event_loop(move |ui| {
             match result {
                 Ok(report) => {
-                    lock(&shared).set_status(format!("{name} scanned locally"), false);
+                    lock(&shared).notify(format!("{name} scanned locally"), Kind::Success);
                     then(&ui, &shared, report);
                 }
-                Err(e) => lock(&shared).set_status(format!("Could not scan {name}: {e}"), true),
+                Err(e) => lock(&shared).notify(format!("Could not scan {name}: {e}"), Kind::Error),
             }
             refresh(&ui, &shared);
         });
@@ -881,7 +907,7 @@ fn on_row_action(ui: &AppWindow, shared: &Shared, id: String) {
                 let plan = controller::dependency_plan(&registry_id, &core.registry, &core.state);
                 if !plan.unavailable.is_empty() {
                     let msg = format!("{} needs {}, which cannot be installed right now", addon.name, plan.unavailable.join(", "));
-                    core.set_status(msg, true);
+                    core.notify(msg, Kind::Error);
                     Err(())
                 } else {
                     let mut lines = Vec::new();
@@ -961,13 +987,13 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>,
         match remote_job(&core, &id) {
             None => return,
             Some(Err(e)) => {
-                core.set_status(e.to_string(), true);
+                core.notify(e.to_string(), Kind::Error);
                 None
             }
             Some(Ok(job)) => {
                 core.busy.insert(id.clone());
                 core.outcomes.remove(&id);
-                core.set_status(format!("Installing {}...", job.0), false);
+                core.set_status(format!("Installing {}...", job.0));
                 Some(job)
             }
         }
@@ -1001,21 +1027,21 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
             Some(exe) => match std::process::Command::new(&exe).current_dir(exe.parent().unwrap_or(Path::new("."))).spawn() {
                 Ok(mut child) => {
                     core.game_running = true;
-                    core.set_status("Azeroth Survivors is running.".into(), false);
+                    core.notify("Azeroth Survivors is running.".into(), Kind::Info);
                     let (weak, shared) = (ui.as_weak(), shared.clone());
                     std::thread::spawn(move || {
                         let _ = child.wait();
                         {
                             let mut core = lock(&shared);
                             core.game_running = false;
-                            core.set_status("Azeroth Survivors was closed.".into(), false);
+                            core.notify("Azeroth Survivors was closed.".into(), Kind::Info);
                         }
                         let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
                     });
                 }
-                Err(e) => core.set_status(format!("Could not start the game: {e}"), true),
+                Err(e) => core.notify(format!("Could not start the game: {e}"), Kind::Error),
             },
-            None => core.set_status("The game was not found next to the AddOns folder.".into(), true),
+            None => core.notify("The game was not found next to the AddOns folder.".into(), Kind::Error),
         }
     }
     refresh(ui, shared);
@@ -1072,7 +1098,7 @@ fn on_update_game(ui: &AppWindow, shared: &Shared) {
         {
             let mut core = lock(&shared);
             core.game_updating = true;
-            core.set_status("Updating the game...".into(), false);
+            core.set_status("Updating the game...".into());
         }
         refresh(&ui, &shared);
         run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
@@ -1137,7 +1163,7 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
             core.outcomes.remove(id);
             core.progress.insert(id.clone(), controller::Progress::Waiting);
         }
-        core.set_status(format!("Updating {} addons...", jobs.len()), false);
+        core.set_status(format!("Updating {} addons...", jobs.len()));
         jobs
     };
     refresh(ui, shared);
@@ -1146,7 +1172,9 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
         let total = jobs.len();
         let mut failed = Vec::new();
         for (i, (id, (name, repo, spec, source, remote))) in jobs.into_iter().enumerate() {
-            show_progress(shared, true, |core| core.set_status(format!("Updating {} of {total}: {name}", i + 1), false));
+            show_progress(shared, true, |core| {
+                core.set_status(format!("Updating {} of {total}: {name}", i + 1));
+            });
             if let Err(e) = install_remote(shared, &id, &name, &repo, &spec, source, remote) {
                 failed.push(format!("{name}: {e}"));
             }
@@ -1181,7 +1209,7 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         core.outcomes.clear();
         core.game_note.clear();
         core.rescan();
-        core.set_status("Checking for updates...".into(), false);
+        core.set_status("Checking for updates...".into());
     }
     refresh(ui, shared);
     let weak = ui.as_weak();
@@ -1355,7 +1383,7 @@ fn on_install_zip(ui: &AppWindow, shared: &Shared) {
         Ok(detected) => detected,
         Err(e) => {
             let message = if e == Error::NoAddonFound { "No addon found in the zip".into() } else { e.to_string() };
-            lock(shared).set_status(message, true);
+            lock(shared).notify(message, Kind::Error);
             refresh(ui, shared);
             return;
         }
@@ -1525,25 +1553,24 @@ fn typed_path(text: &str) -> PathBuf {
     config::expand_home(text, home.as_ref().map(|u| u.home_dir()))
 }
 
+fn settings_error(ui: &AppWindow, shared: &Shared, text: String) {
+    let mut core = lock(shared);
+    core.settings_error = Some(core.toasts.error(text));
+    drop(core);
+    refresh(ui, shared);
+}
+
 fn on_settings_save(ui: &AppWindow, shared: &Shared) {
     let path = typed_path(&ui.get_settings_path());
     ui.set_settings_path(path.to_string_lossy().into_owned().into());
     let warning = match config::validate_addons_dir(&path) {
         Ok(warning) => warning,
-        Err(e) => {
-            ui.set_settings_message(e.to_string().into());
-            ui.set_settings_message_error(true);
-            return;
-        }
+        Err(e) => return settings_error(ui, shared, e.to_string()),
     };
     let urls = config::platform_url(&ui.get_settings_api_url()).and_then(|api| Ok((api, config::platform_url(&ui.get_settings_web_url())?)));
     let (api_url, web_url) = match urls {
         Ok(urls) => urls,
-        Err(e) => {
-            ui.set_settings_message(e.into());
-            ui.set_settings_message_error(true);
-            return;
-        }
+        Err(e) => return settings_error(ui, shared, e),
     };
     let (saved, recheck) = {
         let mut core = lock(shared);
@@ -1555,14 +1582,14 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         let send_install_id = ui.get_settings_send_install_id();
         let auto_update_all = ui.get_settings_auto_update();
         let config = Config { addons_dir: path, game_version, api_url, web_url, telemetry, send_install_id, auto_update_all, ..core.config.clone() };
-        // Saving runs on every focus change: nothing changed, nothing to write. An error from a
-        // value typed back to the saved one is over.
+        // The values are valid again: an error about them is over.
+        if let Some(id) = core.settings_error.take() {
+            core.toasts.dismiss(id);
+        }
+        // Saving runs on every focus change: nothing changed, nothing to write.
         if config == core.config {
-            if ui.get_settings_message_error() {
-                ui.set_settings_message(warning.map(|w| w.to_string()).unwrap_or_default().into());
-                ui.set_settings_message_error(false);
-            }
-            return;
+            drop(core);
+            return refresh(ui, shared);
         }
         // Another platform: its list, versions and categories replace the old ones.
         let recheck = config.addons_dir != core.config.addons_dir || platform_changed;
@@ -1575,15 +1602,12 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         (saved, recheck)
     };
     match saved {
-        Ok(()) => {
-            let note = warning.map(|w| format!(" {w}")).unwrap_or_default();
-            ui.set_settings_message(format!("Saved.{note}").into());
-            ui.set_settings_message_error(false);
-        }
-        Err(e) => {
-            ui.set_settings_message(format!("Could not save: {e}").into());
-            ui.set_settings_message_error(true);
-        }
+        // Saved, but the folder looks odd (no game next to it): a warning.
+        Ok(()) => match warning {
+            Some(w) => lock(shared).notify(format!("Settings saved. {w}"), Kind::Warning),
+            None => lock(shared).notify("Settings saved.".into(), Kind::Success),
+        },
+        Err(e) => lock(shared).notify(format!("Could not save the settings: {e}"), Kind::Error),
     }
     refresh(ui, shared);
     if recheck {
@@ -1657,13 +1681,13 @@ fn on_pack_save(ui: &AppWindow, shared: &Shared) {
     } else {
         match directories::UserDirs::new().and_then(|d| d.download_dir().map(|p| p.join(name))) {
             Some(dest) => dest,
-            None => return lock(shared).set_status("No Downloads folder found".into(), true),
+            None => return lock(shared).notify("No Downloads folder found".into(), Kind::Error),
         }
     };
     let parts: Vec<(String, String, String)> = {
         let mut core = lock(shared);
         if core.offline {
-            return core.set_status(Error::Offline.to_string(), true);
+            return core.notify(Error::Offline.to_string(), Kind::Error);
         }
         core.pack_busy = true;
         core.picked
@@ -1728,13 +1752,13 @@ fn on_self_update(ui: &AppWindow, shared: &Shared) {
         } else {
             format!("Download the new version from {}", self_update::RELEASES_URL)
         };
-        lock(shared).set_status(message, false);
+        lock(shared).notify(message, Kind::Info);
         return refresh(ui, shared);
     }
     let (client, update, work) = {
         let mut core = lock(shared);
         if !core.busy.is_empty() {
-            core.set_status("Wait until the running installs finish, then update SurvivorsForge.".into(), true);
+            core.notify("Wait until the running installs finish, then update SurvivorsForge.".into(), Kind::Warning);
             drop(core);
             return refresh(ui, shared);
         }
@@ -1750,8 +1774,8 @@ fn on_self_update(ui: &AppWindow, shared: &Shared) {
                 let _ = weak.upgrade_in_event_loop(|_| self_update::restart());
                 return;
             }
-            Ok(false) => lock(&shared).set_status("Opened SurvivorsForge in the Microsoft Store, update it there.".into(), false),
-            Err(e) => lock(&shared).set_status(format!("Self-update failed: {e}"), true),
+            Ok(false) => lock(&shared).notify("Opened SurvivorsForge in the Microsoft Store, update it there.".into(), Kind::Info),
+            Err(e) => lock(&shared).notify(format!("Self-update failed: {e}"), Kind::Error),
         }
         let _ = weak.upgrade_in_event_loop(move |ui| {
             ui.set_self_update_busy(false);
@@ -1966,6 +1990,10 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
+    on!(on_toast_dismiss, |ui, shared, id| {
+        lock(shared).toasts.dismiss(id);
+        refresh(&ui, shared);
+    });
     on!(on_category_changed, |ui, shared, index| {
         {
             let mut core = lock(shared);
@@ -1995,7 +2023,7 @@ fn main() -> Result<(), slint::PlatformError> {
         };
         let link = controller::pack_link(&web, &ids);
         if open::that(&link).is_err() {
-            lock(shared).set_status(format!("Open {link} in your browser"), false);
+            lock(shared).notify(format!("Open {link} in your browser"), Kind::Info);
             refresh(&ui, shared);
         }
     });
@@ -2073,8 +2101,7 @@ fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
             url
         }
     };
-    const OPENING: &str = "Opening the browser";
-    lock(shared).set_status(OPENING.into(), false);
+    let opening = lock(shared).set_status("Opening the browser".into());
     refresh(ui, shared);
     let (weak, shared) = (ui.as_weak(), shared.clone());
     std::thread::spawn(move || {
@@ -2082,9 +2109,10 @@ fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
         let _ = weak.upgrade_in_event_loop(move |ui| {
             let mut core = lock(&shared);
             if failed {
-                core.set_status(format!("Could not open the browser. The page is {url}"), true);
-            } else if core.status == OPENING {
-                core.set_status(String::new(), false);
+                core.notify(format!("Could not open the browser. The page is {url}"), Kind::Error);
+            } else if core.work == Some(opening) {
+                core.work = None;
+                core.toasts.dismiss(opening);
             }
             drop(core);
             refresh(&ui, &shared);
@@ -2174,7 +2202,7 @@ fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
         return;
     }
     if lock(shared).registry.get(&id).is_none() {
-        lock(shared).set_status(format!("The addon \"{id}\" from the link is not in the list of verified addons."), true);
+        lock(shared).notify(format!("The addon \"{id}\" from the link is not in the list of verified addons."), Kind::Error);
         refresh(ui, shared);
         return;
     }
@@ -2187,6 +2215,20 @@ fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
 #[cfg(test)]
 mod card_tests {
     use super::*;
+
+    #[test]
+    fn running_work_shows_in_one_toast_that_turns_into_its_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::new(dir.path().to_path_buf(), None);
+        // The empty data folder has no AddOns folder to read.
+        core.toasts = Toasts::default();
+        let id = core.set_status("Updating 2 addons...".into());
+        assert_eq!(core.set_status("Updating 1 of 2: Lucky".into()), id, "the next step changes the same toast");
+        core.notify("2 addons updated".into(), Kind::Success);
+        assert_eq!(core.toasts.items(), [slint_toast::Toast { id, text: "2 addons updated".into(), kind: Kind::Success }]);
+        core.notify("Azeroth Survivors was closed.".into(), Kind::Info);
+        assert_eq!(core.toasts.items().len(), 2, "without running work a result comes as its own toast");
+    }
 
     #[test]
     fn an_installed_addon_shows_the_same_card_in_browse_and_installed() {
@@ -2343,6 +2385,28 @@ mod layout_tests {
         fn press(ui: &crate::AppWindow, text: &str) {
             ui.window().dispatch_event(WindowEvent::KeyPressed { text: text.into() });
             ui.window().dispatch_event(WindowEvent::KeyReleased { text: text.into() });
+        }
+
+        #[test]
+        fn a_toast_shows_bottom_right_and_closes() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let closed = Rc::new(Cell::new(0));
+            let counter = closed.clone();
+            ui.on_toast_dismiss(move |id| counter.set(id));
+            let toast = crate::Toast { id: 7, text: "Lucky installed".into(), kind: slint_toast::Kind::Busy as i32 };
+            ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(vec![toast])));
+            ui.show().unwrap();
+            let Some(card) = ElementHandle::find_by_accessible_label(&ui, "Lucky installed").next() else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let window = ui.window().size().to_logical(ui.window().scale_factor());
+            let (at, size) = (card.absolute_position(), card.size());
+            assert!(size.height > 20.0, "the toast has room for its text: {size:?}");
+            assert!(at.x + size.width > window.width / 2.0 && at.y + size.height > window.height / 2.0, "bottom right: {at:?} in {window:?}");
+            ElementHandle::find_by_accessible_label(&ui, "Close message").next().unwrap().mock_single_click(PointerEventButton::Left);
+            assert_eq!(closed.get(), 7, "the X closes it");
         }
 
         #[test]

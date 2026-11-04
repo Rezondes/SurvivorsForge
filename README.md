@@ -129,6 +129,7 @@ To approximate a Steam Deck in Game Mode, set `XDG_CURRENT_DESKTOP=gamescope` (f
 | `ui/fonts/` | Morpheus (headings, shareware by Kiwi Media, `README-morpheus.txt`) and Marcellus (text, SIL Open Font License, `OFL-marcellus.txt`), embedded at build time |
 | `registry/verified.json` | Built-in copy of the verified addons (see Verified addon list) |
 | `tests/` | Integration tests for installation, GitHub fixtures |
+| `crates/slint-toast/` | Toasts for any Rust + Slint app: `Toasts` (info, success, warning, error, busy that turns into its result), `ui/toast.slint` with its own style, `sync` into a `VecModel`; how to use it in `src/lib.rs` |
 | `crates/forge-core/` | Shared with the platform: `.toc` parser, zip analysis and safe extraction, registry types and validation, asset glob matching, addon packs, dependency order, game version compatibility, trust levels |
 | `crates/` | The platform (see Platform) |
 | `compose.yaml` (server), `compose.local.yaml` (whole platform locally), `compose.dev.yaml` (Postgres for `cargo test`), `.env.example`, `.env.local.example` | Running the platform (see [docs/self-hosting.md](docs/self-hosting.md), [docs/local-setup.md](docs/local-setup.md)) |
@@ -300,6 +301,8 @@ Players of the browser version of the game upload addons as one zip. An addon pa
 ## Launcher pages
 
 *Installed*, *Browse* and *Settings*, plus *Quit* in Game Mode. Installed and Browse each show their addons as rows or tiles, chosen on the page and kept in `config.json` (`tile_pages`); rows are the default.
+
+Running work and how it ended show as toasts at the bottom right: *Checking for updates...* runs as a busy toast with a moving bar and turns into its result (*All addons are up to date*). Info and success toasts go after 4 seconds, warnings and errors stay until closed with their X, at most three at a time. The line at the bottom shows the AddOns folder.
 
 - **Installed**: every addon in the AddOns folder with a badge (`Verified`, `GitHub`, `Zip`, or `Unmanaged` for folders SurvivorsForge did not install), *Check for updates*, *Update all*, *Install zip*, *Add repo*, update and remove per addon.
 - **Browse**: the platform's addons with search and category filter. An installed addon has the same card as in Installed, with its status, *Update* and *Remove*. Ticking addons makes an addon pack (*Save as zip*, *Share as link*, *Clear*).

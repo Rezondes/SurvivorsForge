@@ -4,8 +4,9 @@ import {
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView
 } from "components.slint";
+import { Toast, ToastStack } from "@toast/toast.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast }
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
 export struct Suggestion {
@@ -157,8 +158,6 @@ component SettingsView inherits VerticalLayout {
     // "Not set" first, then the platform's game versions; empty without the platform.
     in property <[string]> game-versions;
     in-out property <int> game-index;
-    in property <string> message;
-    in property <bool> message-error;
     in property <string> version;
     in property <bool> file-dialog;
     in property <bool> game-mode;
@@ -304,20 +303,6 @@ component SettingsView inherits VerticalLayout {
             vertical-alignment: center;
         }
     }
-    // Not a HorizontalLayout: Slint measures wrapping text there as one line, so a long error would
-    // run out of its row. With a fixed width the row grows with the text.
-    Rectangle {
-        height: message.preferred-height;
-        message := Text {
-            x: 180px + Theme.gap-loose;
-            width: parent.width - self.x;
-            height: self.preferred-height;
-            text: (root.message-error ? "Error: " : "") + root.message;
-            font-size: Theme.body;
-            color: root.message-error ? Theme.danger : Theme.ok;
-            wrap: word-wrap;
-        }
-    }
 }
 
 export component AppWindow inherits Window {
@@ -429,15 +414,14 @@ export component AppWindow inherits Window {
     callback detail-auto-update();
     property <bool> showing-detail: root.detail-page == root.page;
 
-    in property <string> status-text;
-    in property <bool> status-error;
+    // Running work and how it ended, bottom right (crates/slint-toast).
+    in property <[Toast]> toasts;
+    callback toast-dismiss(int);
 
     // Settings
     in-out property <string> settings-path;
     in property <[string]> settings-game-versions;
     in-out property <int> settings-game-index;
-    in property <string> settings-message;
-    in property <bool> settings-message-error;
     in-out property <string> settings-api-url;
     in-out property <string> settings-web-url;
     in property <string> settings-api-default;
@@ -816,7 +800,6 @@ export component AppWindow inherits Window {
                     path <=> root.settings-path;
                     game-versions: root.settings-game-versions;
                     game-index <=> root.settings-game-index;
-                    message: root.settings-message;
                     api-url <=> root.settings-api-url;
                     web-url <=> root.settings-web-url;
                     api-default: root.settings-api-default;
@@ -824,7 +807,6 @@ export component AppWindow inherits Window {
                     telemetry <=> root.settings-telemetry;
                     send-install-id <=> root.settings-send-install-id;
                     auto-update <=> root.settings-auto-update;
-                    message-error: root.settings-message-error;
                     version: root.app-version;
                     file-dialog: root.file-dialog;
                     game-mode: root.game-mode;
@@ -838,10 +820,10 @@ export component AppWindow inherits Window {
             height: 20px;
             spacing: 16px;
             Text {
-                text: root.status-text != "" ? root.status-text : "AddOns: " + root.addons-dir;
+                text: "AddOns: " + root.addons-dir;
                 font-size: Theme.meta;
                 vertical-alignment: center;
-                color: root.status-error ? Theme.danger : Theme.text-muted;
+                color: Theme.text-muted;
                 overflow: elide;
                 horizontal-stretch: 1;
             }
@@ -852,6 +834,29 @@ export component AppWindow inherits Window {
                 color: Theme.text-muted;
             }
         }
+    }
+
+    // Above the pages and the bottom line, under the dialogs.
+    ToastStack {
+        x: parent.width - self.width - 24px;
+        y: parent.height - self.height - 40px;
+        width: 380px;
+        height: self.preferred-height;
+        toasts: root.toasts;
+        style: {
+            background: Theme.panel,
+            border: Theme.outline,
+            text: Theme.text,
+            muted: Theme.text-muted,
+            info: Theme.info,
+            success: Theme.ok,
+            warning: Theme.warn,
+            error: Theme.danger,
+            busy: Theme.gold,
+            font-size: Theme.body,
+            radius: 4px,
+        };
+        dismiss(id) => { root.toast-dismiss(id); }
     }
 
     if root.repo-open : Overlay {

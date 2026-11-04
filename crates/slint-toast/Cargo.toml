@@ -1,0 +1,14 @@
+[package]
+name = "slint-toast"
+version = "0.1.0"
+edition = "2024"
+description = "Toast messages for Slint apps: busy toasts that turn into their result, done toasts that go on their own, errors that stay"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[features]
+# `sync` for the app; the build script only needs `UI_DIR` and leaves Slint out.
+slint = ["dep:slint"]
+
+[dependencies]
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2"], optional = true }

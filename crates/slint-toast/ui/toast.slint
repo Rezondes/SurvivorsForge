@@ -1,0 +1,157 @@
+// Toasts for Slint apps, without imports: the app gives the colours and the font size.
+
+// One toast as the Rust `Toasts` keeps it. kind: 0 info, 1 success, 2 warning, 3 error, 4 busy.
+export struct Toast {
+    id: int,
+    text: string,
+    kind: int,
+}
+
+// Colours and sizes of the toasts; the defaults are a plain dark look.
+export struct ToastStyle {
+    background: brush,
+    border: color,
+    text: color,
+    muted: color,
+    info: color,
+    success: color,
+    warning: color,
+    error: color,
+    busy: color,
+    font-size: length,
+    radius: length,
+}
+
+component CloseButton inherits Rectangle {
+    in property <color> glyph;
+    in property <color> hover;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: "Close message";
+    width: 26px;
+    height: 26px;
+    border-radius: 3px;
+    border-width: focus.has-focus ? 1px : 0px;
+    border-color: root.hover;
+
+    Path {
+        width: 12px;
+        height: 12px;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        commands: "M 2 2 L 10 10 M 10 2 L 2 10";
+        stroke: touch.has-hover ? root.hover : root.glyph;
+        stroke-width: 1.5px;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    focus := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+// One toast. Info and success go after `done-time`, a warning or an error stays until it is closed,
+// a busy one shows a running bar until its work finishes.
+component ToastCard inherits Rectangle {
+    in property <Toast> toast;
+    in property <ToastStyle> style;
+    in property <duration> done-time;
+    callback dismiss(int);
+
+    property <color> accent: [root.style.info, root.style.success, root.style.warning, root.style.error, root.style.busy][root.toast.kind];
+
+    accessible-role: text;
+    accessible-label: root.toast.text;
+    // Not a HorizontalLayout: Slint measures wrapping text there as one line.
+    height: max(message.preferred-height, close.height) + 20px;
+    border-radius: root.style.radius;
+    border-width: 1px;
+    border-color: root.toast.kind == 2 || root.toast.kind == 3 ? root.accent : root.style.border;
+    background: root.style.background;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: #000000B0;
+    clip: true;
+
+    // Starts when a busy toast turns into info or success: its time starts with its result.
+    Timer {
+        interval: root.done-time;
+        running: root.toast.kind <= 1;
+        triggered => { root.dismiss(root.toast.id); }
+    }
+    Rectangle {
+        x: 6px;
+        y: 8px;
+        width: 3px;
+        height: parent.height - 16px;
+        border-radius: 1px;
+        background: root.accent;
+    }
+    message := Text {
+        x: 20px;
+        y: (parent.height - self.height) / 2;
+        width: parent.width - self.x - close.width - 20px;
+        height: self.preferred-height;
+        text: root.toast.text;
+        font-size: root.style.font-size;
+        color: root.style.text;
+        wrap: word-wrap;
+    }
+    close := CloseButton {
+        x: parent.width - self.width - 10px;
+        y: (parent.height - self.height) / 2;
+        glyph: root.style.muted;
+        hover: root.style.text;
+        clicked => { root.dismiss(root.toast.id); }
+    }
+    // Work without a known end: a short bar runs along the bottom edge.
+    if root.toast.kind == 4 : Rectangle {
+        property <float> phase: mod(animation-tick() / 1.4s, 1);
+        x: (root.width + self.width) * self.phase - self.width;
+        y: root.height - self.height;
+        width: root.width / 3;
+        height: 2px;
+        background: root.accent;
+    }
+}
+
+// The toasts stacked, newest at the bottom; place it where they should show (bottom right).
+export component ToastStack inherits VerticalLayout {
+    in property <[Toast]> toasts;
+    in property <ToastStyle> style: {
+        background: #1E1E22,
+        border: #3A3A42,
+        text: #ECECEC,
+        muted: #9A9AA2,
+        info: #5AA9E6,
+        success: #4CC36A,
+        warning: #E5B83B,
+        error: #E0574A,
+        busy: #9A9AA2,
+        font-size: 14px,
+        radius: 4px,
+    };
+    in property <duration> done-time: 4s;
+    callback dismiss(int);
+
+    spacing: 8px;
+    alignment: end;
+    for toast in root.toasts : ToastCard {
+        toast: toast;
+        style: root.style;
+        done-time: root.done-time;
+        dismiss(id) => { root.dismiss(id); }
+    }
+}
