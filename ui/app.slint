@@ -653,14 +653,6 @@ export component AppWindow inherits Window {
                         text <=> root.search;
                         edited(text) => { root.search-changed(text); }
                     }
-                    if root.page == 0 : ViewToggle {
-                        tiles <=> root.installed-tiles;
-                        changed(on) => { root.view-changed(0, on); }
-                    }
-                    if root.page == 1 : ViewToggle {
-                        tiles <=> root.browse-tiles;
-                        changed(on) => { root.view-changed(1, on); }
-                    }
                     // Icons named by their tooltips, as tall as the search field.
                     if root.page == 0 : GlyphButton {
                         height: Theme.touch ? 44px : 38px;
@@ -697,9 +689,8 @@ export component AppWindow inherits Window {
                 }
 
                 // Filters and order as on the website, for both lists; GitHub and zip addons have no
-                // category or safety check, so a chosen one hides them.
+                // category or safety check, so a chosen one hides them. Tiles or rows at the right end.
                 if root.page != 2 && !root.showing-detail : HorizontalLayout {
-                    alignment: start;
                     spacing: Theme.gap-tight;
                     Dropdown {
                         width: 220px;
@@ -720,6 +711,15 @@ export component AppWindow inherits Window {
                         model: root.sort-labels;
                         current-index <=> root.sort-index;
                         selected => { root.sort-changed(self.current-index); }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    if root.page == 0 : ViewToggle {
+                        tiles <=> root.installed-tiles;
+                        changed(on) => { root.view-changed(0, on); }
+                    }
+                    if root.page == 1 : ViewToggle {
+                        tiles <=> root.browse-tiles;
+                        changed(on) => { root.view-changed(1, on); }
                     }
                 }
 

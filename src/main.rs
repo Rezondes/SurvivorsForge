@@ -2691,6 +2691,13 @@ mod layout_tests {
                 let size = button.size();
                 assert!((size.width - size.height).abs() < 1.0, "{label} is a square icon button: {size:?}");
             }
+            let search = ui.root_element().query_descendants().match_accessible_role(AccessibleRole::TextInput).find_first().unwrap();
+            let tiles = find("Tiles").remove(0);
+            let search_bottom = search.absolute_position().y + search.size().height;
+            assert!(tiles.absolute_position().y >= search_bottom, "the view toggle is in the filter row, under the search");
+            let right = |e: &ElementHandle| e.absolute_position().x + e.size().width;
+            let (list, update) = (find("List").remove(0), find("Update all (3)").remove(0));
+            assert!((right(&list) - right(&update)).abs() < 1.0, "at the right end of that row, under the last icon button");
             let check = find("Check for updates").remove(0);
             let at = check.absolute_position();
             let middle = slint::LogicalPosition::new(at.x + check.size().width / 2.0, at.y + check.size().height / 2.0);
