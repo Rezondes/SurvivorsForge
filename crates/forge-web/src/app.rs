@@ -71,7 +71,9 @@ pub async fn selectable_categories(state: &AppState) -> WebResult<Vec<crate::tem
 pub async fn visitor(state: &AppState, jar: &PrivateCookieJar) -> WebResult<Option<(Visitor, String)>> {
     let Some(token) = session::token(jar) else { return Ok(None) };
     let me = state.api.get("/v1/me", Some(&token)).await?;
-    Ok(Some((Visitor::from_me(&me), token)))
+    let user = Visitor::from_me(&me);
+    let _ = SEEN_VISITOR.try_with(|v| *v.borrow_mut() = Some(user.clone()));
+    Ok(Some((user, token)))
 }
 
 /// The site's own address, for the absolute links that link previews need (`og:image`).
@@ -237,13 +239,25 @@ tokio::task_local! {
     static REQUEST_PATH: String;
     /// Where a login started on this request comes back to: the page itself, for a GET.
     static RETURN_TO: Option<String>;
+    /// The logged-in visitor once a handler looked them up, so an error page keeps the header.
+    static SEEN_VISITOR: std::cell::RefCell<Option<Visitor>>;
 }
 
 /// Puts the request's path where `current` finds it while the page renders.
 async fn remember_path(request: axum::extract::Request, next: middleware::Next) -> Response {
     let path = request.uri().path().to_string();
     let back = (request.method() == axum::http::Method::GET).then(|| request.uri().path_and_query().map_or(path.clone(), |p| p.to_string()));
-    REQUEST_PATH.scope(path, RETURN_TO.scope(back, next.run(request))).await
+    REQUEST_PATH.scope(path, RETURN_TO.scope(back, SEEN_VISITOR.scope(std::cell::RefCell::new(None), next.run(request)))).await
+}
+
+/// The visitor a handler of this request looked up, if any.
+pub fn seen_visitor() -> Option<Visitor> {
+    SEEN_VISITOR.try_with(|v| v.borrow().clone()).ok().flatten()
+}
+
+/// The page asked for, to try it again from an error page.
+pub fn this_page() -> Option<String> {
+    RETURN_TO.try_with(Clone::clone).ok().flatten()
 }
 
 /// A page of this site to return to after the login: a path, never another site (`//host`,
@@ -471,11 +485,14 @@ async fn callback(State(state): State<AppState>, jar: PrivateCookieJar, Query(qu
                 Err(e) => e.message(),
             }
         }
-        (_, Some("banned")) => "This account is banned.".into(),
+        (_, Some("banned")) => {
+            let message = "This GitHub account is banned from SurvivorsForge. If you think this is a mistake, report it on the platform's Issues page.";
+            return (jar, error_page(StatusCode::FORBIDDEN, "Login failed", message)).into_response();
+        }
         (_, Some("denied")) => "The login was cancelled on GitHub.".into(),
         _ => "The login did not work. Please try again.".into(),
     };
-    (jar, error_page(StatusCode::BAD_REQUEST, "Login failed", &message)).into_response()
+    (jar, crate::error::error_page_with(StatusCode::BAD_REQUEST, "Login failed", &message, Some(("/login", "Try again")))).into_response()
 }
 
 async fn logout(State(state): State<AppState>, jar: PrivateCookieJar) -> Response {

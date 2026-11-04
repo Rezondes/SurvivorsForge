@@ -355,3 +355,17 @@ async fn a_login_comes_back_to_the_page_it_started_on() {
     }
     assert!(web.get("/docs").await.body.contains(r#"href="/login?next=%2Fdocs""#), "the header's login link too");
 }
+
+#[tokio::test]
+async fn error_pages_keep_the_visitor_and_offer_a_way_on() {
+    let mut web = TestWeb::new().await;
+    web.login_as("t", me("bob", "user")).await;
+    let page = web.get("/admin").await;
+    assert_eq!(page.status, StatusCode::FORBIDDEN);
+    assert!(page.body.contains("Admins only") && page.body.contains("bob") && !page.body.contains(">Log in with GitHub<"), "{}", page.body);
+    assert!(page.body.contains("Error 403"));
+    let missing = web.get("/no-such-page").await;
+    assert!(missing.body.contains(r#"<a class="button" href="/addons">Browse addons</a>"#), "{}", missing.body);
+    let failed = web.get("/auth/callback?error=other").await;
+    assert!(failed.body.contains(r#"<a class="button" href="/login">Try again</a>"#), "{}", failed.body);
+}

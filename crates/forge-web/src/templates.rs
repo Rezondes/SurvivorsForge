@@ -83,6 +83,10 @@ pub struct ErrorPage {
     pub message: String,
     pub user: Option<Visitor>,
     pub csrf: String,
+    /// Shown small, for bug reports.
+    pub status: u16,
+    /// The way out that fits: (address, label), such as trying the page again.
+    pub retry: Option<(String, String)>,
 }
 
 #[derive(Template)]

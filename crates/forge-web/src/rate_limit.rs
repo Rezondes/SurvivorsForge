@@ -27,7 +27,9 @@ pub async fn middleware(State(limiter): State<Arc<RateLimiter>>, request: Reques
     // Caddy asks before each request to Grafana; a dashboard sends dozens at once.
     let grafana_check = request.uri().path() == "/auth/grafana";
     if !grafana_check && !limiter.allow(ip, Instant::now()) {
-        return error_page(StatusCode::TOO_MANY_REQUESTS, "Slow down", "Too many requests, try again in a minute.");
+        let mut response = error_page(StatusCode::TOO_MANY_REQUESTS, "Slow down", "Too many requests, try again in a minute.");
+        response.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from_static("60"));
+        return response;
     }
     CLIENT_IP.scope(ip, next.run(request)).await
 }

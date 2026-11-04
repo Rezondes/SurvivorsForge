@@ -30,8 +30,12 @@ fn origin_ok(request: &Request, web_url: &str) -> bool {
         .is_some_and(|r| r == web_url || r.starts_with(&format!("{web_url}/")))
 }
 
+/// The site's page, not bare text; htmx reloads the page for a fresh form instead.
 fn forbidden() -> Response {
-    (StatusCode::FORBIDDEN, "The form expired or came from another site. Reload the page and try again.").into_response()
+    let message = "The form was open too long or came from another site. Go back, reload the page and send it again.";
+    let mut response = crate::error::error_page(StatusCode::FORBIDDEN, "Form expired", message);
+    response.headers_mut().insert("hx-refresh", axum::http::HeaderValue::from_static("true"));
+    response
 }
 
 fn too_large() -> Response {

@@ -4,6 +4,8 @@
 <section class="panel">
   <h1>{{ title }}</h1>
   <p>{{ message }}</p>
+  {% if let Some((href, label)) = retry %}<p><a class="button" href="{{ href }}">{{ label }}</a></p>{% endif %}
   <p><a href="/">Back to the start page</a></p>
+  <p class="muted">Error {{ status }}</p>
 </section>
 {% endblock %}

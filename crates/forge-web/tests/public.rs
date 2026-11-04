@@ -271,7 +271,8 @@ async fn api_down_shows_error_page() {
     Mock::given(method("GET")).and(path("/v1/addons")).respond_with(ResponseTemplate::new(500).set_body_json(json!({ "error": "internal", "message": "Internal server error" }))).mount(&web.api).await;
     let page = web.get("/addons").await;
     assert_eq!(page.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(page.body.contains("Something went wrong"));
+    assert!(page.body.contains("Server error") && !page.body.contains("Internal server error"), "the API's text goes to the log");
+    assert!(page.body.contains(r#"<a class="button" href="/addons">Try again</a>"#), "{}", page.body);
 }
 
 #[tokio::test]
