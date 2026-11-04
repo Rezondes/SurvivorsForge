@@ -371,6 +371,8 @@ export component AppWindow inherits Window {
     in property <int> update-count;
     in property <bool> checking;
     callback check-updates();
+    // The platform did not answer: the lists may be old, until a check gets through.
+    in property <bool> offline;
     // Why the game can't be started from here; empty when its executable was found.
     in property <string> game-missing;
     // The game started from here still runs.
@@ -825,6 +827,23 @@ export component AppWindow inherits Window {
                         busy: root.detail.row.busy;
                         retry => { root.detail-retry(4); }
                         install(tag) => { root.version-install(tag); }
+                    }
+
+                    // Stays while the server is away, unlike the toast that said so.
+                    if root.offline && root.page != 2 && !root.showing-detail : HorizontalLayout {
+                        spacing: Theme.gap-tight;
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "Offline: the SurvivorsForge server cannot be reached. Lists may be old and safety checks too; updates come straight from GitHub.";
+                            font-size: Theme.meta;
+                            color: Theme.warn;
+                            wrap: word-wrap;
+                            vertical-alignment: center;
+                        }
+                        LinkButton {
+                            text: "Try again";
+                            clicked => { root.check-updates(); }
+                        }
                     }
 
                     if root.page == 0 && !root.showing-detail : ScrollPanel {

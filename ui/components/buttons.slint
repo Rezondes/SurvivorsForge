@@ -19,6 +19,12 @@ export component ActionButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.text;
     accessible-enabled: root.enabled;
+    // A screen reader's "press" does what a click does.
+    accessible-action-default => {
+        if (root.enabled) {
+            root.clicked();
+        }
+    }
     height: root.large ? 46px : Theme.touch ? 44px : 34px;
     min-width: label.preferred-width + (root.large ? 40px : 28px);
     border-radius: Theme.radius;
@@ -168,6 +174,7 @@ export component LinkButton inherits Rectangle {
 
     accessible-role: button;
     accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
     height: Theme.touch ? 44px : 22px;
     min-width: label.preferred-width + (Theme.touch ? 20px : 10px);
 

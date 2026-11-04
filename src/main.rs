@@ -646,7 +646,10 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     };
     let mut installed: Vec<&Row> = rows.iter().filter(|r| shown(&r.id, &r.name, &r.author, registry_entry(&core, &r.id).map(|a| a.category.as_str()))).collect();
     installed.sort_by(|a, b| list_order(&core, (&a.id, &a.name), (&b.id, &b.name)));
-    ui.set_installed_rows(model(installed.into_iter().map(|r| installed_row(r, &core)).collect()));
+    // Game Mode opens no browser, so the rows offer no GitHub button there (as the detail view).
+    let links = !ui.get_game_mode();
+    let linked = |row: AddonRow| AddonRow { can_open: row.can_open && links, ..row };
+    ui.set_installed_rows(model(installed.into_iter().map(|r| linked(installed_row(r, &core))).collect()));
     if slint::Model::row_count(&ui.get_category_labels()) != choices.len() + 1 {
         let mut labels: Vec<SharedString> = vec!["All categories".into()];
         labels.extend(choices.iter().map(|c| SharedString::from(c.label())));
@@ -663,7 +666,8 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     let mut browse: Vec<controller::BrowseRow> =
         controller::browse_rows(&core.registry, &core.state).into_iter().filter(|b| shown(&b.id, &b.name, &b.author, Some(&b.category))).collect();
     browse.sort_by(|a, b| list_order(&core, (&a.id, &a.name), (&b.id, &b.name)));
-    ui.set_browse_rows(model(browse.into_iter().map(|b| browse_row(b, &core, &rows)).collect()));
+    ui.set_browse_rows(model(browse.into_iter().map(|b| linked(browse_row(b, &core, &rows))).collect()));
+    ui.set_offline(core.offline);
     match detail(&core, &rows) {
         Some(detail) => ui.set_detail(detail),
         // Removed meanwhile: back to the list.
@@ -2782,6 +2786,25 @@ mod layout_tests {
             assert_eq!((cancelled.get(), accepted.get()), (1, 0), "Return presses Cancel, which has the focus");
             press(&ui, &slint::SharedString::from(Key::Escape));
             assert_eq!((cancelled.get(), accepted.get()), (2, 0), "Escape cancels too");
+        }
+
+        #[test]
+        fn offline_stays_said_with_a_way_to_try_again() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let tried = Rc::new(Cell::new(false));
+            let t = tried.clone();
+            ui.on_check_updates(move || t.set(true));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("Try again").is_none(), "online: no line");
+            ui.set_offline(true);
+            find("Try again").expect("offline: the line with its button").invoke_accessible_default_action();
+            assert!(tried.get(), "Try again checks again");
         }
 
         #[test]
