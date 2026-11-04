@@ -223,6 +223,11 @@ pub async fn review_bulk(
         _ => return Err(WebError::NotFound),
     };
     let items: Vec<_> = review_queue(&state, &token).await?.into_iter().filter(|i| i.slug == slug).collect();
+    // A missing note fails every version alike: say it once, before asking the API.
+    let needs_note = action == "block" || (action == "verify" && items.iter().any(|i| i.trust == "flagged"));
+    if needs_note && form.note.trim().is_empty() {
+        return back(&format!("/admin/review/{slug}"), Err(ApiError::Api { status: 422, code: "note_required".into(), message: "Write a note first.".into() }), "");
+    }
     let body = json!({ "note": form.note });
     let mut failed = Vec::new();
     for item in &items {
@@ -246,7 +251,9 @@ pub async fn review_bulk(
         let message = format!("{} of {} {versions} of {name} {done}. {}", items.len() - failed.len(), items.len(), failed.join(" "));
         Err(ApiError::Api { status: 422, code: "partly_done".into(), message })
     };
-    back("/admin/review", result, &format!("{} {versions} of {name} {done}.", items.len()))
+    // The versions that failed are on the addon's page, so a partial result goes there.
+    let page = if result.is_err() { format!("/admin/review/{slug}") } else { "/admin/review".to_string() };
+    back(&page, result, &format!("{} {versions} of {name} {done}.", items.len()))
 }
 
 pub async fn version_action(

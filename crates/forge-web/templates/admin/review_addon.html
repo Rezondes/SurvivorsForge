@@ -13,7 +13,7 @@
 <div class="list">
 {% for item in items %}
 <section class="panel">
-  <h2>{{ item.tag }} <span class="badge {% if item.trust != "scanned" %}bad{% endif %}">{{ item.trust }}</span></h2>
+  <h2>{{ item.tag }} <span class="badge {% if item.trust != "scanned" %}bad{% endif %}">{{ crate::templates::review_trust(item.trust) }}</span></h2>
   <p>
     <a href="/addons/{{ item.slug }}/versions/{{ item.tag }}">Version page</a>
     {% if let Some(url) = item.compare_url %} · <a href="{{ url }}" rel="noopener">Changes since the previous version on GitHub</a>{% endif %}

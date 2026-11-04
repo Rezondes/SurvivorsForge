@@ -91,10 +91,11 @@ async fn review_lists_addons_first_then_their_versions() {
     let mut web = as_admin().await;
     grouped_queue(&web).await;
     let page = web.get("/admin/review").await;
-    for text in ["href=\"/admin/review/lucky\"", "2 versions", "href=\"/admin/review/other\"", "1 version", "action=\"/admin/review/lucky/skip\""] {
+    for text in ["href=\"/admin/review/lucky\"", "2 versions", "href=\"/admin/review/other\"", "1 version", "action=\"/admin/review/other/skip\"", "Review one by one"] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
     assert!(!page.body.contains("a.lua:3"), "versions only on the addon's page");
+    assert!(!page.body.contains("action=\"/admin/review/lucky/skip\""), "no blind bulk decision on a flagged addon");
     assert!(page.body.find("Lucky") < page.body.find("Other"), "addons in queue order");
 
     let lucky = web.get("/admin/review/lucky").await;
@@ -134,8 +135,11 @@ async fn bulk_actions_cover_every_queued_version_of_the_addon() {
         .mount(&web.api)
         .await;
     let done = web.post_form("/admin/review/lucky/block", &[("note", "malware")]).await;
+    assert!(done.location().starts_with("/admin/review/lucky?"), "back to the versions left: {}", done.location());
     let page = web.get(done.location()).await;
     assert!(page.body.contains("1 of 2 versions of Lucky blocked. v3: Not found"), "{}", page.body);
+    let bare = web.post_form("/admin/review/lucky/block", &[("note", " ")]).await;
+    assert!(web.get(bare.location()).await.body.contains("Write a note first."), "one message, no API calls");
 }
 
 #[tokio::test]

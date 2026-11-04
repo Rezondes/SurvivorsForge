@@ -4,14 +4,18 @@
 <p><a href="/admin">Admin</a></p>
 <h1>Addons to review</h1>
 {% include "admin/flash.html" %}
-{% if addons.is_empty() %}<section class="panel"><p>Nothing to review.</p></section>{% endif %}
+{% if addons.is_empty() %}<section class="panel"><p>Nothing to review. Flagged versions, files changed on GitHub and new versions of verified addons show up here.</p></section>{% endif %}
 <div class="list">
 {% for a in addons %}
 <section class="panel">
   <h2><a href="/admin/review/{{ a.slug }}">{{ a.name }}</a> <span class="muted">{{ a.versions }} version{% if a.versions != 1 %}s{% endif %}</span>
-    {% for t in a.trusts %}<span class="badge {% if t != "scanned" %}bad{% endif %}">{{ t }}</span> {% endfor %}</h2>
+    {% for t in a.trusts %}<span class="badge {% if t != "scanned" %}bad{% endif %}">{{ crate::templates::review_trust(t) }}</span> {% endfor %}</h2>
+  {% if a.bulk_ok() %}
   {% let bulk_slug = a.slug.as_str() %}
   {% include "admin/review_bulk.html" %}
+  {% else %}
+  <p><a class="button secondary" href="/admin/review/{{ a.slug }}">Review one by one</a> <span class="muted">Flagged or changed files need a look at their findings first.</span></p>
+  {% endif %}
 </section>
 {% endfor %}
 </div>

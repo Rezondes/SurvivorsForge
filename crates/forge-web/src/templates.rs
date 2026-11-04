@@ -714,6 +714,24 @@ pub struct ReviewAddon {
     pub trusts: Vec<String>,
 }
 
+impl ReviewAddon {
+    /// All its versions may be decided at once: none is flagged or changed on GitHub, which
+    /// someone must look at one by one.
+    pub fn bulk_ok(&self) -> bool {
+        !self.trusts.iter().any(|t| t == "flagged" || t == "source_changed")
+    }
+}
+
+/// What a trust value of the review queue means, in words.
+pub fn review_trust(trust: &str) -> &str {
+    match trust {
+        "flagged" => "Flagged",
+        "source_changed" => "File changed on GitHub",
+        "scanned" => "New version",
+        other => other,
+    }
+}
+
 #[derive(Template)]
 #[template(path = "admin/review_addon.html")]
 pub struct AdminReviewAddonPage {
