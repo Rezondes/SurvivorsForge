@@ -92,8 +92,9 @@ export component IssuesView inherits VerticalLayout {
             accessible-label: "#" + issue.number + " " + issue.title;
             height: 52px;
             border-radius: Theme.radius;
-            border-width: 1px;
-            border-color: touch.has-hover && root.links-enabled ? Theme.outline-hover : Theme.line;
+            accessible-enabled: root.links-enabled;
+            border-width: open-focus.has-focus ? 2px : 1px;
+            border-color: open-focus.has-focus ? Theme.outline-active : touch.has-hover && root.links-enabled ? Theme.outline-hover : Theme.line;
             background: touch.has-hover && root.links-enabled ? Theme.row-hover : Theme.row;
             HorizontalLayout {
                 padding-left: 14px;
@@ -127,6 +128,19 @@ export component IssuesView inherits VerticalLayout {
                 enabled: root.links-enabled;
                 mouse-cursor: pointer;
                 clicked => { root.open(issue.number); }
+            }
+            // Tab reaches it, Space or Return presses it.
+            open-focus := FocusScope {
+                width: 0;
+                height: 0;
+                enabled: root.links-enabled;
+                key-pressed(event) => {
+                    if (event.text == " " || event.text == Key.Return) {
+                        root.open(issue.number);
+                        return accept;
+                    }
+                    reject
+                }
             }
         }
     }

@@ -173,7 +173,16 @@ export component LinkButton inherits Rectangle {
         font-size: Theme.touch ? Theme.body : Theme.meta;
         horizontal-alignment: center;
         vertical-alignment: center;
-        color: !touch.has-hover ? Theme.text-muted : root.danger ? Theme.danger : Theme.gold;
+        color: !touch.has-hover && !focus.has-focus ? Theme.text-muted : root.danger ? Theme.danger : Theme.gold;
+    }
+
+    // Focused, the text is underlined: the link has no border to light up.
+    if focus.has-focus : Rectangle {
+        y: parent.height - 3px;
+        x: (parent.width - label.preferred-width) / 2;
+        width: label.preferred-width;
+        height: 1px;
+        background: Theme.gold;
     }
 
     touch := TouchArea {
@@ -181,6 +190,19 @@ export component LinkButton inherits Rectangle {
         height: parent.height;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
+    }
+
+    // Tab reaches it, Space or Return presses it.
+    focus := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
     }
 }
 
@@ -192,11 +214,12 @@ export component TabButton inherits Rectangle {
 
     accessible-role: tab;
     accessible-label: root.text;
+    accessible-item-selected: root.active;
     height: Theme.touch ? 44px : 40px;
     min-width: label.preferred-width + 36px;
     border-radius: Theme.radius;
-    border-width: 1px;
-    border-color: root.active ? Theme.outline-active : touch.has-hover ? Theme.outline-hover : Theme.outline;
+    border-width: focus.has-focus ? 2px : 1px;
+    border-color: root.active || focus.has-focus ? Theme.outline-active : touch.has-hover ? Theme.outline-hover : Theme.outline;
     background: root.active ? Theme.crimson : touch.has-hover ? Theme.control : Theme.bg;
 
     label := Text {
@@ -214,5 +237,18 @@ export component TabButton inherits Rectangle {
         height: parent.height;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
+    }
+
+    // Tab reaches it, Space or Return presses it.
+    focus := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
     }
 }

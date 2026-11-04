@@ -298,6 +298,22 @@ export component ViewToggle inherits Rectangle {
                     }
                 }
             }
+            if half-focus.has-focus : Rectangle {
+                border-width: 2px;
+                border-color: Theme.outline-active;
+            }
+            // Tab reaches it, Space or Return presses it.
+            half-focus := FocusScope {
+                width: 0;
+                height: 0;
+                key-pressed(event) => {
+                    if (event.text == " " || event.text == Key.Return) {
+                        if (!lit) { root.tiles = half.on; root.changed(half.on); }
+                        return accept;
+                    }
+                    reject
+                }
+            }
         }
     }
 }

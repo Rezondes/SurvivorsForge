@@ -16,8 +16,10 @@ export component AddonRowView inherits Rectangle {
     // Touch: room for the 44px action button and 44px links stacked in the last column.
     height: Theme.touch ? 104px : 84px;
     border-radius: Theme.radius;
-    border-width: 1px;
-    border-color: hover.has-hover ? Theme.outline : Theme.line;
+    accessible-role: button;
+    accessible-label: "Details of " + root.addon.name;
+    border-width: details-focus.has-focus ? 2px : 1px;
+    border-color: details-focus.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline : Theme.line;
     background: hover.has-hover ? Theme.row-hover : Theme.row;
 
     hover := TouchArea {
@@ -25,6 +27,19 @@ export component AddonRowView inherits Rectangle {
         height: parent.height;
         mouse-cursor: pointer;
         clicked => { root.details(); }
+    }
+
+    // Tab reaches it, Space or Return presses it.
+    details-focus := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.details();
+                return accept;
+            }
+            reject
+        }
     }
 
     HorizontalLayout {
@@ -141,14 +156,29 @@ export component AddonTileView inherits Rectangle {
     out property <length> body-height: Theme.touch ? 256px : 212px;
 
     border-radius: Theme.radius;
-    border-width: 1px;
-    border-color: hover.has-hover ? Theme.outline : Theme.line;
+    accessible-role: button;
+    accessible-label: "Details of " + root.addon.name;
+    border-width: details-focus.has-focus ? 2px : 1px;
+    border-color: details-focus.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline : Theme.line;
     background: hover.has-hover ? Theme.row-hover : Theme.row;
     clip: true;
 
     hover := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.details(); }
+    }
+
+    // Tab reaches it, Space or Return presses it.
+    details-focus := FocusScope {
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.details();
+                return accept;
+            }
+            reject
+        }
     }
 
     AddonIcon {

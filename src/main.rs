@@ -2755,6 +2755,15 @@ mod layout_tests {
             for choice in ["Safety check", "Sort by"] {
                 assert_eq!(role(choice), Some(AccessibleRole::Combobox), "{choice}");
             }
+            let tab = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).find(|e| e.accessible_role() == Some(AccessibleRole::Tab)).unwrap();
+            assert_eq!(tab("Installed (0)").accessible_item_selected(), Some(true), "the open page is the selected tab");
+            assert_eq!(tab("Settings").accessible_item_selected(), Some(false));
+            // Tab walks onto the page tabs (after the first focusable control); Return opens one.
+            press(&ui, "\t");
+            press(&ui, "\t");
+            press(&ui, "\t");
+            press(&ui, &slint::SharedString::from(Key::Return));
+            assert_ne!(ui.get_page(), 0, "the keyboard reaches another page tab and opens it");
         }
 
         #[test]
