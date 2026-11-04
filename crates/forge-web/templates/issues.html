@@ -33,8 +33,10 @@
     <p>No issue matches "{{ q }}". <a href="{{ place.base }}/issues?state={{ state }}">Show all</a></p>
     {% else if state == "open" %}
     <p>No open issues. {% if counts.1 > 0 %}<a href="{{ place.base }}/issues?state=closed">See the closed ones</a>.{% endif %}</p>
+    {% else if state == "closed" && counts.2 > 0 %}
+    <p>No closed issues. <a href="{{ place.base }}/issues?state=open">See the open ones</a>.</p>
     {% else %}
-    <p>No issues here yet.</p>
+    <p>No issues yet. Found a bug or have an idea? Be the first to report it.</p>
     {% endif %}
   {% else %}
   <ul class="issue-rows">

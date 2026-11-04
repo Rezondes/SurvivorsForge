@@ -44,6 +44,7 @@
 </article>
 
 <h3>Discussion ({{ replies.len() }})</h3>
+{% if replies.is_empty() %}<p class="muted">No replies yet.</p>{% endif %}
 {% for r in replies %}
 <article class="panel post" id="reply-{{ r.id }}">
   <header class="post-head">
