@@ -127,16 +127,17 @@ export component AddonRowView inherits Rectangle {
                 enabled: !root.addon.busy;
                 clicked => { root.action(); }
             }
-            // GitHub as the same icon button as in the details, so it never looks like Install.
+            // GitHub as the square icon button of the details, so it never looks like Install: left
+            // under it, the bin at the right edge, apart from GitHub.
             HorizontalLayout {
                 spacing: 6px;
-                alignment: end;
                 if root.addon.can-open : GlyphButton {
                     label: "GitHub";
                     // Code brackets.
                     glyph: "M 5 4 L 1.5 8 L 5 12 M 11 4 L 14.5 8 L 11 12 M 9.5 2.5 L 6.5 13.5";
                     clicked => { root.open(); }
                 }
+                Rectangle { horizontal-stretch: 1; }
                 if root.addon.can-remove && !root.addon.busy : RemoveButton {
                     label: "Remove " + root.addon.name;
                     clicked => { root.remove(); }
@@ -264,13 +265,13 @@ export component AddonTileView inherits Rectangle {
         }
         HorizontalLayout {
             spacing: 6px;
-            alignment: end;
             if root.addon.can-open : GlyphButton {
                 label: "GitHub";
                 // Code brackets.
                 glyph: "M 5 4 L 1.5 8 L 5 12 M 11 4 L 14.5 8 L 11 12 M 9.5 2.5 L 6.5 13.5";
                 clicked => { root.open(); }
             }
+            Rectangle { horizontal-stretch: 1; }
             if root.addon.can-remove && !root.addon.busy : RemoveButton {
                 label: "Remove " + root.addon.name;
                 clicked => { root.remove(); }
