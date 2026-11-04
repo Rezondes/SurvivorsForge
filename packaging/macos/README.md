@@ -21,7 +21,7 @@ From the repository root on Apple Silicon, with stable Rust and the Xcode Comman
 
 ```sh
 MACOSX_DEPLOYMENT_TARGET=26.2 cargo build --locked --release -p survivorsforge
-bash packaging/macos/build-app.sh target/release/SurvivorsForge 0.6.3 dist
+bash packaging/macos/build-app.sh target/release/SurvivorsForge <version> dist
 ```
 
 The script downloads and verifies the standalone Wine runtime, then creates an

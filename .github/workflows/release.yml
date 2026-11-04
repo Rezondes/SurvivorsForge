@@ -245,7 +245,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
-        run: gh release upload "$TAG" release/SurvivorsForge-macos-arm64.zip --repo "$GITHUB_REPOSITORY"
+        # --clobber: a retry after an upload that broke off replaces the partial file.
+        run: gh release upload "$TAG" release/SurvivorsForge-macos-arm64.zip --clobber --repo "$GITHUB_REPOSITORY"
 
   # The Microsoft Store version: the same exe as an MSIX package, which the Store signs. Final
   # releases only, once the repository variables are set (README, "Microsoft Store"). It runs after

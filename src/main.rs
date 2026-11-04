@@ -2275,7 +2275,7 @@ fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {
 }
 
 /// Opens a page of the detail view's addon in the browser. On a thread, so a slow browser start
-/// does not hold up the window; the status line says it is coming, and where to go if it fails.
+/// does not hold up the window; a busy toast says it is coming, and where to go if it fails.
 fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
     let url = {
         let core = lock(shared);
