@@ -53,3 +53,26 @@
   document.querySelector("main")?.addEventListener("scroll", mark, { passive: true });
   mark();
 })();
+
+// A Copy button on each code block: long samples are hard to select on a phone.
+(() => {
+  for (const pre of document.querySelectorAll(".description pre")) {
+    const code = pre.querySelector("code") ?? pre;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary code-copy";
+    button.textContent = "Copy";
+    button.setAttribute("aria-label", "Copy code");
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(code.textContent);
+        button.textContent = "Copied";
+      } catch {
+        button.textContent = "Press Ctrl+C";
+        getSelection().selectAllChildren(code);
+      }
+      setTimeout(() => (button.textContent = "Copy"), 2000);
+    });
+    pre.prepend(button);
+  }
+})();

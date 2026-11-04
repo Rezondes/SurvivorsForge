@@ -449,7 +449,8 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .6); }
 .toc a { display: block; overflow-wrap: anywhere; padding: 3px 8px; border-left: 2px solid var(--line); color: var(--muted); text-decoration: none; }
 .toc a:hover { color: var(--text); border-left-color: var(--outline-hover); }
 .toc a[aria-current] { color: var(--gold-bright); border-left-color: var(--outline-active); }
-.description h3[id], .description h4[id] { scroll-margin-top: 16px; }
+.description h2[id], .description h3[id] { scroll-margin-top: 16px; }
+.code-copy { float: right; min-height: 0; padding: 2px 10px; font-size: var(--meta); }
 .tok-keyword { color: var(--gold); }
 .tok-string { color: var(--ok); }
 .tok-number { color: var(--warn); }

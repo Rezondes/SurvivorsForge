@@ -365,7 +365,9 @@ fn heading_ids(html: &str) -> (String, Vec<TocEntry>) {
         let id = if *taken == 0 { base } else { format!("{base}-{taken}") };
         *taken += 1;
         out.push_str(&rest[..start]);
-        out.push_str(&format!("<h{level} id=\"{id}\">{inner}</h{level}>"));
+        // One level up again: a doc page has nothing between its h1 and the doc's own sections.
+        let shown = if level == "3" { "2" } else { "3" };
+        out.push_str(&format!("<h{shown} id=\"{id}\">{inner}</h{shown}>"));
         toc.push(TocEntry { id, text, sub: level == "4" });
         rest = &rest[end + close.len()..];
     }

@@ -210,11 +210,11 @@ async fn api_docs_show_the_public_api_markdown() {
     let mut web = TestWeb::new().await;
     let page = web.get("/docs/api-docs").await;
     assert_eq!(page.status, StatusCode::OK);
-    assert_eq!(page.body.matches("<h1>").count(), 1, "the page's own title only");
+    assert_eq!(page.body.matches("<h1").count(), 1, "the page's own title only");
     assert!(page.body.contains("<code>GET /v1/registry</code>"), "{}", page.body);
     assert!(page.body.contains("<table>"));
     // Headings get ids for the side navigation, code keeps its language for highlighting.
-    assert!(page.body.contains(r#"<h3 id="conditions">Conditions</h3>"#) && page.body.contains(r##"<a href="#conditions">Conditions</a>"##));
+    assert!(page.body.contains(r#"<h2 id="conditions">Conditions</h2>"#) && page.body.contains(r##"<a href="#conditions">Conditions</a>"##));
     assert!(page.body.contains(r##"<li class="sub"><a href="#python-standard-library">"##), "{}", page.body);
     assert!(page.body.contains(r#"<code class="language-rust">"#));
     assert!(web.get("/static/api-docs.js").await.body.contains("tok-keyword"));
@@ -226,11 +226,11 @@ async fn creator_guide_shows_the_markdown_with_working_step_links() {
     let mut web = TestWeb::new().await;
     let page = web.get("/docs/creator-guide").await;
     assert_eq!(page.status, StatusCode::OK);
-    assert_eq!(page.body.matches("<h1>").count(), 1, "the page's own title only");
+    assert_eq!(page.body.matches("<h1").count(), 1, "the page's own title only");
     assert!(page.body.contains("<title>Guide for addon creators - SurvivorsForge</title>"));
     assert!(!page.body.contains("/docs/api-docs/playground"), "no playground button here");
     // The step list at the top links to the headings by the same ids GitHub gives them.
-    assert!(page.body.contains(r#"<h3 id="5-add-the-release-workflow">"#), "{}", page.body);
+    assert!(page.body.contains(r#"<h2 id="5-add-the-release-workflow">"#), "{}", page.body);
     assert!(page.body.contains(r##"href="#5-add-the-release-workflow""##), "{}", page.body);
     assert!(page.body.contains("name: Release\n\n# Adds a \"Run workflow\""), "the workflow stays a code block, its comment no heading");
     assert!(web.get("/docs").await.body.contains(r#"href="/docs/creator-guide""#), "linked from the docs page");
@@ -244,7 +244,7 @@ async fn addon_api_shows_the_game_docs_with_their_date_and_the_discord_channel()
     assert!(page.body.contains("<title>Addon API of the game - SurvivorsForge</title>"));
     assert!(page.body.contains("2 November 2026"), "the version it is, for later updates");
     assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564599899469914203""#), "{}", page.body);
-    assert!(page.body.contains(r#"<h4 id="azs_getruntime--seconds-or-nil">"#), "{}", page.body);
+    assert!(page.body.contains(r#"<h3 id="azs_getruntime--seconds-or-nil">"#), "{}", page.body);
     assert!(web.get("/docs").await.body.contains(r#"href="/docs/addon-api""#), "linked from the docs page");
     assert!(web.get("/docs/creator-guide").await.body.contains(r#"href="https://forge.rezondes.net/docs/addon-api""#), "linked from the guide");
 }

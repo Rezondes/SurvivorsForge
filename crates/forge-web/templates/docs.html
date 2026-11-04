@@ -15,9 +15,11 @@
     </details>
   </nav>
   <section class="panel description">
-    <h1>{{ title }}</h1>
+    <p class="back"><a href="/docs">Documentation</a></p>
+    <h1 id="top">{{ title }}</h1>
     {% if playground %}<p><a class="button" href="/docs/api-docs/playground">Try it in the playground</a></p>{% endif %}
     {{ description_html|safe }}
+    <p><a href="#top">Back to top</a></p>
   </section>
 </div>
 {% endblock %}
