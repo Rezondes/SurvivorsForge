@@ -261,7 +261,7 @@ async fn unknown_slug_404_and_blocked_page() {
 
     mock(&web, "/v1/addons/bad", json!({ "slug": "bad", "name": "Bad", "blocked": true, "block_reason": "malware" })).await;
     let page = web.get("/addons/bad").await;
-    assert!(page.body.contains("An admin blocked this addon") && page.body.contains("malware"));
+    assert!(page.body.contains("An admin blocked Bad") && page.body.contains("malware") && page.body.contains("Browse other addons"));
     assert!(!page.body.contains("Download"));
 }
 
