@@ -96,8 +96,17 @@ pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         let (state, token) = (state.clone(), token.clone());
         async move { state.api.get(path, Some(&token)).await.ok().map(|v| v.as_array().map_or(0, Vec::len)) }
     };
-    let (queue, reports, verifications) = tokio::join!(count("/v1/admin/review-queue"), count("/v1/admin/reports"), count("/v1/admin/verification-requests"));
+    let problems = async {
+        if !user.can(Permission::ViewAdminStats) {
+            return Vec::new();
+        }
+        let s = state.api.get("/v1/admin/stats?range=24h&section=overview", Some(&token)).await.ok();
+        s.map(|s| crate::stats::attention(&s, chrono::Utc::now())).unwrap_or_default()
+    };
+    let (queue, reports, verifications, problems) =
+        tokio::join!(count("/v1/admin/review-queue"), count("/v1/admin/reports"), count("/v1/admin/verification-requests"), problems);
     Ok(render(&AdminIndexPage {
+        problems,
         stats: user.can(Permission::ViewAdminStats),
         grafana: user.can(Permission::ViewGrafana),
         user: Some(user),

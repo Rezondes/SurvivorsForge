@@ -613,6 +613,8 @@ pub struct AdminIndexPage {
     pub stats: bool,
     /// The viewer may open Grafana (admins).
     pub grafana: bool,
+    /// System problems of the last 24 hours with their stats part; empty without the right.
+    pub problems: Vec<(String, &'static str)>,
 }
 
 impl AdminIndexPage {
@@ -654,8 +656,8 @@ pub struct AdminStatsPage {
     pub section: &'static str,
     /// The overview's few numbers per part.
     pub summaries: Vec<StatSummary>,
-    /// Problems shown first; empty when all is well.
-    pub attention: Vec<String>,
+    /// Problems shown first with the part that has the details; empty when all is well.
+    pub attention: Vec<(String, &'static str)>,
     pub groups: Vec<StatGroup>,
 }
 

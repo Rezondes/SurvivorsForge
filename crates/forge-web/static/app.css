@@ -260,6 +260,9 @@ html:not([data-view]) .view-toggle { display: none; }
 .stats-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .stats-table tr.warn td { color: var(--warn); }
 .stats-table tr.failed td { color: var(--bad); }
+/* Wide stats tables scroll sideways on phones; the first column stays to name the row. */
+.stats-table th:first-child, .stats-table td:first-child { position: sticky; left: 0; background: var(--bg); }
+.stats-table thead th:first-child { z-index: 2; }
 html[data-view="list"] .grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 html[data-view="list"] .grid .card:not(.addon-card) { display: flex; align-items: center; gap: 16px; padding: 10px 16px; margin: 0; }
 html[data-view="list"] .grid .card:not(.addon-card) > * { margin: 0; }

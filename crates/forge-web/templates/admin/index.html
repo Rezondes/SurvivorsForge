@@ -15,6 +15,12 @@
   {% match reports %}{% when Some with (n) %}<a class="panel tile{% if *n > 0 %} due{% endif %}" href="/admin/reports"><strong>{{ n }}</strong> open report{% if *n != 1 %}s{% endif %}{% if *n > 0 %} <span class="badge warn">Open</span>{% endif %}</a>{% when None %}<a class="panel tile" href="/admin/reports"><span class="muted">Could not load the reports</span></a>{% endmatch %}
   {% match verifications %}{% when Some with (n) %}<a class="panel tile{% if *n > 0 %} due{% endif %}" href="/admin/verification-requests"><strong>{{ n }}</strong> verification request{% if *n != 1 %}s{% endif %}{% if *n > 0 %} <span class="badge warn">Open</span>{% endif %}</a>{% when None %}<a class="panel tile" href="/admin/verification-requests"><span class="muted">Could not load the verification requests</span></a>{% endmatch %}
 </div>
+{% if !problems.is_empty() %}
+<section class="notice bad" role="status">
+  <h3>System problems (24 hours)</h3>
+  <ul>{% for (p, part) in problems %}<li><a href="/admin/stats/{{ part }}?range=24h">{{ p }}</a></li>{% endfor %}</ul>
+</section>
+{% endif %}
 </section>
 <section class="home-section">
 <h2>Manage</h2>

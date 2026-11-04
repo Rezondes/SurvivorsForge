@@ -210,25 +210,26 @@ fn capped(mut t: StatTable) -> StatTable {
     t
 }
 
-/// What needs a look first: failing jobs, scans and installs, and a GitHub quota near its end.
-pub fn attention(s: &Value, now: chrono::DateTime<Utc>) -> Vec<String> {
+/// What needs a look first: failing jobs, scans and installs, and a GitHub quota near its end,
+/// each with the part of the stats (`SECTIONS`) that has the details.
+pub fn attention(s: &Value, now: chrono::DateTime<Utc>) -> Vec<(String, &'static str)> {
     let list = |v: &Value| v.as_array().cloned().unwrap_or_default();
     let mut found = Vec::new();
     for job in list(&s["jobs"]).iter().filter(|j| j["failed"].as_i64().unwrap_or(0) > 0) {
-        found.push(format!("{}: {} failed runs, last error: {}", text(&job["kind"]), n(&job["failed"]), text(&job["last_error"])));
+        found.push((format!("{}: {} failed runs, last error: {}", text(&job["kind"]), n(&job["failed"]), text(&job["last_error"])), "jobs"));
     }
     for q in list(&s["github"]["quotas"]) {
         let (left, limit) = (q["remaining"].as_i64().unwrap_or(0), q["limit"].as_i64().unwrap_or(0));
         if limit > 0 && left * 10 < limit {
             let reset = when(&q["reset_at"]).map_or_else(String::new, |t| format!(", resets {}", until(t, now)));
-            found.push(format!("GitHub quota {} ({}): {} of {} left{reset}", quota_name(&text(&q["quota"]), &s["github"]["installations"]), text(&q["resource"]), n(&q["remaining"]), n(&q["limit"])));
+            found.push((format!("GitHub quota {} ({}): {} of {} left{reset}", quota_name(&text(&q["quota"]), &s["github"]["installations"]), text(&q["resource"]), n(&q["remaining"]), n(&q["limit"])), "github"));
         }
     }
     if s["scans"]["errors"].as_i64().unwrap_or(0) > 0 {
-        found.push(format!("{} scans failed", n(&s["scans"]["errors"])));
+        found.push((format!("{} scans failed", n(&s["scans"]["errors"])), "jobs"));
     }
     for a in list(&s["telemetry"]["failing_addons"]) {
-        found.push(format!("{}: {} of {} installs or updates failed", text(&a["slug"]), n(&a["failed"]), n(&a["total"])));
+        found.push((format!("{}: {} of {} installs or updates failed", text(&a["slug"]), n(&a["failed"]), n(&a["total"])), "launcher"));
     }
     found
 }
@@ -348,11 +349,13 @@ async fn stats_page(state: AppState, jar: PrivateCookieJar, csrf: CsrfToken, q: 
                 StatTable { row_classes: rows.collect(), ..t }
             },
         ]),
-        group("jobs", "Jobs and scans", vec![
-            table("Jobs", &["Kind", "Waiting now", "Running now", "Done", "Failed", "Last error"], &s["jobs"], |x| {
+        group("jobs", "Jobs and scans", vec![{
+            let t = table("Jobs", &["Kind", "Waiting now", "Running now", "Done", "Failed", "Last error"], &s["jobs"], |x| {
                 vec![text(&x["kind"]), n(&x["open"]), n(&x["running"]), n(&x["done"]), n(&x["failed"]), text(&x["last_error"])]
-            }, "No jobs."),
-        ]),
+            }, "No jobs.");
+            let rows = t.rows.iter().map(|r| if r[4] == "0" { "" } else { "failed" });
+            StatTable { row_classes: rows.collect(), ..t }
+        }]),
         group("github", "GitHub", vec![
             table("GitHub quotas now", &["Quota", "Limit", "Used", "Left", "Resets", "As of"], &g["quotas"], |x| {
                 let at = |v: &Value| when(v);

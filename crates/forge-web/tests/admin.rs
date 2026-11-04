@@ -532,6 +532,18 @@ async fn problems_come_first_and_sections_are_grouped() {
         assert!(page.contains(&format!(r#"<h2 id="{part}">{title}</h2>"#)), "page {part}");
     }
     assert!(page.contains("<h3>Busiest routes</h3>"), "tables under their group");
+    assert!(page.contains(r#"<li><a href="/admin/stats/jobs?range=24h">sync_addon: 2 failed runs"#), "each problem links to its part: {page}");
+    assert!(page.contains(r#"<li><a href="/admin/stats/launcher?range=24h">lucky: 3 of 4"#), "{page}");
+    assert!(page.contains(r#"<tr class="failed"><td>sync_addon</td>"#), "a job with failed runs stands out: {page}");
+}
+
+#[tokio::test]
+async fn the_admin_start_shows_system_problems() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("root", "admin")).await;
+    Mock::given(method("GET")).and(path("/v1/admin/stats")).respond_with(ResponseTemplate::new(200).set_body_json(admin_stats_body())).mount(&web.api).await;
+    let page = web.get("/admin").await.body;
+    assert!(page.contains(r#"<a href="/admin/stats/jobs?range=24h">sync_addon: 2 failed runs"#), "{page}");
 }
 
 #[tokio::test]
@@ -540,6 +552,7 @@ async fn no_problem_block_when_all_is_well() {
     body["jobs"][0]["failed"] = json!(0);
     let page = admin_stats_page(body).await;
     assert!(!page.contains("Needs attention"), "{page}");
+    assert!(page.contains("Nothing needs attention"), "says all is well: {page}");
 }
 
 #[tokio::test]
