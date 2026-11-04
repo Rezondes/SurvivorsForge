@@ -107,10 +107,37 @@ jobs:
           name: linux
           path: dist/SurvivorsForge-*.AppImage
 
-  # The platform images that compose.yaml pulls. Pushed once both launcher builds succeeded, so
-  # `latest` never points at a version without a release.
+  macos:
+    needs: version
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --release -p survivorsforge
+      - name: Package app
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          bash packaging/macos/build-app.sh target/release/SurvivorsForge "$VERSION" dist
+          codesign --verify --strict dist/SurvivorsForge.app
+          ditto -c -k --keepParent dist/SurvivorsForge.app dist/SurvivorsForge-macos-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/SurvivorsForge-macos-arm64.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  # Push the platform images only after all launcher builds succeed.
   images:
-    needs: [version, windows, linux]
+    needs: [version, windows, linux, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -151,9 +178,9 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # Runs only when both builds and the images succeeded, so a release never ships with a part missing.
+  # Publish once every launcher build and the platform images have succeeded.
   publish:
-    needs: [version, windows, linux, images]
+    needs: [version, windows, linux, macos, images]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -171,6 +198,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: linux
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
           path: release
       # What a server needs besides the images (docs/self-hosting.md).
       - name: Add the server files

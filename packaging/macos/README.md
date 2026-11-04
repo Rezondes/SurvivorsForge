@@ -1,6 +1,11 @@
 # SurvivorsForge on macOS
 
-Open `SurvivorsForge.app` on an Apple Silicon Mac with macOS 26.2 or later and Rosetta 2.
+Download `SurvivorsForge-macos-arm64.zip` from the [GitHub release](https://github.com/Rezondes/SurvivorsForge/releases/latest)
+and extract `SurvivorsForge.app`. It requires an Apple Silicon Mac with macOS 26.2
+or later and Rosetta 2. The release app has an ad hoc signature and no Apple notarization,
+so macOS may ask you to [approve it on first open](https://support.apple.com/en-gb/102445).
+
+Open `SurvivorsForge.app`.
 In setup, select the game's `benilla-config/AddOns` folder. The game folder above it
 must contain `AzerothSurvivors.exe`. Use **Launch game** to start that copy.
 
