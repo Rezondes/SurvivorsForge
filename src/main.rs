@@ -294,6 +294,11 @@ fn initial(name: &str) -> SharedString {
     name.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().to_string()).unwrap_or_default().into()
 }
 
+/// Whether the picture at `url` was tried and could not be loaded.
+fn picture_failed(core: &Core, url: Option<&str>) -> bool {
+    matches!(url.and_then(|u| core.pictures.get(u)), Some(None))
+}
+
 /// The downloaded picture at `url`; empty (width 0) while it loads, when it failed or without one.
 fn picture(core: &Core, url: Option<&str>) -> slint::Image {
     match url.and_then(|u| core.pictures.get(u)) {
@@ -433,7 +438,7 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
     if about.is_empty() {
         about.push(about_block(core, forge_core::markdown::Block::Paragraph(row.description.to_string())));
     }
-    let shots: Vec<Shot> = loaded.shots.iter().map(|(url, caption)| Shot { image: picture(core, Some(url)), caption: caption.into() }).collect();
+    let shots: Vec<Shot> = loaded.shots.iter().map(|(url, caption)| Shot { image: picture(core, Some(url)), caption: caption.into(), failed: picture_failed(core, Some(url)) }).collect();
     Some(AddonDetail {
         row,
         category: facts.category.into(),
@@ -466,7 +471,7 @@ fn about_block(core: &Core, block: forge_core::markdown::Block) -> AboutBlock {
         Block::Quote(t) => (4, String::new(), t, None),
         Block::Image { url, alt } => (5, String::new(), alt, Some(url)),
     };
-    AboutBlock { kind, marker: marker.into(), text: text.into(), image: picture(core, url.as_deref()) }
+    AboutBlock { kind, marker: marker.into(), text: text.into(), image: picture(core, url.as_deref()), failed: picture_failed(core, url.as_deref()) }
 }
 
 /// Loads the pictures at `urls` that are not loaded yet, one after the other on this thread, and

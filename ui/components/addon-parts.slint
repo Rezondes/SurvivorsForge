@@ -77,6 +77,8 @@ export component Placeholder inherits Rectangle {
 export component Picture inherits Rectangle {
     in property <image> source;
     in property <string> caption;
+    // Could not be loaded: a still box that says so instead of a placeholder pulsing forever.
+    in property <bool> failed;
     in property <length> tallest: 360px;
     callback enlarge();
     property <float> ratio: root.source.width > 0 ? root.source.height / root.source.width : 0.5625;
@@ -88,9 +90,19 @@ export component Picture inherits Rectangle {
     clip: true;
     accessible-role: button;
     accessible-label: root.caption != "" ? "Enlarge " + root.caption : "Enlarge picture";
-    if root.source.width == 0 : Placeholder {
+    if root.source.width == 0 && !root.failed : Placeholder {
         width: parent.width;
         height: parent.height;
+    }
+    if root.failed : Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.caption != "" ? root.caption + ": could not be loaded" : "Picture could not be loaded";
+        font-size: Theme.meta;
+        color: Theme.text-muted;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
     }
     Image {
         x: 1px;

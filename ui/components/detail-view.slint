@@ -75,6 +75,7 @@ export component AboutBlockView inherits VerticalLayout {
     if root.block.kind == 5 : Picture {
         source: root.block.image;
         caption: root.block.text;
+        failed: root.block.failed;
         enlarge => { root.enlarge(root.block.image, root.block.text); }
     }
 }
@@ -333,6 +334,7 @@ export component DetailView inherits VerticalLayout {
                 Picture {
                     source: shot.image;
                     caption: shot.caption;
+                    failed: shot.failed;
                     height: parent.width * 9 / 16;
                     enlarge => { root.enlarge-shot(i); }
                 }

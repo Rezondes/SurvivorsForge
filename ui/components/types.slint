@@ -32,11 +32,14 @@ export struct AboutBlock {
     marker: string,
     text: string,
     image: image,
+    // The picture could not be loaded (as opposed to: still loading).
+    failed: bool,
 }
 
 export struct Shot {
     image: image,
     caption: string,
+    failed: bool,
 }
 
 // An addon opened from a list: its row plus what the list has no room for.
