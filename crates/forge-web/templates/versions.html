@@ -6,21 +6,21 @@
 {% let tab = "versions" %}{% include "addon_tabs.html" %}
 {% if let Some(perms) = perms %}{% let section = "versions" %}{% include "creator/nav.html" %}{% endif %}
 {% if rows.is_empty() %}
-<section class="panel"><p>No release yet.</p></section>
+<section class="panel"><p>No release yet. Versions show up here once the author publishes a release on GitHub.</p></section>
 {% else %}
 <div class="table-wrap list">
-<table>
+<table class="versions-table">
   <thead><tr><th>Version</th><th>Published</th><th>Downloads</th><th>Safety check</th><th>Game version</th><th>SHA-256</th><th></th></tr></thead>
   <tbody>
   {% for (href, r) in rows %}
     <tr>
       <td><a href="/addons/{{ slug }}/versions/{{ r.tag }}">{{ r.tag }}</a>{% if r.prerelease %} <span class="badge">Pre-release</span>{% endif %}{% if r.deleted %} <span class="badge">Removed on GitHub</span>{% endif %}</td>
-      <td>{{ r.published }}</td>
+      <td class="nowrap">{{ r.published }}</td>
       <td>{% if !counted %}<span class="muted">not counted</span>{% else %}{% if let Some(n) = r.downloads %}{{ n }}{% else %}0{% endif %}{% endif %}</td>
       <td><span class="badge {{ r.notice.class }}">{{ r.notice.badge }}</span></td>
       <td>{{ r.game }}</td>
-      <td><code>{{ r.sha256|truncate(12) }}</code></td>
-      <td>{% if r.notice.downloadable && !r.deleted %}<a href="{{ href }}">Download</a>{% endif %}</td>
+      <td class="sha"><code title="{{ r.sha256 }}">{{ r.sha256|truncate(12) }}</code></td>
+      <td class="get">{% if r.notice.downloadable && !r.deleted %}<a class="button secondary" href="{{ href }}">Download</a>{% else %}<span class="muted">Not available</span>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

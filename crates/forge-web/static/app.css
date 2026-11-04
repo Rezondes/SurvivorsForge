@@ -121,6 +121,8 @@ form:has(#source_type option[value="tag"]:checked) :is(label[for="asset_pattern"
 /* An admin tile with work waiting. */
 .tile.due { border-color: var(--outline-active); }
 
+.nowrap { white-space: nowrap; }
+
 /* `hidden` wins over the display of buttons and layouts below. */
 [hidden] { display: none !important; }
 
@@ -615,6 +617,12 @@ input.narrow { width: 6em; flex: none; }
   html[data-view="list"] .grid .card:not(.addon-card) > p:not(:last-child) { display: none; }
   main:has(> .list) > .bottom { display: none; }
   /* Pack content: one block per addon, name and check on top, version and folders below */
+  /* Versions: tag and Download on top, the rest under them; hash and game range go. */
+  .versions-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .versions-table tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .versions-table td { padding: 0; border: none; }
+  .versions-table td.get { grid-row: 1; grid-column: 2; }
+  .versions-table td.sha, .versions-table td:nth-child(5) { display: none; }
   .pack-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .pack-table tr { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .pack-table td { padding: 0; border: none; }

@@ -184,7 +184,7 @@ async fn the_repo_owner_may_claim_an_unclaimed_addon() {
 #[tokio::test]
 async fn trust_notice_per_level() {
     let cases = [
-        ("unscanned", "available", "The automatic check has not run yet", true),
+        ("unscanned", "available", "This file has not been checked yet", true),
         ("flagged", "available", "found something suspicious", true),
         ("scanned", "available", "The automatic check found nothing", true),
         ("verified", "available", "An admin checked this exact file by hand", true),

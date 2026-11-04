@@ -4,7 +4,7 @@
 {% block content %}
 <section class="panel">
   <h1>Download {{ name }} {{ row.tag }}?</h1>
-  <div class="notice {{ row.notice.class }}" role="alert"><strong>{{ row.notice.badge }}.</strong> {{ row.notice.text }}</div>
+  <div class="notice {{ row.notice.class }}"{% if row.notice.class == "bad" %} role="alert"{% endif %}><strong>{{ row.notice.badge }}.</strong> {{ row.notice.text }}</div>
   {% if !findings.is_empty() %}
   <h2>What the check found</h2>
   <ul class="findings">
@@ -13,10 +13,10 @@
     {% endfor %}
   </ul>
   {% endif %}
-  <p>Only continue if you trust the author.</p>
+  {% if row.notice.class == "bad" %}<p>Only continue if you trust the author.</p>{% endif %}
   <p class="actions">
-    <a class="button secondary" href="/addons/{{ slug }}">Back to {{ name }}</a>
-    <a class="button danger" href="/addons/{{ slug|urlencode }}/versions/{{ row.tag|urlencode }}/download?confirmed=1" rel="noopener">I understand, download from GitHub</a>
+    <a class="button secondary" href="/addons/{{ slug }}/versions/{{ row.tag|urlencode }}">Back to {{ name }} {{ row.tag }}</a>
+    <a class="button {% if row.notice.class == "bad" %}danger{% else %}secondary{% endif %}" href="/addons/{{ slug|urlencode }}/versions/{{ row.tag|urlencode }}/download?confirmed=1" rel="noopener">I understand, download from GitHub</a>
   </p>
 </section>
 {% endblock %}

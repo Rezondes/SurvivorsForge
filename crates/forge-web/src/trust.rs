@@ -34,7 +34,7 @@ pub fn notice(trust: &str, verified_author: bool, source_missing: bool) -> Notic
         Trust::Flagged => "The automatic check found something suspicious. Read the findings before you install it.",
         Trust::Blocked => "An admin blocked this version. It cannot be downloaded.",
         Trust::SourceChanged => "The file on GitHub was changed after it was checked. It cannot be downloaded until an admin looks at it.",
-        Trust::Unscanned => "The automatic check has not run yet. Install it at your own risk.",
+        Trust::Unscanned => "This file has not been checked yet, or the check could not finish. Install it only if you trust the author.",
     };
     Notice {
         class: level.tone(verified_author).class(),
