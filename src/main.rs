@@ -2421,6 +2421,32 @@ mod layout_tests {
         }
 
         #[test]
+        fn the_toolbar_has_icon_buttons_that_name_themselves_on_hover() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_update_count(3);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).collect::<Vec<_>>();
+            if find("Installed (0)").is_empty() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            for label in ["Tiles", "List", "Check for updates", "Install zip", "Add GitHub repo", "Update all (3)"] {
+                let button = find(label).into_iter().next().unwrap_or_else(|| panic!("{label} is there"));
+                let size = button.size();
+                assert!((size.width - size.height).abs() < 1.0, "{label} is a square icon button: {size:?}");
+            }
+            let check = find("Check for updates").remove(0);
+            let at = check.absolute_position();
+            let middle = slint::LogicalPosition::new(at.x + check.size().width / 2.0, at.y + check.size().height / 2.0);
+            ui.window().dispatch_event(WindowEvent::PointerMoved { position: middle });
+            i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(600));
+            let tip = find("Check for updates").into_iter().find(|e| e.accessible_role() == Some(AccessibleRole::Text));
+            let tip = tip.expect("hovering shows the tooltip");
+            assert!(tip.absolute_position().y >= at.y + check.size().height, "the tooltip sits under the button");
+        }
+
+        #[test]
         fn a_toast_shows_bottom_right_and_closes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

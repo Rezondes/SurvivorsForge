@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox,
-    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView
+    AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
@@ -438,6 +438,8 @@ export component AppWindow inherits Window {
             root.settings-save();
         }
         root.page = page;
+        // The control under a tooltip may be gone with the page.
+        TipState.text = "";
     }
 
     // Confirmation dialog
@@ -646,21 +648,35 @@ export component AppWindow inherits Window {
                         changed(on) => { root.view-changed(1, on); }
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    if root.page == 0 : ActionButton {
-                        text: root.checking ? "Checking..." : "Check for updates";
+                    // Icons named by their tooltips, as tall as the search field.
+                    if root.page == 0 : GlyphButton {
+                        height: Theme.touch ? 44px : 38px;
+                        label: root.checking ? "Checking for updates..." : "Check for updates";
+                        // Two arrows around a circle.
+                        glyph: "M 13.5 8 A 5.5 5.5 0 1 1 11.6 3.8 M 12.2 1 L 12 4.2 L 8.8 4";
                         enabled: !root.checking;
                         clicked => { root.check-updates(); }
                     }
-                    if root.page == 0 && root.file-dialog : ActionButton {
-                        text: "Install zip";
+                    if root.page == 0 && root.file-dialog : GlyphButton {
+                        height: Theme.touch ? 44px : 38px;
+                        label: "Install zip";
+                        // An archive box with its lid and handle.
+                        glyph: "M 2.5 6 L 13.5 6 L 13.5 14 L 2.5 14 Z M 1.5 2.5 L 14.5 2.5 L 14.5 6 L 1.5 6 Z M 6 9 L 10 9";
                         clicked => { root.install-zip(); }
                     }
-                    if root.page == 0 : ActionButton {
-                        text: "Add repo";
+                    if root.page == 0 : GlyphButton {
+                        height: Theme.touch ? 44px : 38px;
+                        label: "Add GitHub repo";
+                        // A plus.
+                        glyph: "M 8 2.5 L 8 13.5 M 2.5 8 L 13.5 8";
                         clicked => { root.add-repo(); }
                     }
-                    if root.page == 0 : ActionButton {
-                        text: root.update-count > 0 ? "Update all (" + root.update-count + ")" : root.checking ? "Update all" : "All up to date";
+                    if root.page == 0 : GlyphButton {
+                        height: Theme.touch ? 44px : 38px;
+                        label: root.update-count > 0 ? "Update all (" + root.update-count + ")" : root.checking ? "Update all" : "All up to date";
+                        // An arrow into a tray, or a tick when there is nothing to update.
+                        glyph: root.update-count > 0 || root.checking ? "M 8 2 L 8 10.5 M 4.5 7 L 8 10.5 L 11.5 7 M 2.5 13.5 L 13.5 13.5" : "M 3 8.5 L 6.5 12 L 13 4.5";
+                        badge: root.update-count > 0 ? root.update-count : "";
                         primary: root.update-count > 0;
                         enabled: root.update-count > 0;
                         clicked => { root.update-all(); }
@@ -962,5 +978,11 @@ export component AppWindow inherits Window {
         width: parent.width;
         height: parent.height;
         start-resize(direction) => { root.start-resize(direction); }
+    }
+
+    // Last, so a tooltip shows above everything; it takes no input.
+    TooltipLayer {
+        width: parent.width;
+        height: parent.height;
     }
 }

@@ -158,25 +158,95 @@ export component ActionButton inherits Rectangle {
     }
 }
 
-// Square outlined button with a drawn glyph (16x16 path), for icon-only actions.
+// The tooltip showing now, and where its control is in the window. One for the whole window:
+// TooltipLayer draws it above everything, so no panel or list below clips or covers it.
+export global TipState {
+    in-out property <string> text;
+    // The control's bottom centre, and its top for a tip that does not fit below.
+    in-out property <length> x;
+    in-out property <length> bottom;
+    in-out property <length> top;
+}
+
+// A TouchArea that names its control after a short hover, and hides the name on leave and press.
+export component TipArea inherits TouchArea {
+    in property <string> tip;
+
+    Timer {
+        interval: 450ms;
+        running: root.has-hover && root.tip != "" && TipState.text != root.tip;
+        triggered => {
+            TipState.x = root.absolute-position.x + root.width / 2;
+            TipState.bottom = root.absolute-position.y + root.height;
+            TipState.top = root.absolute-position.y;
+            TipState.text = root.tip;
+        }
+    }
+    changed has-hover => {
+        if !self.has-hover && TipState.text == root.tip {
+            TipState.text = "";
+        }
+    }
+    pointer-event(event) => {
+        if event.kind == PointerEventKind.down {
+            TipState.text = "";
+        }
+    }
+}
+
+// Draws TipState's tooltip; place it last in the window, over the whole window. It takes no input.
+export component TooltipLayer inherits Rectangle {
+    if TipState.text != "" : Rectangle {
+        property <bool> fits-below: TipState.bottom + 6px + self.height <= root.height;
+        accessible-role: text;
+        accessible-label: TipState.text;
+        x: clamp(TipState.x - self.width / 2, 4px, root.width - self.width - 4px);
+        y: self.fits-below ? TipState.bottom + 6px : TipState.top - self.height - 6px;
+        width: label.preferred-width + 18px;
+        height: label.preferred-height + 10px;
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.outline;
+        background: Theme.panel;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #000000A0;
+        label := Text {
+            text: TipState.text;
+            font-size: Theme.meta;
+            color: Theme.text;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Square outlined button with a drawn glyph (16x16 path), for icon-only actions. Its label shows
+// as a tooltip on hover.
 export component GlyphButton inherits Rectangle {
     in property <string> label;
     in property <string> glyph;
     // Red on hover (remove), or the deep red of a closing action (the viewer's X).
     in property <bool> danger;
     in property <bool> primary;
+    // Off: dimmed and not pressable; the tooltip still names it.
+    in property <bool> enabled: true;
+    // A small count in the top right corner ("3" updates); empty for none.
+    in property <string> badge;
     callback clicked;
 
     accessible-role: button;
     accessible-label: root.label;
+    accessible-enabled: root.enabled;
     width: root.height;
     height: Theme.touch ? 44px : 34px;
     border-radius: Theme.radius;
     border-width: focus.has-focus ? 2px : 1px;
     border-color: focus.has-focus ? Theme.outline-active
+        : !root.enabled ? Theme.line
         : root.danger && touch.has-hover ? Theme.danger
+        : root.primary ? (touch.has-hover ? Theme.outline-active : Theme.outline-hover)
         : touch.has-hover ? Theme.outline-hover : Theme.outline;
-    background: root.primary ? (touch.has-hover ? Theme.crimson-hover : Theme.crimson) : Theme.control;
+    background: root.primary && root.enabled ? (touch.has-hover ? Theme.crimson-hover : Theme.crimson) : Theme.control;
 
     Path {
         width: 16px;
@@ -184,22 +254,45 @@ export component GlyphButton inherits Rectangle {
         viewbox-width: 16;
         viewbox-height: 16;
         commands: root.glyph;
-        stroke: root.danger && touch.has-hover ? Theme.danger
+        stroke: !root.enabled ? Theme.text-disabled
+            : root.danger && touch.has-hover ? Theme.danger
             : root.primary || touch.has-hover ? Theme.gold-bright : Theme.text-muted;
         stroke-width: 1.5px;
     }
 
-    touch := TouchArea {
+    if root.badge != "" : Rectangle {
+        x: parent.width - self.width + 5px;
+        y: -5px;
+        width: max(16px, count.preferred-width + 8px);
+        height: 16px;
+        border-radius: 8px;
+        background: Theme.gold;
+        count := Text {
+            text: root.badge;
+            font-size: 11px;
+            color: #1A1208;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TipArea {
         width: parent.width;
         height: parent.height;
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        tip: root.label;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
     }
 
     // Tab reaches the button, Space or Return presses it.
     focus := FocusScope {
         width: 0;
         height: 0;
+        enabled: root.enabled;
         key-pressed(event) => {
             if (event.text == " " || event.text == Key.Return) {
                 root.clicked();
@@ -1376,38 +1469,24 @@ export component ViewToggle inherits Rectangle {
             accessible-role: button;
             accessible-label: half.label;
             accessible-checked: self.lit;
-            width: label.preferred-width + 38px;
+            // Icons only, named by their tooltip: each half as wide as the toggle is high.
+            width: root.height;
             background: self.lit || touch.has-hover ? Theme.control : transparent;
             if i == 1 : Rectangle {
                 x: 0;
                 width: 1px;
                 background: Theme.line;
             }
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 6px;
-                alignment: center;
-                VerticalLayout {
-                    alignment: center;
-                    Path {
-                        width: 14px;
-                        height: 14px;
-                        viewbox-width: 16;
-                        viewbox-height: 16;
-                        // Four squares, or three bars, drawn as outlines so the gaps stay visible.
-                        commands: half.on ? "M 1.5 1.5 L 6.5 1.5 L 6.5 6.5 L 1.5 6.5 Z M 9.5 1.5 L 14.5 1.5 L 14.5 6.5 L 9.5 6.5 Z M 1.5 9.5 L 6.5 9.5 L 6.5 14.5 L 1.5 14.5 Z M 9.5 9.5 L 14.5 9.5 L 14.5 14.5 L 9.5 14.5 Z"
-                            : "M 1 3 L 15 3 M 1 8 L 15 8 M 1 13 L 15 13";
-                        stroke: lit ? Theme.gold-bright : Theme.text-muted;
-                        stroke-width: 1.6px;
-                    }
-                }
-                label := Text {
-                    text: half.label;
-                    font-size: Theme.meta;
-                    vertical-alignment: center;
-                    color: lit ? Theme.gold-bright : touch.has-hover ? Theme.gold : Theme.text-muted;
-                }
+            Path {
+                width: 14px;
+                height: 14px;
+                viewbox-width: 16;
+                viewbox-height: 16;
+                // Four squares, or three bars, drawn as outlines so the gaps stay visible.
+                commands: half.on ? "M 1.5 1.5 L 6.5 1.5 L 6.5 6.5 L 1.5 6.5 Z M 9.5 1.5 L 14.5 1.5 L 14.5 6.5 L 9.5 6.5 Z M 1.5 9.5 L 6.5 9.5 L 6.5 14.5 L 1.5 14.5 Z M 9.5 9.5 L 14.5 9.5 L 14.5 14.5 L 9.5 14.5 Z"
+                    : "M 1 3 L 15 3 M 1 8 L 15 8 M 1 13 L 15 13";
+                stroke: lit ? Theme.gold-bright : touch.has-hover ? Theme.gold : Theme.text-muted;
+                stroke-width: 1.6px;
             }
             // The lit half carries a gold line under it.
             if lit : Rectangle {
@@ -1415,7 +1494,8 @@ export component ViewToggle inherits Rectangle {
                 height: 2px;
                 background: Theme.gold;
             }
-            touch := TouchArea {
+            touch := TipArea {
+                tip: half.label;
                 mouse-cursor: pointer;
                 clicked => {
                     if (!lit) {
