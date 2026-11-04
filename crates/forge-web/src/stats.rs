@@ -95,8 +95,26 @@ pub async fn checks(state: &AppState) -> Option<Checks> {
     Some(checks_of(&stats, Utc::now()))
 }
 
+/// A count, or "-" when the API sent none: a missing number must not read as a real 0.
 fn n(v: &Value) -> String {
-    grouped(v.as_i64().unwrap_or(0))
+    v.as_i64().map_or_else(|| "-".into(), grouped)
+}
+
+/// `part` of `whole` in whole percent, rounded; "<1%" for a share too small to round up.
+fn share(part: i64, whole: i64) -> String {
+    if whole <= 0 {
+        return "-".into();
+    }
+    if part > 0 && part * 100 < whole {
+        return "<1%".into();
+    }
+    format!("{}%", (part * 200 + whole) / (2 * whole))
+}
+
+/// The all-time tile only while it says more than the 30 days next to it: right after counting
+/// began both are the same and the second only repeats the first.
+fn all_time(total: &Value, last_30: &Value, label: &str) -> Option<Stat> {
+    (total != last_30).then(|| stat(n(total), label))
 }
 
 fn stat(value: String, label: &str) -> Stat {
@@ -111,28 +129,34 @@ pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
     let active = a["active_installations_30d"].as_i64().unwrap_or(0);
     let on_current = a["on_current_launcher_30d"].as_i64().unwrap_or(0);
     let w = &s["website"];
-    let website = vec![
-        stat(n(&w["daily_visitors_30d"]), "visits in the last 30 days (each visitor once a day)"),
-        stat(n(&w["views_30d"]), "pages viewed in the last 30 days"),
-        stat(n(&w["daily_visitors"]), "visits in all"),
-        stat(n(&w["views"]), "pages viewed in all"),
-    ];
+    let website: Vec<Stat> = [
+        Some(stat(n(&w["daily_visitors_30d"]), "visits in the last 30 days (each visitor once a day)")),
+        Some(stat(n(&w["views_30d"]), "pages viewed in the last 30 days")),
+        all_time(&w["daily_visitors"], &w["daily_visitors_30d"], "visits in all"),
+        all_time(&w["views"], &w["views_30d"], "pages viewed in all"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     let launcher = vec![
         stat(n(&l["downloads"]), "downloads of every version"),
         stat(n(&l["current_downloads"]), &if current.is_empty() { "downloads of the newest version".into() } else { format!("downloads of {current}, the newest version") }),
         stat(n(&l["releases"]), "releases"),
     ];
-    let addons = vec![
-        stat(n(&a["installs"]), "installs through the launcher"),
-        stat(n(&a["updates"]), "updates through the launcher"),
-        stat(n(&a["installs_30d"]), "installs in the last 30 days"),
-        stat(n(&a["updates_30d"]), "updates in the last 30 days"),
-        stat(grouped(active), "launchers active in the last 30 days (those that send an installation ID)"),
-        stat(if active == 0 { "-".into() } else { format!("{}%", on_current * 100 / active) }, &if current.is_empty() { "of them on the newest launcher".into() } else { format!("of them on {current}, the newest launcher") }),
-    ];
+    let addons: Vec<Stat> = [
+        Some(stat(n(&a["installs_30d"]), "installs in the last 30 days")),
+        Some(stat(n(&a["updates_30d"]), "updates in the last 30 days")),
+        all_time(&a["installs"], &a["installs_30d"], "installs in all"),
+        all_time(&a["updates"], &a["updates_30d"], "updates in all"),
+        Some(stat(grouped(active), "launchers active in the last 30 days (those that send an installation ID)")),
+        Some(stat(share(on_current, active), &if current.is_empty() { "of them on the newest launcher".into() } else { format!("of them on {current}, the newest launcher ({})", grouped(on_current)) })),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     let platform = vec![
         stat(n(&p["addons"]), "addons"),
-        stat(n(&p["verified_addons"]), "verified by hand"),
+        stat(n(&p["verified_addons"]), "of them verified by hand"),
         stat(n(&p["creators"]), "creators"),
         stat(n(&p["scanned_versions"]), "versions scanned"),
         stat(n(&p["blocked_versions"]), "versions blocked"),
@@ -365,6 +389,15 @@ async fn stats_page(state: AppState, jar: PrivateCookieJar, csrf: CsrfToken, q: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shares_round_and_small_ones_show() {
+        assert_eq!(share(3, 1607), "<1%");
+        assert_eq!(share(0, 1607), "0%");
+        assert_eq!(share(805, 1607), "50%");
+        assert_eq!(share(1, 0), "-");
+        assert_eq!(n(&serde_json::Value::Null), "-", "a missing count is no 0");
+    }
 
     #[test]
     fn times_read_naturally() {
