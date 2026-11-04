@@ -864,7 +864,8 @@ fn scan_remote(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>, t
 }
 
 /// Downloads `remote` (or the latest version of `repo`) and installs it as entry `id`, and counts
-/// the install or update of a verified addon for the platform's statistics.
+/// the install, update or rollback (`older`) of a verified addon for the platform's statistics.
+#[allow(clippy::too_many_arguments)]
 fn install_remote(
     shared: &Shared,
     id: &str,
@@ -873,6 +874,7 @@ fn install_remote(
     spec: &SourceSpec,
     source: Source,
     remote: Option<RemoteVersion>,
+    older: bool,
 ) -> survivorsforge::Result<String> {
     let addon = telemetry::reported_addon(&source).map(str::to_string);
     let update = lock(shared).state.get(id).is_some();
@@ -889,7 +891,7 @@ fn install_remote(
         core.progress.remove(id);
         core.outcomes.insert(id.to_string(), outcome);
     });
-    let event = addon.and_then(|addon| telemetry::event(update, &addon, version.as_deref().unwrap_or("unknown"), result.as_ref().map(|_| ())));
+    let event = addon.and_then(|addon| telemetry::event(update, older, &addon, version.as_deref().unwrap_or("unknown"), result.as_ref().map(|_| ())));
     if let Some(event) = event {
         let core = lock(shared);
         telemetry::report(&core.config, &ApiSender { api: core.api_url() }, &[event]);
@@ -1079,10 +1081,10 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>,
             let Some(Ok((dep_name, dep_repo, dep_spec, dep_source, dep_remote))) = job else {
                 return Err(Error::NotInstallable(format!("{dep} cannot be installed, so {name} was not installed")));
             };
-            install_remote(shared, dep, &dep_name, &dep_repo, &dep_spec, dep_source, dep_remote)
+            install_remote(shared, dep, &dep_name, &dep_repo, &dep_spec, dep_source, dep_remote, false)
                 .map_err(|e| Error::NotInstallable(format!("{dep_name} failed ({e}), so {name} was not installed")))?;
         }
-        let done = install_remote(shared, &id, &name, &repo, &spec, source, remote)?;
+        let done = install_remote(shared, &id, &name, &repo, &spec, source, remote, held)?;
         let mut core = lock(shared);
         if core.config.held.contains(&id) != held {
             core.config.hold(&id, held);
@@ -1281,7 +1283,7 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
             show_progress(shared, true, |core| {
                 core.set_status(format!("Updating {} of {total}: {name}", i + 1));
             });
-            if let Err(e) = install_remote(shared, &id, &name, &repo, &spec, source, remote) {
+            if let Err(e) = install_remote(shared, &id, &name, &repo, &spec, source, remote, false) {
                 failed.push(format!("{name}: {e}"));
             }
             lock(shared).busy.remove(&id);

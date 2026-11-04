@@ -1,5 +1,5 @@
-//! Anonymous counts for the platform's statistics: installs and updates of verified addons, and
-//! failed ones with a fixed error code. Two settings turn it off: `telemetry` stops every event,
+//! Anonymous counts for the platform's statistics: installs, updates and rollbacks of verified
+//! addons, and failed ones with a fixed error code. Two settings turn it off: `telemetry` stops every event,
 //! `send_install_id` only the random installation ID.
 
 use crate::config::Config;
@@ -23,9 +23,11 @@ pub struct Event {
 }
 
 /// The event of one install or update of the verified addon `registry_id`, or `None` for errors
-/// that say nothing about the addon (no connection to the platform at all).
-pub fn event(update: bool, registry_id: &str, version: &str, result: Result<(), &Error>) -> Option<Event> {
+/// that say nothing about the addon (no connection to the platform at all). `older` is a version
+/// older than the platform's newest: a rollback when it worked.
+pub fn event(update: bool, older: bool, registry_id: &str, version: &str, result: Result<(), &Error>) -> Option<Event> {
     let (kind, error_code) = match (update, result) {
+        (_, Ok(())) if older => ("rollback", None),
         (false, Ok(())) => ("install", None),
         (true, Ok(())) => ("update", None),
         (_, Err(Error::Offline)) => return None,
@@ -153,27 +155,35 @@ mod tests {
 
     #[test]
     fn builds_event_from_install() {
-        let e = event(false, "lucky", "v1.2.0", Ok(())).unwrap();
+        let e = event(false, false, "lucky", "v1.2.0", Ok(())).unwrap();
         assert_eq!((e.kind, e.addon.as_str(), e.version.as_str(), e.error_code), ("install", "lucky", "v1.2.0", None));
         assert_eq!(e.launcher_version, crate::APP_VERSION);
-        assert_eq!(event(true, "lucky", "v2", Ok(())).unwrap().kind, "update");
-        let failed = event(true, "lucky", "v2", Err(&Error::HashMismatch { expected: "a".into(), actual: "b".into() })).unwrap();
+        assert_eq!(event(true, false, "lucky", "v2", Ok(())).unwrap().kind, "update");
+        let failed = event(true, false, "lucky", "v2", Err(&Error::HashMismatch { expected: "a".into(), actual: "b".into() })).unwrap();
         assert_eq!((failed.kind, failed.error_code), ("update_failed", Some("hash_mismatch")));
-        assert_eq!(event(false, "lucky", "v2", Err(&Error::Offline)), None, "offline says nothing about the addon");
+        assert_eq!(event(false, false, "lucky", "v2", Err(&Error::Offline)), None, "offline says nothing about the addon");
+    }
+
+    #[test]
+    fn older_version_is_a_rollback() {
+        assert_eq!(event(true, true, "lucky", "v1", Ok(())).unwrap().kind, "rollback");
+        assert_eq!(event(false, true, "lucky", "v1", Ok(())).unwrap().kind, "rollback");
+        let failed = event(true, true, "lucky", "v1", Err(&Error::HashMismatch { expected: "a".into(), actual: "b".into() })).unwrap();
+        assert_eq!(failed.kind, "update_failed", "a failed rollback counts as a failed update");
     }
 
     #[test]
     fn error_codes_have_no_paths() {
         let code = error_code(&Error::Io("C:\\Users\\me\\AddOns is read-only".into()));
         assert_eq!(code, "io");
-        let json = serde_json::to_string(&event(false, "x", "v1", Err(&Error::FolderOwnedBy("My Secret".into())))).unwrap();
+        let json = serde_json::to_string(&event(false, false, "x", "v1", Err(&Error::FolderOwnedBy("My Secret".into())))).unwrap();
         assert!(!json.contains("Secret"), "{json}");
     }
 
     #[test]
     fn disabled_sends_nothing() {
         let sender = Collect::default();
-        let events = [event(false, "lucky", "v1", Ok(())).unwrap()];
+        let events = [event(false, false, "lucky", "v1", Ok(())).unwrap()];
         report(&config(false, true), &sender, &events);
         assert!(sender.0.lock().unwrap().is_empty());
         report(&config(true, true), &sender, &[]);
@@ -183,7 +193,7 @@ mod tests {
     #[test]
     fn id_header_only_when_allowed() {
         let sender = Collect::default();
-        let events = [event(false, "lucky", "v1", Ok(())).unwrap()];
+        let events = [event(false, false, "lucky", "v1", Ok(())).unwrap()];
         report(&config(true, true), &sender, &events);
         report(&config(true, false), &sender, &events);
         let sent = sender.0.lock().unwrap();

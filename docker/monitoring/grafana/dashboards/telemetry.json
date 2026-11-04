@@ -164,7 +164,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "postgres"
           },
-          "rawSql": "SELECT a.slug, count(*) FILTER (WHERE e.kind = 'install') AS installs, count(*) FILTER (WHERE e.kind = 'update') AS updates FROM telemetry_events e JOIN addons a ON a.id = e.addon_id WHERE $__timeFilter(e.created_at) GROUP BY 1 ORDER BY installs DESC LIMIT 50",
+          "rawSql": "SELECT a.slug, count(*) FILTER (WHERE e.kind = 'install') AS installs, count(*) FILTER (WHERE e.kind = 'update') AS updates, count(*) FILTER (WHERE e.kind = 'rollback') AS rollbacks FROM telemetry_events e JOIN addons a ON a.id = e.addon_id WHERE $__timeFilter(e.created_at) GROUP BY 1 ORDER BY installs DESC LIMIT 50",
           "format": "table",
           "editorMode": "code",
           "rawQuery": true,
@@ -424,7 +424,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "postgres"
           },
-          "rawSql": "SELECT launcher_version AS \"Launcher\", count(*) FILTER (WHERE kind IN ('install', 'update')) AS \"Done\", count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) AS \"Failed\", round(100.0 * count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) / nullif(count(*), 0), 1) AS \"Failed %\" FROM telemetry_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 DESC",
+          "rawSql": "SELECT launcher_version AS \"Launcher\", count(*) FILTER (WHERE kind IN ('install', 'update', 'rollback')) AS \"Done\", count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) AS \"Failed\", round(100.0 * count(*) FILTER (WHERE kind IN ('install_failed', 'update_failed')) / nullif(count(*), 0), 1) AS \"Failed %\" FROM telemetry_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 DESC",
           "format": "table",
           "editorMode": "code",
           "rawQuery": true,
@@ -438,7 +438,7 @@
       "options": {
         "showHeader": true
       },
-      "description": "Installs and updates in the time range per launcher version, and the share that failed. A broken release shows here first."
+      "description": "Installs, updates and rollbacks in the time range per launcher version, and the share that failed. A broken release shows here first."
     },
     {
       "id": 13,
@@ -508,6 +508,142 @@
       },
       "options": {},
       "description": "On average, in how many hours of a day a launcher asked the platform something, by platform: how long launchers stay open."
+    },
+    {
+      "id": 15,
+      "title": "Installs and updates per addon and day",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "WITH top AS (SELECT addon_id FROM telemetry_events WHERE $__timeFilter(created_at) AND kind IN ('install', 'update') GROUP BY 1 ORDER BY count(*) DESC LIMIT 10) SELECT e.day::timestamptz AS time, a.slug::text AS metric, count(*) AS value FROM telemetry_events e JOIN top USING (addon_id) JOIN addons a ON a.id = e.addon_id WHERE $__timeFilter(e.created_at) AND e.kind IN ('install', 'update') GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "The ten addons with the most installs and updates in the time range, per day."
+    },
+    {
+      "id": 16,
+      "title": "Risers of the week",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT a.slug AS \"Addon\", count(*) FILTER (WHERE e.day > current_date - 7) AS \"Last 7 days\", count(*) FILTER (WHERE e.day <= current_date - 7) AS \"7 days before\", count(*) FILTER (WHERE e.day > current_date - 7) - count(*) FILTER (WHERE e.day <= current_date - 7) AS \"Gain\" FROM telemetry_events e JOIN addons a ON a.id = e.addon_id WHERE e.day > current_date - 14 AND e.kind IN ('install', 'update') AND a.deleted_at IS NULL GROUP BY 1 HAVING count(*) FILTER (WHERE e.day > current_date - 7) > 0 ORDER BY \"Gain\" DESC LIMIT 20",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Installs and updates of the last seven days against the seven days before, biggest gain first. Ignores the time range."
+    },
+    {
+      "id": 17,
+      "title": "Addons without a release for 60 days",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT a.slug AS \"Addon\", max(v.published_at) AS \"Last release\", (current_date - max(v.published_at)::date) AS \"Days\" FROM addons a LEFT JOIN versions v ON v.addon_id = a.id WHERE a.deleted_at IS NULL AND a.blocked_at IS NULL GROUP BY 1 HAVING max(v.published_at) IS NULL OR max(v.published_at) < now() - interval '60 days' ORDER BY 2 NULLS FIRST",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Listed addons whose newest version is older than 60 days, or that have none. Ignores the time range."
+    },
+    {
+      "id": 18,
+      "title": "Rollbacks by addon",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT a.slug AS \"Addon\", e.version AS \"Back to\", count(*) AS \"Rollbacks\", max(e.created_at) AS \"Last\" FROM telemetry_events e JOIN addons a ON a.id = e.addon_id WHERE $__timeFilter(e.created_at) AND e.kind = 'rollback' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Launchers that installed a version older than the newest by hand. Many rollbacks to one version hint at a broken newer release."
     }
   ]
 }

@@ -62,6 +62,16 @@ async fn stores_macos_as_its_own_platform(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn stores_a_rollback_to_an_older_version(pool: PgPool) {
+    let app = setup(pool).await;
+    let mut with_code = event("rollback");
+    with_code["error_code"] = json!("download_failed");
+    let reply = post(&app.router, Some(ID), json!([event("rollback"), with_code])).await;
+    assert_eq!(reply.json(), json!({ "accepted": 1, "rejected": 1 }));
+    assert_eq!(stored(&app).await, [("rollback".into(), None, Some(ID.into()))]);
+}
+
+#[sqlx::test]
 async fn rejects_unknown_addon_and_kind(pool: PgPool) {
     let app = setup(pool).await;
     let mut ghost = event("install");

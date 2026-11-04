@@ -1,4 +1,4 @@
-//! `POST /v1/telemetry/events`: anonymous install and update events of the launcher.
+//! `POST /v1/telemetry/events`: anonymous install, update and rollback events of the launcher.
 
 use crate::app::AppState;
 use crate::error::{ApiError, ApiResult};
@@ -38,7 +38,7 @@ pub struct Event {
 
 fn failed(kind: &str) -> Option<bool> {
     match kind {
-        "install" | "update" => Some(false),
+        "install" | "update" | "rollback" => Some(false),
         "install_failed" | "update_failed" => Some(true),
         _ => None,
     }
