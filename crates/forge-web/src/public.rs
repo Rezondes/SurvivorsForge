@@ -54,7 +54,8 @@ fn version_row(v: &Value, verified_author: bool) -> VersionRow {
         published: date(&v["published_at"]),
         prerelease: v["prerelease"] == true,
         deleted: v["deleted_on_github"] == true,
-        notice: notice(v["trust"].as_str().unwrap_or("unscanned"), verified_author, v["source"] == "missing"),
+        // A file gone from GitHub is unavailable whatever its trust: no download, and it says why.
+        notice: notice(v["trust"].as_str().unwrap_or("unscanned"), verified_author, v["source"] == "missing" || v["deleted_on_github"] == true),
         sha256: s(&v["sha256"]),
         asset_url: s(&v["asset_url"]),
         game: range(&v["game_min"], &v["game_max"]),
@@ -293,10 +294,16 @@ pub async fn version(
     Extension(csrf): Extension<CsrfToken>,
     Path((slug, tag)): Path<(String, String)>,
 ) -> WebResult<Html<String>> {
-    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let session = visitor(&state, &jar).await?;
+    // Only the owner sets the game versions of a version.
+    let owner = match &session {
+        Some((_, token)) => crate::creator::perms(&state, &slug, token).await.is_ok_and(|p| p.owner),
+        None => false,
+    };
+    let user = session.map(|(v, _)| v);
     let (a, row) = version_data(&state, &slug, &tag).await?;
     let found = findings(&state, &slug, &tag).await?;
-    Ok(render(&VersionPage { user, csrf: csrf.0, href: download_href(&slug, &row), slug, name: s(&a["name"]), row, findings: found }))
+    Ok(render(&VersionPage { user, csrf: csrf.0, href: download_href(&slug, &row), slug, name: s(&a["name"]), row, findings: found, owner }))
 }
 
 pub async fn download(

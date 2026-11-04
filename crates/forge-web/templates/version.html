@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 {% block title %}{{ name }} {{ row.tag }} - SurvivorsForge{% endblock %}
 {% block content %}
-<p><a href="/addons/{{ slug }}/versions">All versions of {{ name }}</a></p>
+<p class="back"><a href="/addons/{{ slug }}/versions">All versions of {{ name }}</a></p>
 <h1>{{ name }} {{ row.tag }}</h1>
 <section class="panel download">
   <div class="notice {{ row.notice.class }}" role="status"><strong>{{ row.notice.badge }}.</strong> {{ row.notice.text }}</div>
   <p>Published {{ row.published }}{% if row.prerelease %}, pre-release{% endif %}{% if row.deleted %}, removed on GitHub{% endif %}</p>
-  <p>Game version: {{ row.game }}{% if user.is_some() %} · <a href="/addons/{{ slug }}/versions/{{ row.tag }}/edit">Set game versions</a> (owners){% endif %}</p>
+  {% if row.notice.downloadable %}<p><a class="button{% if row.notice.confirm %} danger{% endif %}" href="{{ href }}">Download from GitHub</a></p>{% endif %}
+  <p>Game version: {{ row.game }}{% if owner %} · <a href="/addons/{{ slug }}/versions/{{ row.tag }}/edit">Set game versions</a>{% endif %}</p>
   <p>SHA-256: <code>{{ row.sha256 }}</code></p>
-  <p><a href="/addons/{{ slug }}/report?version={{ row.tag|urlencode }}">Report this version</a></p>
-  {% if row.notice.downloadable && !row.deleted %}<p><a class="button{% if row.notice.confirm %} danger{% endif %}" href="{{ href }}">Download from GitHub</a></p>{% endif %}
+  <p class="muted"><a href="/addons/{{ slug }}/report?version={{ row.tag|urlencode }}">Report this version</a></p>
 </section>
 {% if !findings.is_empty() %}
-<section class="panel">
+<section class="panel" id="findings">
   <h2>Findings</h2>
   <ul class="findings">
     {% for f in findings %}
-    <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.label() }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}{% if f.hint != "" %}<p class="muted">Fix: {{ f.hint }}</p>{% endif %}</li>
+    <li><span class="badge {% if f.severity == "critical" %}bad{% else %}warn{% endif %}">{{ f.label() }}</span> <code>{{ f.place }}</code> {{ f.message }} <span class="muted">({{ f.rule }})</span>{% if f.snippet != "" %}<pre>{{ f.snippet }}</pre>{% endif %}{% if f.hint != "" %}<p class="muted">How the author can fix it: {{ f.hint }}</p>{% endif %}</li>
     {% endfor %}
   </ul>
 </section>

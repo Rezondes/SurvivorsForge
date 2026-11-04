@@ -1005,3 +1005,18 @@ async fn a_risky_version_shows_its_findings_before_a_toned_down_install() {
     assert!(findings < install, "read first, then install");
     assert!(!page.contains("button large\" href=\"survivorsforge://"), "{page}");
 }
+
+#[tokio::test]
+async fn a_version_page_offers_owner_tools_only_to_owners() {
+    let mut web = with_addon("scanned", "available").await;
+    web.login_as("t", common::me("bob", "user")).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/addons/lucky/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "owner": false })))
+        .mount(&web.api)
+        .await;
+    let page = web.get("/addons/lucky/versions/v1").await.body;
+    assert!(!page.contains("Set game versions"), "{page}");
+    let download = page.find("Download from GitHub").expect("download");
+    assert!(download < page.find("Report this version").unwrap(), "the main action first");
+}

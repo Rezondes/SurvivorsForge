@@ -344,6 +344,7 @@ pub struct VersionPage {
     pub row: VersionRow,
     pub href: String,
     pub findings: Vec<FindingRow>,
+    pub owner: bool,
 }
 
 #[derive(Template)]
