@@ -48,6 +48,8 @@ struct Core {
     work: Option<i32>,
     /// The toast of the last invalid setting, closed once the settings are valid again.
     settings_error: Option<i32>,
+    /// The toast of the last settings save, replaced by the next one.
+    settings_saved: Option<i32>,
     self_update: Option<Available>,
     /// The platform's game versions, oldest first; empty without the platform.
     game_versions: Vec<controller::GameVersion>,
@@ -144,6 +146,7 @@ impl Core {
             toasts: Toasts::default(),
             work: None,
             settings_error: None,
+            settings_saved: None,
             self_update: None,
             game_versions: Vec::new(),
             offline: false,
@@ -269,6 +272,14 @@ impl Core {
     }
 
     /// How something ended: the busy toast turns into it, else it comes as a new toast.
+    /// A settings save says so in one toast: ticking box after box does not stack them.
+    fn settings_saved(&mut self, text: String, kind: Kind) {
+        if let Some(id) = self.settings_saved.take() {
+            self.toasts.dismiss(id);
+        }
+        self.settings_saved = Some(self.toasts.push(text, kind));
+    }
+
     fn notify(&mut self, text: String, kind: Kind) {
         match self.work.take() {
             Some(id) => self.toasts.finish(id, text, kind),
@@ -1750,8 +1761,10 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         // The error toast names what was not saved; the rest saved quietly.
         Ok(()) if !errors.is_empty() => {}
         Ok(()) => match warning {
-            Some(w) => lock(shared).notify(format!("Settings saved. {w}"), Kind::Warning),
-            None => lock(shared).notify("Settings saved.".into(), Kind::Success),
+            Some(w) => lock(shared).settings_saved(format!("Settings saved. {w}"), Kind::Warning),
+            // A wrong but reachable address still saves; the list then says the platform is away.
+            None if recheck => lock(shared).settings_saved("Settings saved. Loading the addon list again...".into(), Kind::Success),
+            None => lock(shared).settings_saved("Settings saved.".into(), Kind::Success),
         },
         Err(e) => lock(shared).notify(format!("Could not save the settings: {e}"), Kind::Error),
     }
@@ -2586,6 +2599,16 @@ mod card_tests {
         // As text: two empty images never compare equal.
         assert_eq!(format!("{:?}", AddonRow { can_pick: card.can_pick, picked: card.picked, ..shown }), format!("{card:?}"));
         assert_eq!(browse(&other.id).action, "Install", "an addon that is not installed keeps its Browse card");
+    }
+
+    #[test]
+    fn saving_settings_again_replaces_the_saved_toast() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::new(dir.path().to_path_buf(), None);
+        core.toasts = Toasts::default();
+        core.settings_saved("Settings saved.".into(), Kind::Success);
+        core.settings_saved("Settings saved.".into(), Kind::Success);
+        assert_eq!(core.toasts.items().len(), 1, "one tick after another: one toast");
     }
 
     #[test]

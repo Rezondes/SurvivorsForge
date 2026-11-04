@@ -160,6 +160,18 @@ component SettingRow inherits HorizontalLayout {
     @children
 }
 
+// A line under a settings field, lined up with the fields.
+component FieldHint inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: 180px + Theme.gap-loose;
+    Text {
+        text: root.text;
+        font-size: Theme.meta;
+        color: Theme.text-muted;
+        wrap: word-wrap;
+    }
+}
+
 // The reason a settings field was refused, under it and lined up with the fields.
 component FieldError inherits HorizontalLayout {
     in property <string> text;
@@ -223,13 +235,21 @@ component SettingsView inherits VerticalLayout {
             game-mode: root.game-mode;
         }
     }
-    if root.game-versions.length > 1 : SettingRow {
+    SettingRow {
         label: "Game version";
-        Dropdown {
+        if root.game-versions.length > 1 : Dropdown {
             label: "Game version";
             model: root.game-versions;
             current-index <=> root.game-index;
             selected => { root.save(); }
+        }
+        // The list comes from the platform: say so instead of dropping the row.
+        if root.game-versions.length <= 1 : Text {
+            text: "The platform does not answer, so its game versions are not loaded.";
+            font-size: Theme.meta;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+            wrap: word-wrap;
         }
     }
     SettingRow {
@@ -244,6 +264,7 @@ component SettingsView inherits VerticalLayout {
         }
     }
     if root.api-error != "" : FieldError { text: root.api-error; }
+    FieldHint { text: "Empty uses the built-in platform, as shown in grey."; }
     SettingRow {
         label: "Platform website";
         Field {
@@ -256,6 +277,7 @@ component SettingsView inherits VerticalLayout {
         }
     }
     if root.web-error != "" : FieldError { text: root.web-error; }
+    FieldHint { text: "Empty uses the built-in website."; }
     SettingRow {
         label: "Statistics";
         VerticalLayout {
