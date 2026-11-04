@@ -4,12 +4,15 @@
 {% block content %}
 <div class="docs-layout">
   <nav class="toc" aria-label="On this page">
-    <p class="toc-title">On this page</p>
+    {# Open beside the text; on phones it starts closed (api-docs.js), above the text. #}
+    <details open>
+    <summary class="toc-title">On this page</summary>
     <ul>
       {% for entry in toc %}
       <li{% if entry.sub %} class="sub"{% endif %}><a href="#{{ entry.id }}">{{ entry.text }}</a></li>
       {% endfor %}
     </ul>
+    </details>
   </nav>
   <section class="panel description">
     <h1>{{ title }}</h1>

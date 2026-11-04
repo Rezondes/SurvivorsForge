@@ -429,7 +429,7 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .6); }
 /* API docs: side navigation and highlighted code. */
 .docs-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
 .toc { position: sticky; top: 0; max-height: calc(100vh - 120px); overflow-x: hidden; overflow-y: auto; font-size: var(--meta); }
-.toc-title { margin: 0 0 8px; color: var(--gold); }
+.toc-title { margin: 0 0 8px; color: var(--gold); cursor: pointer; }
 .toc ul { list-style: none; margin: 0; padding: 0; }
 .toc li.sub { padding-left: 12px; }
 .toc a { display: block; overflow-wrap: anywhere; padding: 3px 8px; border-left: 2px solid var(--line); color: var(--muted); text-decoration: none; }

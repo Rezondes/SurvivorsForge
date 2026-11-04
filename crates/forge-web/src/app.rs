@@ -317,15 +317,19 @@ async fn docs_page(state: &AppState, jar: &PrivateCookieJar, csrf: CsrfToken, ti
 /// table of contents. The sanitizer drops ids, so they are added after it.
 fn heading_ids(html: &str) -> (String, Vec<TocEntry>) {
     let (mut out, mut toc, mut rest) = (String::new(), Vec::<TocEntry>::new(), html);
+    let mut seen = std::collections::HashMap::<String, usize>::new();
     while let Some(start) = ["<h3>", "<h4>"].iter().filter_map(|tag| rest.find(tag)).min() {
         let level = &rest[start + 2..start + 3];
         let close = format!("</h{level}>");
         let Some(end) = rest[start..].find(&close).map(|e| start + e) else { break };
         let inner = &rest[start + 4..end];
         let text = strip_tags(inner).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"");
-        let base = text.to_lowercase().split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join("-");
-        let taken = toc.iter().filter(|t| t.id == base || t.id.starts_with(&format!("{base}-"))).count();
-        let id = if taken == 0 { base } else { format!("{base}-{}", taken + 1) };
+        // GitHub's ids, so links written for the repo work here too: lowercase, punctuation
+        // dropped, spaces to dashes, a repeated heading gets -1, -2.
+        let base: String = text.to_lowercase().chars().filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_')).map(|c| if c == ' ' { '-' } else { c }).collect();
+        let taken = seen.entry(base.clone()).or_default();
+        let id = if *taken == 0 { base } else { format!("{base}-{taken}") };
+        *taken += 1;
         out.push_str(&rest[..start]);
         out.push_str(&format!("<h{level} id=\"{id}\">{inner}</h{level}>"));
         toc.push(TocEntry { id, text, sub: level == "4" });

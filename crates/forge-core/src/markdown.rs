@@ -1,6 +1,7 @@
 //! Addon descriptions: Markdown in, sanitized HTML out. The only place user text becomes HTML.
 
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd, html};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 const TAGS: &[&str] = &[
@@ -42,7 +43,8 @@ pub fn render_with_images(md: &str, image_bases: &[&str]) -> String {
         // Code blocks keep their language, for syntax highlighting on the page.
         .allowed_classes([("code", ["language-js", "language-ts", "language-csharp", "language-rust", "language-python", "language-json"].into_iter().collect())].into_iter().collect())
         .url_schemes(["http", "https", "mailto"].into_iter().collect())
-        .url_relative(ammonia::UrlRelative::Deny)
+        // Links within the page (a contents list) stay; any other relative link goes.
+        .url_relative(ammonia::UrlRelative::Custom(Box::new(same_page)))
         .link_rel(Some("nofollow noopener noreferrer ugc"))
         .attribute_filter(move |element, attribute, value| {
             if element == "img" && attribute == "src" && !image_bases.iter().any(|b| value.starts_with(b.as_str())) {
@@ -52,6 +54,10 @@ pub fn render_with_images(md: &str, image_bases: &[&str]) -> String {
         })
         .clean(&raw)
         .to_string()
+}
+
+fn same_page(url: &str) -> Option<Cow<'_, str>> {
+    url.starts_with('#').then_some(Cow::Borrowed(url))
 }
 
 /// One block of a description, for clients that show text but no HTML (the launcher).
@@ -174,6 +180,14 @@ mod tests {
     use super::*;
 
     const IMG: &str = "https://forge.test/img";
+
+    #[test]
+    fn links_within_the_page_stay() {
+        let html = render("[Steps](#steps) [rel](other/page) [web](https://x.test)", IMG);
+        assert!(html.contains(r##"href="#steps""##), "{html}");
+        assert!(!html.contains("other/page"), "other relative links still go: {html}");
+        assert!(html.contains(r#"href="https://x.test""#));
+    }
 
     fn r(md: &str) -> String {
         render(md, IMG)

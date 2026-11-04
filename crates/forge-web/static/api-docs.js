@@ -34,6 +34,10 @@
     highlight(code, code.className.slice("language-".length));
   }
 
+  // Narrow, the contents list sits above the text: closed, so the text comes first.
+  const toc = document.querySelector(".toc details");
+  if (toc && matchMedia("(max-width: 900px)").matches) toc.open = false;
+
   const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
   const headings = [...links.keys()].map((id) => document.getElementById(id)).filter(Boolean);
   function mark() {

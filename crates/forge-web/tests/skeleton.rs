@@ -244,7 +244,7 @@ async fn addon_api_shows_the_game_docs_with_their_date_and_the_discord_channel()
     assert!(page.body.contains("<title>Addon API of the game - SurvivorsForge</title>"));
     assert!(page.body.contains("2 November 2026"), "the version it is, for later updates");
     assert!(page.body.contains(r#"href="https://discord.com/channels/1557821819032051852/1564599899469914203""#), "{}", page.body);
-    assert!(page.body.contains(r#"<h4 id="azs-getruntime-seconds-or-nil">"#), "{}", page.body);
+    assert!(page.body.contains(r#"<h4 id="azs_getruntime--seconds-or-nil">"#), "{}", page.body);
     assert!(web.get("/docs").await.body.contains(r#"href="/docs/addon-api""#), "linked from the docs page");
     assert!(web.get("/docs/creator-guide").await.body.contains(r#"href="https://forge.rezondes.net/docs/addon-api""#), "linked from the guide");
 }
@@ -317,4 +317,21 @@ async fn the_nav_link_of_the_current_section_is_marked() {
     let top = web.get("/docs").await.body;
     let top = top.split("</header>").next().unwrap();
     assert!(!top.contains("aria-current"), "no section is current on other pages: {top}");
+}
+
+#[tokio::test]
+async fn every_link_inside_the_docs_finds_its_heading() {
+    let mut web = TestWeb::new().await;
+    for doc in ["/docs/api-docs", "/docs/creator-guide", "/docs/addon-api"] {
+        let page = web.get(doc).await.body;
+        let ids: Vec<&str> = page.split(" id=\"").skip(1).filter_map(|s| s.split('"').next()).collect();
+        let targets: Vec<&str> = page.split("href=\"#").skip(1).filter_map(|s| s.split('"').next()).collect();
+        // Links in the text itself, not only the side navigation, keep their target.
+        if doc == "/docs/creator-guide" {
+            assert!(page.contains("href=\"#1-get-a-github-account-and-github-desktop\" rel="), "{doc}: in-text links kept");
+        }
+        for target in targets {
+            assert!(ids.contains(&target), "{doc}: no heading with id {target}");
+        }
+    }
 }
