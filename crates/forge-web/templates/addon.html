@@ -9,6 +9,7 @@
 {% block content %}
 <p class="back"><a href="/addons">All addons</a></p>
 {% include "addon_head.html" %}
+{% if editor %}<p><a class="button secondary" href="/addons/{{ slug }}/edit">Edit addon</a></p>{% endif %}
 {% let tab = "overview" %}{% include "addon_tabs.html" %}
 {% if let Some(e) = error %}<div class="notice bad" role="alert">{{ e }}</div>{% endif %}
 {% if can_claim %}
@@ -39,6 +40,7 @@
       </ul>
     </details>
     {% endif %}
+    {% for d in deps %}{% if d.required && !d.available %}<div class="notice warn">Needs {{ d.name }}, which is not available right now. The addon may not load without it.</div>{% endif %}{% endfor %}
     {% if l.row.notice.downloadable %}
       <div class="actions">
         {% if l.row.notice.confirm %}<a class="button secondary danger" href="survivorsforge://addon/{{ slug }}" data-launcher>Install anyway with the launcher</a>

@@ -375,7 +375,8 @@
   });
   document.addEventListener("keydown", function (event) {
     var box = viewer();
-    if (!box || !box.open || event.target.closest("button")) return;
+    // The arrows and zoom keys work at once, also while a toolbar button has the focus.
+    if (!box || !box.open) return;
     if (event.key === "ArrowRight") show(view.index + 1);
     else if (event.key === "ArrowLeft") show(view.index - 1);
     else if (event.key === "+" || event.key === "=") zoom(1.5, 0, 0);

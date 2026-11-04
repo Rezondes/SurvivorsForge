@@ -194,7 +194,13 @@ pub async fn addon(
     Path(slug): Path<String>,
     Query(claim): Query<ClaimError>,
 ) -> WebResult<Response> {
-    let user = visitor(&state, &jar).await?.map(|(v, _)| v);
+    let session = visitor(&state, &jar).await?;
+    // Its own people find the way to its settings from its page.
+    let editor = match &session {
+        Some((_, token)) => crate::creator::perms(&state, &slug, token).await.is_ok_and(|p| p.owner || p.edit_description || p.edit_images),
+        None => false,
+    };
+    let user = session.map(|(v, _)| v);
     let a = state.api.get(&format!("/v1/addons/{}", seg(&slug)), None).await?;
     if a["blocked"] == true {
         let page = BlockedPage { user, csrf: csrf.0, name: s(&a["name"]), reason: s(&a["block_reason"]) };
@@ -224,6 +230,7 @@ pub async fn addon(
         can_claim,
         install_url: state.install_url(),
         error: claim.error,
+        editor,
         user,
         csrf: csrf.0,
         canonical: format!("{}/addons/{slug}", state.config.public_web_url),

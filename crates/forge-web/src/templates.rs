@@ -289,6 +289,8 @@ pub struct LatestBlock {
 #[derive(Template)]
 #[template(path = "addon.html")]
 pub struct AddonPage {
+    /// The visitor owns or edits it: an Edit link under the header.
+    pub editor: bool,
     pub user: Option<Visitor>,
     pub csrf: String,
     pub checks: Option<crate::stats::Checks>,
