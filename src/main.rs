@@ -2037,8 +2037,9 @@ fn main() -> Result<(), slint::PlatformError> {
     on!(on_detail_link, |ui, shared, page| on_detail_link(&ui, shared, &page));
     on!(on_comments_show, |ui, shared| on_comments_show(&ui, shared));
     on!(on_detail_tab_changed, |ui, shared, tab| match tab {
-        2 => on_comments_show(&ui, shared),
-        _ => load_detail_list(&ui, shared, tab),
+        3 => on_comments_show(&ui, shared),
+        2 | 4 => load_detail_list(&ui, shared, tab),
+        _ => {}
     });
     on!(on_detail_retry, |ui, shared, tab| load_detail_list(&ui, shared, tab));
     on!(on_version_install, |ui, shared, tag| on_version_install(&ui, shared, tag.to_string()));
@@ -2286,28 +2287,28 @@ struct Listing<T> {
     failed: bool,
 }
 
-/// Loads the Issues (`tab` 1) or Versions (3) page of the detail view's addon on a thread; an
+/// Loads the Issues (`tab` 2) or Versions (4) page of the detail view's addon on a thread; an
 /// answer for another addon is dropped.
 fn load_detail_list(ui: &AppWindow, shared: &Shared, tab: i32) {
     let job = {
         let mut core = lock(shared);
         let Some(slug) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).map(|a| a.id.clone()) else { return };
         match tab {
-            1 => core.issues = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
-            3 => core.versions = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
+            2 => core.issues = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
+            4 => core.versions = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
             _ => return,
         }
         (slug, core.api_url(), core.client())
     };
     refresh(ui, shared);
     let (slug, api, client) = job;
-    let path = if tab == 1 { "issues" } else { "versions" };
+    let path = if tab == 2 { "issues" } else { "versions" };
     let (weak, shared) = (ui.as_weak(), shared.clone());
     std::thread::spawn(move || {
         let answer = client.get_text_quick(&format!("{api}/v1/addons/{slug}/{path}")).ok();
         {
             let mut core = lock(&shared);
-            if tab == 1 {
+            if tab == 2 {
                 if let Some(l) = core.issues.as_mut().filter(|l| l.slug == slug) {
                     l.rows = answer.as_deref().and_then(controller::issue_lines);
                     l.failed = l.rows.is_none();
@@ -2593,7 +2594,7 @@ mod layout_tests {
         use slint::ComponentHandle;
 
         slint::slint! {
-            import { DetailView, AddonDetail } from "ui/components.slint";
+            import { DetailView, AddonDetail, Shot } from "ui/components.slint";
             export component DetailProbe inherits Window {
                 in property <AddonDetail> detail;
                 width: 1100px;
@@ -2606,7 +2607,8 @@ mod layout_tests {
         fn the_detail_actions_are_icon_buttons() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = DetailProbe::new().unwrap();
-            let mut detail = AddonDetail { on_website: true, issues_ready: true, comments_on: true, bug_label: "Report a bug".into(), ..Default::default() };
+            let shots = slint::ModelRc::new(slint::VecModel::from(vec![Shot::default()]));
+            let mut detail = AddonDetail { on_website: true, issues_ready: true, comments_on: true, bug_label: "Report a bug".into(), shots, ..Default::default() };
             detail.row.name = "Lucky".into();
             detail.row.can_open = true;
             detail.row.can_remove = true;
@@ -2624,10 +2626,15 @@ mod layout_tests {
             }
             let role = |label: &str, role| ElementHandle::find_by_accessible_label(&ui, label).any(|e| e.accessible_role() == Some(role));
             assert!(!role("Comments", i_slint_backend_testing::AccessibleRole::Button), "Comments is a tab now, not also a button");
-            for tab in ["Overview", "Issues", "Comments", "Versions"] {
-                assert!(role(tab, i_slint_backend_testing::AccessibleRole::Tab), "{tab} tab");
-            }
-        }
+            let tab_x = |label: &str| {
+                ElementHandle::find_by_accessible_label(&ui, label)
+                    .find(|e| e.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::Tab))
+                    .unwrap_or_else(|| panic!("{label} tab"))
+                    .absolute_position()
+                    .x
+            };
+            let order: Vec<f32> = ["Overview", "Screenshots", "Issues", "Comments", "Versions"].iter().map(|t| tab_x(t)).collect();
+            assert!(order.windows(2).all(|w| w[0] < w[1]), "tabs in the website's order: {order:?}");        }
     }
 
     mod settings {

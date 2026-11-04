@@ -400,7 +400,7 @@ export component AppWindow inherits Window {
     callback row-details(string);
     callback detail-website();
     callback detail-link(string);
-    // The detail view's sub page: 0 Overview, 1 Issues, 2 Comments, 3 Versions.
+    // The detail view's sub page: 0 Overview, 1 Screenshots, 2 Issues, 3 Comments, 4 Versions.
     in-out property <int> detail-tab;
     callback detail-tab-changed(int);
     // A list page that failed, asked again.
@@ -699,7 +699,7 @@ export component AppWindow inherits Window {
 
                 if root.showing-detail : DetailView {
                     // The Overview fills the page; another tab's list does under the header.
-                    vertical-stretch: root.detail-tab == 0 ? 1 : 0;
+                    vertical-stretch: root.detail-tab <= 1 ? 1 : 0;
                     detail: root.detail;
                     tab <=> root.detail-tab;
                     tab-changed(tab) => { root.detail-tab-changed(tab); }
@@ -724,7 +724,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if root.showing-detail && root.detail-tab == 1 : IssuesView {
+                if root.showing-detail && root.detail-tab == 2 : IssuesView {
                     vertical-stretch: 1;
                     rows: root.issues-rows;
                     open-count: root.issues-open;
@@ -733,10 +733,10 @@ export component AppWindow inherits Window {
                     links-enabled: !root.game-mode;
                     open(number) => { root.detail-link(number == 0 ? "issues" : "issues/" + number); }
                     report => { root.detail-link("bug"); }
-                    retry => { root.detail-retry(1); }
+                    retry => { root.detail-retry(2); }
                 }
 
-                if root.showing-detail && root.detail-tab == 2 : CommentsView {
+                if root.showing-detail && root.detail-tab == 3 : CommentsView {
                     vertical-stretch: 1;
                     embedded: true;
                     name: root.detail.row.name;
@@ -752,13 +752,13 @@ export component AppWindow inherits Window {
                     retry => { root.comments-retry(); }
                 }
 
-                if root.showing-detail && root.detail-tab == 3 : VersionsView {
+                if root.showing-detail && root.detail-tab == 4 : VersionsView {
                     vertical-stretch: 1;
                     rows: root.versions-rows;
                     loading: root.versions-loading;
                     failed: root.versions-failed;
                     busy: root.detail.row.busy;
-                    retry => { root.detail-retry(3); }
+                    retry => { root.detail-retry(4); }
                     install(tag) => { root.version-install(tag); }
                 }
 

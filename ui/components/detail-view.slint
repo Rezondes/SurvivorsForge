@@ -107,8 +107,8 @@ export component DetailView inherits VerticalLayout {
     callback website();
     // A page of the addon on the website or GitHub: "bug", "issues", "abuse".
     callback link(string);
-    // The sub page, as on the website: 0 Overview, 1 Issues, 2 Comments, 3 Versions. Only the
-    // Overview is drawn here; the app places the other pages under the view.
+    // The sub page, as on the website: 0 Overview, 1 Screenshots, 2 Issues, 3 Comments, 4 Versions.
+    // Overview and Screenshots are drawn here; the app places the other pages under the view.
     in-out property <int> tab;
     callback tab-changed(int);
     // The browser cannot open here (Game Mode): the website buttons are greyed out.
@@ -286,20 +286,25 @@ export component DetailView inherits VerticalLayout {
             active: root.tab == 0;
             clicked => { root.open-tab(0); }
         }
-        if root.detail.issues-ready : TabButton {
-            text: "Issues";
+        if root.detail.shots.length > 0 : TabButton {
+            text: "Screenshots";
             active: root.tab == 1;
             clicked => { root.open-tab(1); }
         }
-        if root.detail.comments-on : TabButton {
-            text: "Comments";
+        if root.detail.issues-ready : TabButton {
+            text: "Issues";
             active: root.tab == 2;
             clicked => { root.open-tab(2); }
         }
-        TabButton {
-            text: "Versions";
+        if root.detail.comments-on : TabButton {
+            text: "Comments";
             active: root.tab == 3;
             clicked => { root.open-tab(3); }
+        }
+        TabButton {
+            text: "Versions";
+            active: root.tab == 4;
+            clicked => { root.open-tab(4); }
         }
     }
 
@@ -310,17 +315,10 @@ export component DetailView inherits VerticalLayout {
         }
     }
 
-    if root.tab == 0 : ScrollPanel {
+    // The Screenshots tab: a grid like the website's, as many columns of at least 240px as fit.
+    if root.tab == 1 : ScrollPanel {
         vertical-stretch: 1;
-        spacing: 18px;
-        // Screenshots first, then the description, as on the website.
-        if root.detail.shots.length > 0 : Text {
-            text: "Screenshots";
-            font-size: Theme.body;
-            color: Theme.gold;
-        }
-        // A grid like the website's: as many columns of at least 240px as fit, wrapping.
-        if root.detail.shots.length > 0 : Rectangle {
+        Rectangle {
             property <length> gap: 12px;
             property <int> columns: max(1, floor((self.width + self.gap) / (240px + self.gap)));
             property <length> cell: (self.width - (self.columns - 1) * self.gap) / self.columns;
@@ -346,6 +344,11 @@ export component DetailView inherits VerticalLayout {
                 }
             }
         }
+    }
+
+    if root.tab == 0 : ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 18px;
         VerticalLayout {
             spacing: 10px;
             Text {
