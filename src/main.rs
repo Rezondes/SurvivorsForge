@@ -23,7 +23,12 @@ use survivorsforge::telemetry::{self, ApiSender};
 use survivorsforge::{archive, unique_name, Error, APP_REPO, APP_VERSION};
 use slint_toast::{Kind, Toasts};
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 slint::include_modules!();
+
+const USE_WINDOWS_GAME: bool = cfg!(any(windows, target_os = "macos"));
 
 struct Core {
     data_dir: PathBuf,
@@ -55,7 +60,7 @@ struct Core {
     /// Browse addons picked for an addon pack.
     picked: std::collections::BTreeSet<String>,
     pack_busy: bool,
-    /// The game started from here still runs: the launch button waits for it to close.
+    /// The game is starting or running: the launch button waits for it to close.
     game_running: bool,
     /// What the game's server has that the game folder lacks; `None` when up to date or unknown.
     game_plan: Option<game_update::Plan>,
@@ -634,9 +639,9 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     }
     ui.set_update_count(controller::update_all_ids(&core.statuses).len() as i32);
     ui.set_checking(core.checking);
-    let game_missing = match config::game_executable(core.addons_dir(), cfg!(windows)) {
+    let game_missing = match config::game_executable(core.addons_dir(), USE_WINDOWS_GAME) {
         Some(_) => "",
-        None if cfg!(windows) => "AzerothSurvivors.exe is not next to the benilla-config folder.",
+        None if USE_WINDOWS_GAME => "AzerothSurvivors.exe is not next to the benilla-config folder.",
         None => "No Linux build of the game next to benilla-config. Start a Windows build through Steam.",
     };
     ui.set_game_missing(game_missing.into());
@@ -1014,37 +1019,56 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>,
     });
 }
 
-/// Starts the game in its own folder, once: until the started game closes the button stays off.
-/// A thread waits for the game's process, so the launcher learns at once when it ends. The game
-/// keeps running when the launcher closes.
+/// Keep launch and update mutually exclusive while the worker starts or waits for the game.
 fn on_launch_game(ui: &AppWindow, shared: &Shared) {
-    {
+    let (addons, data_dir) = {
         let mut core = lock(shared);
-        if core.game_running {
+        if core.game_running || core.game_updating {
             return;
         }
-        match config::game_executable(core.addons_dir(), cfg!(windows)) {
-            Some(exe) => match std::process::Command::new(&exe).current_dir(exe.parent().unwrap_or(Path::new("."))).spawn() {
-                Ok(mut child) => {
-                    core.game_running = true;
-                    core.notify("Azeroth Survivors is running.".into(), Kind::Info);
-                    let (weak, shared) = (ui.as_weak(), shared.clone());
-                    std::thread::spawn(move || {
-                        let _ = child.wait();
-                        {
-                            let mut core = lock(&shared);
-                            core.game_running = false;
-                            core.notify("Azeroth Survivors was closed.".into(), Kind::Info);
-                        }
-                        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
-                    });
-                }
-                Err(e) => core.notify(format!("Could not start the game: {e}"), Kind::Error),
-            },
-            None => core.notify("The game was not found next to the AddOns folder.".into(), Kind::Error),
-        }
-    }
+        core.game_running = true;
+        (core.addons_dir().to_path_buf(), core.data_dir.clone())
+    };
     refresh(ui, shared);
+
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let started = config::game_executable(&addons, USE_WINDOWS_GAME)
+            .ok_or_else(|| "The game was not found next to the AddOns folder.".to_string())
+            .and_then(|exe| start_game(&exe, &data_dir).map_err(|e| format!("Could not start the game: {e}")));
+        let (message, kind) = match started {
+            Ok(mut child) => {
+                lock(&shared).notify("Azeroth Survivors is running.".into(), Kind::Info);
+                let repaint = shared.clone();
+                let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &repaint));
+                match child.wait() {
+                    Ok(status) if cfg!(target_os = "macos") && !status.success() => {
+                        (format!("Azeroth Survivors exited with {status}."), Kind::Info)
+                    }
+                    Err(e) if cfg!(target_os = "macos") => (format!("Could not wait for the game: {e}"), Kind::Error),
+                    _ => ("Azeroth Survivors was closed.".into(), Kind::Info),
+                }
+            }
+            Err(message) => (message, Kind::Error),
+        };
+        {
+            let mut core = lock(&shared);
+            core.game_running = false;
+            core.notify(message, kind);
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+    });
+}
+
+fn start_game(exe: &Path, _data_dir: &Path) -> std::io::Result<std::process::Child> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::start_game(exe, _data_dir)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::process::Command::new(exe).current_dir(exe.parent().unwrap_or(Path::new("."))).spawn()
+    }
 }
 
 /// Applies `change` and redraws the window: at once when `now`, else at most ten times a second.
@@ -1071,8 +1095,8 @@ fn game_dir(addons_dir: &Path) -> Option<PathBuf> {
 /// The game's exe in `dir` as last hashed (again only once it changed), and the build whose index
 /// fits it. Without an exe, the platform's build: its data patches are the same.
 fn look_at_game(dir: &Path, seen: Option<&ExeSeen>) -> (Option<ExeSeen>, game_update::Build) {
-    let native = if cfg!(windows) { game_update::Build::Windows } else { game_update::Build::Linux };
-    match game_update::find_exe(dir, !cfg!(windows)) {
+    let native = if USE_WINDOWS_GAME { game_update::Build::Windows } else { game_update::Build::Linux };
+    match game_update::find_exe(dir, !USE_WINDOWS_GAME) {
         Some((path, build)) => (game_update::look_at_exe(&path, seen), build),
         None => (None, native),
     }
@@ -1097,25 +1121,34 @@ fn on_update_game(ui: &AppWindow, shared: &Shared) {
         let Some(ui) = weak.upgrade() else { return };
         {
             let mut core = lock(&shared);
+            if core.game_running || core.game_updating {
+                return;
+            }
             core.game_updating = true;
             core.set_status("Updating the game...".into());
         }
         refresh(&ui, &shared);
         run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
-            let (client, dir, seen) = {
+            let (client, addons, seen) = {
                 let core = lock(shared);
-                (core.client(), game_dir(core.addons_dir()), core.game_exe.clone())
+                (core.client(), core.addons_dir().to_path_buf(), core.game_exe.clone())
             };
             let result = (|| {
-                let dir = dir.ok_or_else(|| Error::Io("The game's folder with its Data folder was not found".into()))?;
+                let dir = game_dir(&addons).ok_or_else(|| Error::Io("The game's folder with its Data folder was not found".into()))?;
+                #[cfg(target_os = "macos")]
+                macos::require_game_closed()?;
                 let server = WebServer(client);
                 // Asked again right before: the server keeps only the newest parts.
                 let (exe, build) = look_at_game(&dir, seen.as_ref());
                 let plan = game_update::check(&server, &dir, build, exe.as_ref())?;
-                game_update::update(&server, &dir, &plan, &mut |step| {
+                let mut progress = |step| {
                     let now = !matches!(step, game_update::Step::Downloading { .. });
                     show_progress(shared, now, |core| core.game_step = Some(game_update::step_label(&step)));
-                })?;
+                };
+                #[cfg(target_os = "macos")]
+                game_update::update_guarded(&server, &dir, &plan, &mut progress, &mut || macos::require_game_closed().map_err(Error::from))?;
+                #[cfg(not(target_os = "macos"))]
+                game_update::update(&server, &dir, &plan, &mut progress)?;
                 let (exe, _) = look_at_game(&dir, None);
                 Ok::<_, Error>((plan, exe))
             })();

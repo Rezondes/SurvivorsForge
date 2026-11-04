@@ -6,7 +6,7 @@ SurvivorsForge has these parts, all in this repository:
 
 | Part | What | Where |
 |---|---|---|
-| Launcher | Desktop app for Windows, Linux and Steam Deck: installs, updates and removes addons in the game's `AddOns` folder, installs dependencies with them and starts the game | `src/`, `ui/`, download from the [releases](https://github.com/Rezondes/SurvivorsForge/releases/latest) |
+| Launcher | Desktop app for Windows, Linux, Steam Deck and macOS: installs, updates and removes addons in the game's `AddOns` folder, installs dependencies with them and starts the game | `src/`, `ui/`, download from the [releases](https://github.com/Rezondes/SurvivorsForge/releases/latest) |
 | Website | Browse addons, publish and edit them as a creator, review as an admin, build addon packs for the browser version, public statistics | `crates/forge-web`, <https://forge.rezondes.net> |
 | API and worker | Serves the launcher and the website, syncs releases from GitHub, scans them, checks that scanned files stay unchanged; a public part for other launchers | `crates/forge-api`, <https://forgeapi.rezondes.net>, [docs/public-api.md](docs/public-api.md) |
 | Scanner | Static checks of the Lua, XML and zip contents of a release, also as the `forge-scan` command | `crates/forge-scan` |
@@ -45,6 +45,11 @@ The release binary is `target/release/SurvivorsForge.exe` (Linux: `target/releas
 On first start the app asks for the `AddOns` folder, e.g. `<game>\benilla-config\AddOns`. It also searches the home, Games, Downloads and Desktop folders, removable media (Linux) and drive roots (Windows) up to three levels deep and offers what it finds.
 
 A debug build (`cargo run`) talks to a local platform (`http://localhost:3081`, website `:3080`) and does not register the `survivorsforge://` links. Against the official one: `SURVIVORSFORGE_API_URL=https://forgeapi.rezondes.net SURVIVORSFORGE_WEB_URL=https://forge.rezondes.net cargo run`, or set both in *Settings*.
+
+### macOS app
+
+Build a local app for Apple Silicon with bundled Wine. It requires macOS 26.2 or
+later and Rosetta 2. See the [macOS build and setup instructions](packaging/macos/README.md).
 
 ### Linux AppImage
 
@@ -308,10 +313,10 @@ Running work and how it ended show as toasts at the bottom right: *Checking for 
 - **Browse**: the platform's addons with search and category filter. An installed addon has the same card as in Installed, with its status, *Update* and *Remove*. Ticking addons makes an addon pack (*Save as zip*, *Share as link*, *Clear*).
 - **Details** of an addon: description, screenshots, *Open on the website* and *GitHub*. As on the website, *Report a bug* opens the platform's form once the creator turned the Issues tab on and the App may write issues, else *Report on GitHub*; *Issues* and *Report abuse* open the website. *Comments* shows the addon's comments to read; writing and replying need the website's GitHub login. Pages that wait on the platform show placeholders after 150 ms, say after 5 s that the connection is slow and give up after 15 s with *Try again*.
 - **Settings**: AddOns folder, game version, platform API and website address, the two statistics switches, the launcher version. There is no Save button: switches and the game version save at once, a text field on Enter, when it loses focus and when the page or the launcher is left.
-- **Launch game** starts `AzerothSurvivors.exe` next to `benilla-config` (Linux: a native build whose name starts with `AzerothSurvivors`; a Windows build under Proton cannot be started from here).
+- **Launch game** starts `AzerothSurvivors.exe` next to `benilla-config`, using bundled Wine on macOS. On Linux it starts a native build whose name starts with `AzerothSurvivors`. Use Steam to start a Windows build under Proton.
 - **Game updates**: with each update check the launcher compares the game with the indexes the game updates itself by: `https://wow.aethus.pl/exe/latest.json` for the Windows exe (also under Proton), `exe/linux/latest.json` for the native Linux build `AzerothSurvivors`, `exe/data/patches.json` for the files in `Data`. The exe's SHA-256 is read once per size and time. When something differs, the launch button becomes *Update to v…* (*Start without updating* below it): the parts are joined into one gzip, unpacked, checked against size and SHA-256 and only then put in place, with the old file's permissions (`src/game_update.rs`).
 
-The website opens an addon in the launcher with a `survivorsforge://addon/<id>` link. A release build registers the scheme for the current user on every start, so it follows the executable when it moves (Windows: `HKCU\Software\Classes`, Linux: a `.desktop` file and `xdg-mime`). A launcher that already runs gets the link from the new one over `127.0.0.1:47615`, and the new one quits.
+On Windows and Linux, the website opens an addon in the launcher with a `survivorsforge://addon/<id>` link. A release build registers the scheme for the current user on every start, so it follows the executable when it moves (Windows: `HKCU\Software\Classes`, Linux: a `.desktop` file and `xdg-mime`). A launcher that already runs gets the link from the new one over `127.0.0.1:47615`, and the new one quits. On macOS, find and install addons from **Browse** in the app.
 
 ## Data locations
 
@@ -341,17 +346,18 @@ turns off the events (and with them the ID) or only the ID.
 
 ## Releases and self-update
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request: launcher tests and Clippy on Windows and Ubuntu 22.04, the platform tests against Postgres, the compose files and images, and a gitleaks secret scan.
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: launcher tests and Clippy on Windows, Ubuntu 22.04, and macOS, the platform tests against Postgres, the compose files and images, and a gitleaks secret scan.
 
 `.github/workflows/release.yml` runs on tags `v*` and on its *Run workflow* button:
 
 1. The button only: sets the typed version in `Cargo.toml` and `Cargo.lock`, commits `chore(release): bump version to <version>`, tags `v<version>` and pushes both. The jobs below build from that tag in the same run.
 2. Fails if the tag does not match the version in `Cargo.toml` and `Cargo.lock`.
-3. Builds on Windows and on Ubuntu 22.04 in parallel.
-4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once both builds succeeded.
-5. Publishes one GitHub release, only if all of that succeeded, with `compose.yaml`, `env.example` and each launcher under a name that is the same in every release:
+3. Builds the launcher for Windows, Linux and Apple Silicon macOS in parallel.
+4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once the Windows and Linux builds succeed.
+5. Publishes the GitHub release with `compose.yaml`, `env.example`, and the Windows and Linux launchers under fixed names:
    - `SurvivorsForge-windows-x86_64.zip`
    - `SurvivorsForge-linux-x86_64.AppImage`
+6. Attaches `SurvivorsForge-macos-arm64.zip` to the same release when the Mac build succeeds. A failed Mac build or upload can be retried independently.
 
 The self-update looks for these names, and they give stable links (`releases/latest/download/<name>`). Launchers before 0.4.0 looked for versioned names (`SurvivorsForge-<version>-...`), which releases after 0.6.0 no longer carry: they must be downloaded again by hand.
 

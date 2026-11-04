@@ -249,6 +249,18 @@ pub fn install(
     downloaded: &mut dyn FnMut(u64),
     step: &mut dyn FnMut(Step),
 ) -> Result<()> {
+    install_guarded(server, base, file, target, downloaded, step, &mut || Ok(()))
+}
+
+fn install_guarded(
+    server: &dyn GameServer,
+    base: &str,
+    file: &GameFile,
+    target: &Path,
+    downloaded: &mut dyn FnMut(u64),
+    step: &mut dyn FnMut(Step),
+    before_replace: &mut dyn FnMut() -> Result<()>,
+) -> Result<()> {
     let fresh = sibling(target, "survivorsforge-new");
     let result = (|| -> Result<()> {
         let mut packed = Vec::new();
@@ -284,6 +296,7 @@ pub fn install(
         if size != file.size || !actual.eq_ignore_ascii_case(&file.sha256) {
             return Err(Error::HashMismatch { expected: file.sha256.clone(), actual });
         }
+        before_replace()?;
         std::fs::rename(&fresh, target).map_err(|e| Error::Io(format!("{} cannot be replaced (is the game still running?): {e}", target.display())))
     })();
     if result.is_err() {
@@ -304,6 +317,17 @@ fn sibling(target: &Path, suffix: &str) -> PathBuf {
 
 /// Brings the game in `game_dir` to `plan`: the exe, then each data patch. `step` hears where it stands.
 pub fn update(server: &dyn GameServer, game_dir: &Path, plan: &Plan, step: &mut dyn FnMut(Step)) -> Result<()> {
+    update_guarded(server, game_dir, plan, step, &mut || Ok(()))
+}
+
+/// Check before each replacement, including after a download during which the game may have started.
+pub fn update_guarded(
+    server: &dyn GameServer,
+    game_dir: &Path,
+    plan: &Plan,
+    step: &mut dyn FnMut(Step),
+    before_replace: &mut dyn FnMut() -> Result<()>,
+) -> Result<()> {
     let total = plan.download_size();
     let mut done = 0u64;
     // Two borrows of `step` in one call would not do: downloads report through this cell.
@@ -314,12 +338,12 @@ pub fn update(server: &dyn GameServer, game_dir: &Path, plan: &Plan, step: &mut 
     };
     let mut steps = |s: Step| (step.borrow_mut())(s);
     if let Some((exe, build, target)) = &plan.exe {
-        install(server, build.base(), exe, target, &mut downloaded, &mut steps)?;
+        install_guarded(server, build.base(), exe, target, &mut downloaded, &mut steps, before_replace)?;
     }
     let data = game_dir.join("Data");
     std::fs::create_dir_all(&data)?;
     for patch in &plan.patches {
-        install(server, "data/", patch, &data.join(&patch.name), &mut downloaded, &mut steps)?;
+        install_guarded(server, "data/", patch, &data.join(&patch.name), &mut downloaded, &mut steps, before_replace)?;
     }
     Ok(())
 }
@@ -492,6 +516,28 @@ mod tests {
         assert_eq!(step_label(&Step::Downloading { done: 1_048_576, total: 4_194_304 }), ("1 / 4 MB".to_string(), 0.25));
         assert_eq!(server.asked.borrow().as_slice(), ["0.133.0/part-000.bin", "0.133.0/part-001.bin", "data/patch-4/part-000.bin", "data/patch-4/part-001.bin"]);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2, "no leftovers: the exe and Data");
+    }
+
+    #[test]
+    fn update_guard_checks_before_each_file_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("Data");
+        std::fs::create_dir(&data).unwrap();
+        let target = data.join("patch-4.MPQ");
+        std::fs::write(&target, b"old patch").unwrap();
+        let mut server = Fake::default();
+        let exe = publish(&mut server, "", "0.133.0", "", b"new exe");
+        let patch = publish(&mut server, "data/", "patch-4", "patch-4.MPQ", b"new patch");
+        let plan = Plan { version: "0.133.0".into(), notes: String::new(), exe: Some((exe, Build::Windows, dir.path().join(GAME_EXE))), patches: vec![patch] };
+        let mut checks = 0;
+        let result = update_guarded(&server, dir.path(), &plan, &mut |_| {}, &mut || {
+            checks += 1;
+            if checks == 2 { Err(Error::Io("game started".into())) } else { Ok(()) }
+        });
+        assert_eq!(result, Err(Error::Io("game started".into())));
+        assert_eq!(std::fs::read(dir.path().join(GAME_EXE)).unwrap(), b"new exe");
+        assert_eq!(std::fs::read(&target).unwrap(), b"old patch");
+        assert!(!sibling(&target, "survivorsforge-new").exists());
     }
 
     #[test]

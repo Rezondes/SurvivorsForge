@@ -6,13 +6,13 @@ on:
   pull_request:
 
 jobs:
-  # The launcher and the crates it shares, on both platforms it ships for.
+  # The launcher and the crates it shares, on each platform it ships for.
   launcher:
     strategy:
       fail-fast: false
       matrix:
         # ubuntu-22.04: oldest glibc we ship against, same as the release build
-        os: [windows-latest, ubuntu-22.04]
+        os: [windows-latest, ubuntu-22.04, macos-26]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
