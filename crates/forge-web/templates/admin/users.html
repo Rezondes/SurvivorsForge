@@ -11,16 +11,18 @@
     <strong>{{ a.login }}</strong> <span class="badge">{{ a.role }}</span>
     {% if a.by_config %}
       <span class="muted">set in ADMIN_GITHUB_IDS on the server</span>
+    {% else if self.is_me(a.login) %}
+      <span class="muted">You (another admin changes your role)</span>
     {% else if manage_roles %}
     <form method="post" action="/admin/users/{{ a.github_id }}/role" data-confirm="Change the role of {{ a.login }}? User takes away every staff right.">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="">
       <label class="sr-only" for="role-{{ a.github_id }}">Role</label>
       <select id="role-{{ a.github_id }}" name="role">
-        <option value="user">User</option>
+        <option value="user">User (no staff rights)</option>
         <option value="moderator"{% if a.role == "moderator" %} selected{% endif %}>Moderator</option>
         <option value="admin"{% if a.role == "admin" %} selected{% endif %}>Admin</option>
       </select>
-      <label class="sr-only" for="note-{{ a.github_id }}">Note</label><input id="note-{{ a.github_id }}" name="note" placeholder="Note" required>
+      <label class="sr-only" for="note-{{ a.github_id }}">Note</label><input id="note-{{ a.github_id }}" name="note" placeholder="Why (goes into the audit log)" required>
       <button type="submit" aria-label="Change the role of {{ a.login }}">Change role</button>
     </form>
     {% endif %}

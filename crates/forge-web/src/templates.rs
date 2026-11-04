@@ -821,6 +821,13 @@ pub struct AdminUsersPage {
     pub error: Option<String>,
 }
 
+impl AdminUsersPage {
+    /// The row is the viewer: the API refuses to change one's own role, so the page does not offer it.
+    pub fn is_me(&self, login: &str) -> bool {
+        self.user.as_ref().is_some_and(|u| u.login.eq_ignore_ascii_case(login))
+    }
+}
+
 pub struct AdminRow {
     pub github_id: i64,
     pub login: String,

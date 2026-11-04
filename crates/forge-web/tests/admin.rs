@@ -712,3 +712,16 @@ async fn destructive_admin_actions_ask_first() {
     let users = web.get("/admin/users?login=eve").await.body;
     assert!(users.contains("data-confirm=\"Ban eve?") && users.contains("data-confirm=\"Change the role of eve?"), "{users}");
 }
+
+#[tokio::test]
+async fn an_admin_cannot_pick_a_new_role_for_themself() {
+    let mut web = as_admin().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/admin/admins"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "github_id": 99, "login": "root", "role": "admin", "by_config": false, "granted": true }])))
+        .with_priority(1)
+        .mount(&web.api)
+        .await;
+    let page = web.get("/admin/users").await.body;
+    assert!(page.contains("You (another admin changes your role)") && !page.contains("/admin/users/99/role"), "{page}");
+}
