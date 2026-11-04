@@ -532,6 +532,7 @@ pub struct MembersPage {
     pub slug: String,
     pub members: Vec<MemberRow>,
     pub error: Option<String>,
+    pub msg: Option<String>,
     pub perms: Perms,
     /// A refused add form, shown again.
     pub typed_login: String,
@@ -566,6 +567,7 @@ pub struct DepsPage {
     /// (slug, name, required)
     pub deps: Vec<(String, String, bool)>,
     pub error: Option<String>,
+    pub msg: Option<String>,
     pub perms: Perms,
     /// A refused add form, shown again (Required starts ticked).
     pub typed_dep: String,

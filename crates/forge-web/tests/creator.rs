@@ -513,7 +513,8 @@ async fn delete_requires_slug() {
     let wrong = web.post_form("/addons/lucky/delete", &[("confirm", "Lucky")]).await;
     assert_eq!(wrong.status, StatusCode::UNPROCESSABLE_ENTITY);
     let right = web.post_form("/addons/lucky/delete", &[("confirm", "lucky")]).await;
-    assert_eq!((right.status, right.location()), (StatusCode::SEE_OTHER, "/me/addons"));
+    assert_eq!(right.status, StatusCode::SEE_OTHER);
+    assert!(right.location().starts_with("/me/addons?msg=lucky+was+deleted."), "{}", right.location());
 }
 
 #[tokio::test]

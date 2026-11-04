@@ -833,7 +833,8 @@ pub async fn delete_image(State(state): State<AppState>, jar: PrivateCookieJar, 
 }
 
 /// The contributors page; `typed` is a refused add form, shown again.
-async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>, typed: Option<&MemberForm>) -> WebResult<Html<String>> {
+async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, notice: Option<Result<String, String>>, typed: Option<&MemberForm>) -> WebResult<Html<String>> {
+    let (msg, error) = split(notice);
     let list = state.api.get(&format!("/v1/addons/{slug}/members"), Some(token)).await?;
     let members = list
         .as_array()
@@ -849,7 +850,26 @@ async fn members_page(state: &AppState, user: Visitor, token: &str, csrf: String
     let perms = perms(state, slug, token).await?;
     let typed_login = typed.map(|t| t.login.clone()).unwrap_or_default();
     let (typed_description, typed_images) = typed.map_or((false, false), |t| (t.description.is_some(), t.images.is_some()));
-    Ok(render(&MembersPage { user: Some(user), csrf, slug: slug.into(), members, error, perms, typed_login, typed_description, typed_images }))
+    Ok(render(&MembersPage { user: Some(user), csrf, slug: slug.into(), members, error, msg, perms, typed_login, typed_description, typed_images }))
+}
+
+/// A notice as the pages hold it: what was done, or why it was refused.
+fn split(notice: Option<Result<String, String>>) -> (Option<String>, Option<String>) {
+    match notice {
+        Some(Ok(done)) => (Some(done), None),
+        Some(Err(error)) => (None, Some(error)),
+        None => (None, None),
+    }
+}
+
+/// What a settings page says after a change, from the address it was sent back to.
+#[derive(Deserialize, Default)]
+pub struct Done {
+    msg: Option<String>,
+}
+
+fn back_with(path: String, msg: &str) -> Response {
+    Redirect::to(&format!("{path}?{}", crate::issues::query(&[("msg", msg)]))).into_response()
 }
 
 /// The channel verified-addons on the Azeroth Survivors Discord, where creators post their addon.
@@ -903,12 +923,12 @@ pub async fn ask_verification(
     }
 }
 
-pub async fn members(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Response> {
+pub async fn members(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>, Query(done): Query<Done>) -> WebResult<Response> {
     let (user, token) = me(&state, &jar).await?;
     if !perms(&state, &slug, &token).await?.owner {
         return Ok(forbidden());
     }
-    Ok(members_page(&state, user, &token, csrf.0, &slug, None, None).await?.into_response())
+    Ok(members_page(&state, user, &token, csrf.0, &slug, done.msg.map(Ok), None).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -931,8 +951,8 @@ pub async fn add_member(
     let (user, token) = me(&state, &jar).await?;
     let body = json!({ "login": form.login.trim(), "can_edit_description": form.description.is_some(), "can_edit_images": form.images.is_some() });
     match state.api.post(&format!("/v1/addons/{slug}/members"), Some(&token), &body).await {
-        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/members")).into_response()),
-        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(members_page(&state, user, &token, csrf.0, &slug, Some(message), Some(&form)).await?.into_response()),
+        Ok(_) => Ok(back_with(format!("/addons/{slug}/members"), &format!("{} is a contributor now.", form.login.trim()))),
+        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(members_page(&state, user, &token, csrf.0, &slug, Some(Err(message)), Some(&form)).await?.into_response()),
         Err(e) => Err(e.into()),
     }
 }
@@ -946,13 +966,13 @@ pub async fn update_member(
     let (_, token) = me(&state, &jar).await?;
     let body = json!({ "can_edit_description": form.description.is_some(), "can_edit_images": form.images.is_some() });
     state.api.call(Method::PATCH, &format!("/v1/addons/{slug}/members/{github_id}"), Some(&token), Some(&body)).await?;
-    Ok(Redirect::to(&format!("/addons/{slug}/members")).into_response())
+    Ok(back_with(format!("/addons/{slug}/members"), "Rights saved."))
 }
 
 pub async fn remove_member(State(state): State<AppState>, jar: PrivateCookieJar, Path((slug, github_id)): Path<(String, i64)>) -> WebResult<Response> {
     let (_, token) = me(&state, &jar).await?;
     state.api.call(Method::DELETE, &format!("/v1/addons/{slug}/members/{github_id}"), Some(&token), None).await?;
-    Ok(Redirect::to(&format!("/addons/{slug}/members")).into_response())
+    Ok(back_with(format!("/addons/{slug}/members"), "Contributor removed."))
 }
 
 fn current_deps(addon: &Value) -> Vec<(String, String, bool)> {
@@ -960,20 +980,21 @@ fn current_deps(addon: &Value) -> Vec<(String, String, bool)> {
 }
 
 /// The dependencies page; `typed` is a refused add form, shown again.
-async fn deps_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, error: Option<String>, typed: Option<&DepForm>) -> WebResult<Html<String>> {
+async fn deps_page(state: &AppState, user: Visitor, token: &str, csrf: String, slug: &str, notice: Option<Result<String, String>>, typed: Option<&DepForm>) -> WebResult<Html<String>> {
+    let (msg, error) = split(notice);
     let perms = perms(state, slug, token).await?;
     let a = state.api.get(&format!("/v1/addons/{slug}"), None).await?;
     let typed_dep = typed.map(|t| t.dependency.clone()).unwrap_or_default();
     let typed_required = typed.is_none_or(|t| t.required.is_some());
-    Ok(render(&DepsPage { user: Some(user), csrf, slug: slug.into(), deps: current_deps(&a), error, perms, typed_dep, typed_required }))
+    Ok(render(&DepsPage { user: Some(user), csrf, slug: slug.into(), deps: current_deps(&a), error, msg, perms, typed_dep, typed_required }))
 }
 
-pub async fn deps(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>) -> WebResult<Response> {
+pub async fn deps(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Path(slug): Path<String>, Query(done): Query<Done>) -> WebResult<Response> {
     let (user, token) = me(&state, &jar).await?;
     if !perms(&state, &slug, &token).await?.owner {
         return Ok(forbidden());
     }
-    Ok(deps_page(&state, user, &token, csrf.0, &slug, None, None).await?.into_response())
+    Ok(deps_page(&state, user, &token, csrf.0, &slug, done.msg.map(Ok), None).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -1004,8 +1025,8 @@ pub async fn save_deps(
         list.push(json!({ "slug": form.dependency.trim(), "required": form.required.is_some() }));
     }
     match state.api.call(Method::PUT, &format!("/v1/addons/{slug}/dependencies"), Some(&token), Some(&Value::Array(list))).await {
-        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/dependencies")).into_response()),
-        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(deps_page(&state, user, &token, csrf.0, &slug, Some(message), Some(&form)).await?.into_response()),
+        Ok(_) => Ok(back_with(format!("/addons/{slug}/dependencies"), if form.remove.is_some() { "Dependency removed." } else { "Dependency saved." })),
+        Err(ApiError::Api { message, status, .. }) if status != 403 => Ok(deps_page(&state, user, &token, csrf.0, &slug, Some(Err(message)), Some(&form)).await?.into_response()),
         Err(e) => Err(e.into()),
     }
 }
@@ -1087,5 +1108,5 @@ pub async fn delete_addon(
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, render(&page)).into_response());
     }
     state.api.call(Method::DELETE, &format!("/v1/addons/{slug}"), Some(&token), None).await?;
-    Ok(Redirect::to("/me/addons").into_response())
+    Ok(back_with("/me/addons".into(), &format!("{slug} was deleted.")))
 }

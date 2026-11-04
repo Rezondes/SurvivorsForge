@@ -20,7 +20,7 @@
 <section class="panel">
   <h2>Not verified yet</h2>
   <p>The admins did not verify {{ tag }}:</p>
-  <blockquote>{{ note }}</blockquote>
+  {% if note != "" %}<blockquote>{{ note }}</blockquote>{% else %}<p>They left no note; ask in #verified-addons.</p>{% endif %}
   <p>Fix what they asked for, then ask again.</p>
 </section>
 {% endif %}
