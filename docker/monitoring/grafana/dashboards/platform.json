@@ -1,0 +1,530 @@
+{
+  "uid": "forge-platform",
+  "title": "Platform",
+  "tags": [
+    "survivorsforge"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Scans per day by result",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', finished_at) AS time, result AS metric, count(*) AS value FROM scans WHERE $__timeFilter(finished_at) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Trust of the newest versions",
+      "type": "piechart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT t.trust AS metric, count(*) AS value FROM version_trust t JOIN versions v ON v.id = t.version_id JOIN addons a ON a.id = v.addon_id WHERE a.deleted_at IS NULL AND v.id = (SELECT id FROM versions WHERE addon_id = a.id ORDER BY published_at DESC LIMIT 1) GROUP BY 1",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        }
+      },
+      "description": "The trust level of each listed addon's newest version: how much of the catalog is flagged or blocked. Ignores the time range."
+    },
+    {
+      "id": 3,
+      "title": "Scan duration",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', finished_at) AS time, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - started_at)) AS \"median\", max(extract(epoch FROM finished_at - started_at)) AS \"slowest\" FROM scans WHERE $__timeFilter(finished_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Top scanner rules",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT f.rule AS \"Rule\", f.severity AS \"Severity\", count(*) AS \"Findings\", count(DISTINCT s.version_id) AS \"Versions\" FROM findings f JOIN scans s ON s.id = f.scan_id WHERE $__timeFilter(s.finished_at) GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 30",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "Rules that fired most in the time range. A rule that fires on many versions may be too strict."
+    },
+    {
+      "id": 5,
+      "title": "Time to verification",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('week', w.created_at) AS time, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM w.created_at - v.published_at) / 3600) AS \"median hours\", count(*) AS \"verified\" FROM verifications w JOIN versions v ON v.id = w.version_id WHERE $__timeFilter(w.created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Per week: versions an admin verified, and the median hours from the release to the verification."
+    },
+    {
+      "id": 6,
+      "title": "Open reports",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 4,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM reports WHERE status = 'open'",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 7,
+      "title": "Open verification requests",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 16,
+        "w": 4,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM verification_requests WHERE status = 'open'",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 8,
+      "title": "Oldest open item",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 4,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT extract(epoch FROM now() - min(created_at)) AS value FROM (SELECT created_at FROM reports WHERE status = 'open' UNION ALL SELECT created_at FROM verification_requests WHERE status = 'open') q",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 86400
+              },
+              {
+                "color": "red",
+                "value": 259200
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Age of the oldest open report or verification request: orange after one day, red after three."
+    },
+    {
+      "id": 9,
+      "title": "Open moderation items",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT 'report' AS \"Kind\", r.target_type || ' ' || r.target_id AS \"Target\", r.reason AS \"Reason\", r.created_at AS \"Since\" FROM reports r WHERE r.status = 'open' UNION ALL SELECT 'verification', a.slug::text, '', q.created_at FROM verification_requests q JOIN addons a ON a.id = q.addon_id WHERE q.status = 'open' ORDER BY 4 LIMIT 50",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 10,
+      "title": "Comments per day",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, count(*) FILTER (WHERE parent_id IS NULL) AS \"comments\", count(*) FILTER (WHERE parent_id IS NOT NULL) AS \"replies\", count(*) FILTER (WHERE deleted_at IS NOT NULL) AS \"deleted\" FROM addon_comments WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Addon comments and replies by the day they were written. Issues live on GitHub and are not counted here."
+    },
+    {
+      "id": 11,
+      "title": "New creators and addons per week",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('week', created_at) AS time, count(*) AS \"addons\", count(*) FILTER (WHERE first) AS \"creators\" FROM (SELECT created_at, owner_id IS NOT NULL AND created_at = min(created_at) OVER (PARTITION BY owner_id) AS first FROM addons) q WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Addons added per week, and owners whose first addon it was. Deleted addons still count."
+    },
+    {
+      "id": 12,
+      "title": "Packs built per day",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', coalesce(built_at, requested_at)) AS time, status AS metric, count(*) AS value FROM pack_files WHERE $__timeFilter(requested_at) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Pack zips by build day and state. A zip whose file was deleted is gone from here too, so older days count low."
+    },
+    {
+      "id": 13,
+      "title": "Most downloaded packs",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT p.id AS \"Pack\", nullif(p.name, '') AS \"Name\", count(DISTINCT pv.version_id) AS \"Addons\", d.downloads AS \"Downloads\" FROM (SELECT target_id, sum(count) AS downloads FROM download_counts WHERE source = 'pack' AND $__timeFilter(day::timestamptz) GROUP BY 1) d JOIN packs p ON p.id = d.target_id LEFT JOIN pack_versions pv ON pv.pack_id = p.id GROUP BY 1, 2, 4 ORDER BY 4 DESC LIMIT 20",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "Packs by downloads in the time range. The link is left out on purpose."
+    }
+  ]
+}
