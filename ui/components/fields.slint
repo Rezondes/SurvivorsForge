@@ -67,6 +67,33 @@ export component Field inherits Rectangle {
 }
 
 // Square tick box in the gold outline style; the tick is a filled square, no glyph needed.
+// The text beside a tick box: a click on it ticks the box too, a bigger target than the box.
+export component TickLabel inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    min-width: label.min-width;
+    preferred-width: label.preferred-width;
+    min-height: Theme.touch ? 44px : 24px;
+
+    label := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        font-size: Theme.body;
+        color: root.enabled ? Theme.text : Theme.text-muted;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 export component PickBox inherits Rectangle {
     in property <bool> checked;
     in property <string> label;

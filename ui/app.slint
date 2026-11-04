@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
-    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox,
+    Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
     IssueLine, IssuesView, VersionLine, VersionsView
 } from "components.slint";
@@ -248,16 +248,17 @@ component SettingsView inherits VerticalLayout {
                         root.save();
                     }
                 }
-                Text {
+                TickLabel {
                     text: "Count my installs in the public statistics";
-                    font-size: Theme.body;
-                    color: Theme.text;
-                    vertical-alignment: center;
+                    clicked => {
+                        root.telemetry = !root.telemetry;
+                        root.save();
+                    }
                 }
             }
             HorizontalLayout {
                 spacing: 10px;
-                padding-left: 34px;
+                padding-left: (Theme.touch ? 44px : 24px) + 10px;
                 PickBox {
                     label: "Send an anonymous installation ID";
                     enabled: root.telemetry;
@@ -267,12 +268,21 @@ component SettingsView inherits VerticalLayout {
                         root.save();
                     }
                 }
-                Text {
+                TickLabel {
                     text: "Send an anonymous installation ID";
-                    font-size: Theme.body;
-                    color: root.telemetry ? Theme.text : Theme.text-muted;
-                    vertical-alignment: center;
+                    enabled: root.telemetry;
+                    clicked => {
+                        root.send-install-id = !root.send-install-id;
+                        root.save();
+                    }
                 }
+            }
+            // What the two boxes send, in the words of telemetry.rs and /stats.
+            Text {
+                text: "After an install, update or rollback of a verified addon: which addon and version, whether it worked (a fixed code if not), the launcher version and the operating system. No name, no IP address stored, no file contents. The installation ID is a random number that counts active launchers; the platform forgets it after 90 days.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
             }
         }
     }
@@ -290,15 +300,16 @@ component SettingsView inherits VerticalLayout {
                         root.save();
                     }
                 }
-                Text {
+                TickLabel {
                     text: "Update all addons automatically";
-                    font-size: Theme.body;
-                    color: Theme.text;
-                    vertical-alignment: center;
+                    clicked => {
+                        root.auto-update = !root.auto-update;
+                        root.save();
+                    }
                 }
             }
             Text {
-                text: "Only versions the platform checked and found nothing in. Flagged ones wait for you. Single addons can be switched on in their details.";
+                text: "Only versions that passed the platform's safety check. Flagged versions wait for you. You can switch this on for single addons in their details.";
                 font-size: Theme.meta;
                 color: Theme.text-muted;
                 wrap: word-wrap;
