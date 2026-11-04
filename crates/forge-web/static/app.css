@@ -115,6 +115,9 @@ h1::after { background: linear-gradient(90deg, var(--outline), transparent); }
 h2 { font-size: var(--heading); color: var(--gold); margin: 20px 0 8px; }
 h3 { font-size: 17px; color: var(--gold); }
 
+/* `hidden` wins over the display of buttons and layouts below. */
+[hidden] { display: none !important; }
+
 /* Buttons: a plain button is the screen's primary action (deep red, gold rim); .secondary is the
    outlined gold one; .danger is outlined with red lettering */
 .button, button {

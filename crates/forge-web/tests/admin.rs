@@ -674,3 +674,25 @@ async fn a_verification_request_that_is_no_link_shows_as_text() {
     let page = web.get("/admin/verification-requests").await;
     assert!(page.body.contains("javascript:alert(1) see my thread") && !page.body.contains(r#"href="javascript"#), "{}", page.body);
 }
+
+/// Forms with several actions: Enter in the note field must not send the first one, so the
+/// first submit button is a disabled one (implicit submission then does nothing).
+fn enter_sends_nothing(body: &str) {
+    for form in body.split("<form").skip(1).map(|f| f.split("</form>").next().unwrap_or_default()) {
+        let buttons: Vec<&str> = form.split("<button").skip(1).filter(|b| b.contains("type=\"submit\"")).collect();
+        if buttons.len() > 1 {
+            assert!(buttons[0].contains("disabled"), "first submit button must be disabled: <form{form}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn enter_in_a_note_field_never_picks_an_action() {
+    let mut web = as_admin().await;
+    grouped_queue(&web).await;
+    for page in ["/admin/review", "/admin/review/lucky", "/admin/reports"] {
+        let page = web.get(page).await;
+        assert_eq!(page.status, StatusCode::OK);
+        enter_sends_nothing(&page.body);
+    }
+}

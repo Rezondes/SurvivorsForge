@@ -1,5 +1,7 @@
 <form method="post" class="admin-actions" action="/admin/review/{{ bulk_slug }}/skip">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  {# First, disabled: Enter in the note sends nothing; the admin picks the action. #}
+  <button type="submit" hidden disabled aria-hidden="true"></button>
   <label for="bulk-{{ bulk_slug }}">Note for all its versions (needed to verify flagged ones; the reason to block)</label>
   <input id="bulk-{{ bulk_slug }}" name="note">
   <button type="submit" formaction="/admin/review/{{ bulk_slug }}/verify">Verify all</button>
