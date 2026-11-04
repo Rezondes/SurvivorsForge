@@ -109,6 +109,21 @@ async fn periodic_jobs_are_scheduled_once(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn prune_deletes_finished_jobs_after_30_days(pool: PgPool) {
+    let now = Utc::now();
+    let old = now - Duration::days(31);
+    for kind in ["old_done", "old_failed", "new_done", "open"] {
+        enqueue(&pool, kind, json!({}), old, None).await.unwrap();
+    }
+    sqlx::query("UPDATE jobs SET done_at = $1 WHERE kind = 'old_done'").bind(old).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE jobs SET failed_at = $1 WHERE kind = 'old_failed'").bind(old).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE jobs SET done_at = $1 WHERE kind = 'new_done'").bind(now - Duration::days(29)).execute(&pool).await.unwrap();
+    jobs::prune(&pool, now).await.unwrap();
+    let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM jobs ORDER BY kind").fetch_all(&pool).await.unwrap();
+    assert_eq!(kinds, ["new_done", "open"], "an open job stays however old it is");
+}
+
+#[sqlx::test]
 async fn shutdown_waits_for_running_job(pool: PgPool) {
     enqueue(&pool, "slow", json!({}), Utc::now(), None).await.unwrap();
     let started = CancellationToken::new();

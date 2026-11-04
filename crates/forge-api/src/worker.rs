@@ -40,6 +40,7 @@ pub fn platform(state: AppState) -> Worker {
     let telemetry_state = state.clone();
     let downloads_state = state.clone();
     let visits_state = state.clone();
+    let jobs_state = state.clone();
     let prune_state = state;
     Worker::default()
         .handle(sync::SYNC_ADDON, move |job| {
@@ -89,6 +90,10 @@ pub fn platform(state: AppState) -> Worker {
             let state = visits_state.clone();
             async move { crate::routes::visits::prune(&state.pool, (state.clock)()).await }
         })
+        .handle(crate::jobs::PRUNE, move |_| {
+            let state = jobs_state.clone();
+            async move { crate::jobs::prune(&state.pool, (state.clock)()).await }
+        })
         .every(sync::POLL_RELEASES, POLL_RELEASES_EVERY)
         .every(crate::pack_job::PRUNE, Duration::hours(1))
         .every(crate::source_check::CHECK_SOURCES, CHECK_SOURCES_EVERY)
@@ -97,6 +102,7 @@ pub fn platform(state: AppState) -> Worker {
         .every(crate::routes::telemetry::PRUNE, Duration::days(1))
         .every(crate::downloads::PRUNE, Duration::days(1))
         .every(crate::routes::visits::PRUNE, Duration::days(1))
+        .every(crate::jobs::PRUNE, Duration::days(1))
 }
 
 impl Worker {

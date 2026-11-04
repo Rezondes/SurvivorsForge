@@ -8,6 +8,10 @@ use sqlx::PgPool;
 
 /// How long a claimed job stays locked. A worker that dies mid-job loses it after this.
 pub const LOCK_FOR: Duration = Duration::minutes(10);
+/// Days a done or failed job stays for the statistics.
+pub const KEEP_DAYS: i64 = 30;
+/// The daily job that deletes finished jobs older than `KEEP_DAYS`.
+pub const PRUNE: &str = "prune_jobs";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Job {
@@ -93,6 +97,17 @@ pub async fn complete(pool: &PgPool, id: i64, now: DateTime<Utc>) -> sqlx::Resul
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Deletes jobs that were done or failed more than `KEEP_DAYS` ago. Open jobs stay. A periodic
+/// job's slot is long past by then, so its key cannot run again.
+pub async fn prune(pool: &PgPool, now: DateTime<Utc>) -> Result<(), String> {
+    sqlx::query("DELETE FROM jobs WHERE coalesce(done_at, failed_at) < $1")
+        .bind(now - Duration::days(KEEP_DAYS))
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// 30 s doubled per attempt, at most an hour.
