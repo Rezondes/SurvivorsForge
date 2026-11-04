@@ -341,9 +341,23 @@ async fn audit_filters() {
         r#"<a href="/admin/users?login=eve">eve</a>"#,
         r#"<a href="/admin/addons/lucky">Lucky Odds v1.2.0</a>"#,
         r#"<a href="/admin/audit/12">Details</a>"#,
+        r#"<td>Ban a user</td>"#,
+        r#"<option value="ban_user" selected>Ban a user</option>"#,
+        r#"<option value="version">Version</option>"#,
+        "Entries 1 to 2 of 2",
     ] {
         assert!(page.body.contains(text), "missing {text}: {}", page.body);
     }
+}
+
+#[tokio::test]
+async fn moderators_cannot_lift_a_staff_ban() {
+    let mut web = TestWeb::new().await;
+    web.login_as("tok", me("mod", "moderator")).await;
+    get_json(&web, "/v1/admin/admins", json!([])).await;
+    get_json(&web, "/v1/admin/users/bob", json!({ "github_id": 6, "login": "bob", "role": "moderator", "banned": true, "ban_reason": "x", "addons": 0 })).await;
+    let page = web.get("/admin/users?login=bob").await.body;
+    assert!(!page.contains("Lift the ban") && page.contains("Only an admin lifts the ban of a moderator or admin."), "{page}");
 }
 
 #[tokio::test]

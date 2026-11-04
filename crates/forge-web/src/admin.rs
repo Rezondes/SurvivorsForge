@@ -669,6 +669,8 @@ pub async fn audit(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         .map(audit_row)
         .collect();
     let total = data["total"].as_i64().unwrap_or(0);
+    let shown = data["entries"].as_array().map_or(0, Vec::len) as i64;
+    let position = (shown > 0).then(|| format!("Entries {} to {} of {total}", (page - 1) * 50 + 1, (page - 1) * 50 + shown));
     let link = |p: i64| {
         let mut q: Vec<(&str, String)> = filters.iter().filter(|(_, v)| !v.is_empty()).cloned().collect();
         q.push(("page", p.to_string()));
@@ -684,7 +686,52 @@ pub async fn audit(State(state): State<AppState>, jar: PrivateCookieJar, Extensi
         entries,
         prev: (page > 1).then(|| link(page - 1)),
         next: (page * 50 < total).then(|| link(page + 1)),
+        position,
     }))
+}
+
+/// The actions of the audit log: (code, what it did in words).
+pub const AUDIT_ACTIONS: [(&str, &str); 23] = [
+    ("verify", "Verify a version"),
+    ("unverify", "Take back a verification"),
+    ("skip_version", "Skip a version"),
+    ("block_version", "Block a version"),
+    ("unblock_version", "Unblock a version"),
+    ("block_addon", "Block an addon"),
+    ("unblock_addon", "Unblock an addon"),
+    ("accept_source", "Accept a changed source"),
+    ("transfer_owner", "Hand over an addon"),
+    ("admin_create_addon", "Add an addon for a creator"),
+    ("resolve_report", "Close a report"),
+    ("approve_verification_request", "Verify on request"),
+    ("reject_verification_request", "Turn down a verification request"),
+    ("delete_comment", "Delete a comment"),
+    ("ban_user", "Ban a user"),
+    ("unban_user", "Lift a ban"),
+    ("user_role", "Change a role"),
+    ("category_create", "Add a category"),
+    ("category_update", "Change a category"),
+    ("category_delete", "Remove a category"),
+    ("game_version_create", "Add a game version"),
+    ("game_version_update", "Change a game version"),
+    ("game_version_delete", "Remove a game version"),
+];
+
+/// The targets of the audit log: (code, label).
+pub const AUDIT_TARGETS: [(&str, &str); 8] = [
+    ("addon", "Addon"),
+    ("version", "Version"),
+    ("user", "User"),
+    ("report", "Report"),
+    ("comment", "Comment"),
+    ("verification_request", "Verification request"),
+    ("category", "Category"),
+    ("game_version", "Game version"),
+];
+
+/// `ban_user` as `Ban a user`; an unknown code as it is.
+fn action_label(code: &str) -> String {
+    AUDIT_ACTIONS.iter().find(|(c, _)| *c == code).map_or_else(|| code.to_string(), |(_, l)| (*l).to_string())
 }
 
 /// One audit entry for the list: its target named, linked to the admin page of the addon or user.
@@ -702,7 +749,8 @@ fn audit_row(e: &Value) -> crate::templates::AuditRow {
         id: e["id"].as_i64().unwrap_or(0),
         when: s(&e["created_at"]).chars().take(16).collect::<String>().replace('T', " "),
         admin: s(&e["admin"]),
-        action: s(&e["action"]),
+        action: action_label(&s(&e["action"])),
+        code: s(&e["action"]),
         target: label,
         target_href: href,
         note: s(&e["note"]),

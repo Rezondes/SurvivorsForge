@@ -9,7 +9,7 @@
   <tbody>
     <tr><th>When</th><td>{{ when }}</td></tr>
     <tr><th>Admin</th><td>{{ entry.admin }}</td></tr>
-    <tr><th>Action</th><td><code>{{ entry.action }}</code></td></tr>
+    <tr><th>Action</th><td><code>{{ entry.code }}</code></td></tr>
     <tr><th>Target</th><td>{{ entry.target }} <span class="muted">({{ target_type }} {{ target_id }})</span></td></tr>
     {% if addon_slug != "" %}<tr><th>Addon</th><td><a href="/admin/addons/{{ addon_slug }}">{{ addon_name }}</a> · <a href="/addons/{{ addon_slug }}">public page</a></td></tr>{% endif %}
     {% if tag != "" %}<tr><th>Version</th><td><a href="/addons/{{ addon_slug }}/versions/{{ tag }}">{{ tag }}</a></td></tr>{% endif %}

@@ -942,7 +942,10 @@ pub struct AuditRow {
     pub id: i64,
     pub when: String,
     pub admin: String,
+    /// What was done, in words.
     pub action: String,
+    /// The action as stored, such as `ban_user`.
+    pub code: String,
     /// What the entry is about, for people: "Lucky Odds v1.2.0", a login, a category.
     pub target: String,
     /// The admin page of the target's addon or user.
@@ -985,6 +988,18 @@ pub struct AdminAuditPage {
     pub entries: Vec<AuditRow>,
     pub prev: Option<String>,
     pub next: Option<String>,
+    /// "Entries 51 to 100 of 230"; `None` without entries.
+    pub position: Option<String>,
+}
+
+impl AdminAuditPage {
+    pub fn actions(&self) -> &'static [(&'static str, &'static str)] {
+        &crate::admin::AUDIT_ACTIONS
+    }
+
+    pub fn targets(&self) -> &'static [(&'static str, &'static str)] {
+        &crate::admin::AUDIT_TARGETS
+    }
 }
 
 /// An addon in the pack picker: its current version.

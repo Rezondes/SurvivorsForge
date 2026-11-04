@@ -40,7 +40,9 @@
 <section class="panel">
   <h2>{{ u.login }}</h2>
   <p>Role: <span class="badge">{{ u.role }}</span> · Owns {{ u.addons }} addon{% if u.addons != 1 %}s{% endif %}{% if u.banned %} · <span class="badge bad">Banned</span> {{ u.ban_reason }}{% endif %}</p>
-  {% if u.banned %}
+  {% if u.banned && u.role != "user" && !manage_roles %}
+  <p class="muted">Only an admin lifts the ban of a moderator or admin.</p>
+  {% else if u.banned %}
   <form method="post" action="/admin/users/{{ u.github_id }}/unban" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="{{ u.login }}">
     <label for="unban-note">Note</label><input id="unban-note" name="note" required>

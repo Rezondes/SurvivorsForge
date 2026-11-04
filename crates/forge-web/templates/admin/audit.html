@@ -5,8 +5,14 @@
 <h1>Audit log</h1>
 <form class="panel filters" method="get" action="/admin/audit">
   <div><label for="f-admin">Admin</label><input id="f-admin" name="admin" value="{{ filter_admin }}"></div>
-  <div><label for="f-action">Action</label><input id="f-action" name="action" value="{{ filter_action }}" placeholder="block_addon"></div>
-  <div><label for="f-type">Target type</label><input id="f-type" name="target_type" value="{{ filter_target_type }}" placeholder="addon"></div>
+  <div><label for="f-action">Action</label><select id="f-action" name="action">
+    <option value="">All actions</option>
+    {% for (code, label) in self.actions() %}<option value="{{ code }}"{% if filter_action == *code %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select></div>
+  <div><label for="f-type">Target type</label><select id="f-type" name="target_type">
+    <option value="">All targets</option>
+    {% for (code, label) in self.targets() %}<option value="{{ code }}"{% if filter_target_type == *code %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select></div>
   <div><label for="f-id">Target id</label><input id="f-id" name="target_id" value="{{ filter_target_id }}"></div>
   <div><button type="submit">Filter</button></div>
 </form>
@@ -21,7 +27,8 @@
 </table>
 </div>
 {% if entries.is_empty() %}<p class="muted">No entries.</p>{% endif %}
-<nav class="pager">
+<nav class="pager" aria-label="Pages">
+  {% if let Some(p) = position %}<span class="muted">{{ p }}</span>{% endif %}
   {% if let Some(p) = prev %}<a href="{{ p }}">Newer</a>{% endif %}
   {% if let Some(n) = next %}<a href="{{ n }}">Older</a>{% endif %}
 </nav>
