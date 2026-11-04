@@ -2439,6 +2439,43 @@ mod layout_tests {
         }
     }
 
+    mod detail {
+        use i_slint_backend_testing::ElementHandle;
+        use slint::ComponentHandle;
+
+        slint::slint! {
+            import { DetailView, AddonDetail } from "ui/components.slint";
+            export component DetailProbe inherits Window {
+                in property <AddonDetail> detail;
+                width: 1100px;
+                height: 900px;
+                DetailView { detail: root.detail; }
+            }
+        }
+
+        #[test]
+        fn the_detail_actions_are_icon_buttons() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = DetailProbe::new().unwrap();
+            let mut detail = AddonDetail { on_website: true, issues_ready: true, comments_on: true, bug_label: "Report a bug".into(), ..Default::default() };
+            detail.row.name = "Lucky".into();
+            detail.row.can_open = true;
+            detail.row.can_remove = true;
+            ui.set_detail(detail);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("< Back to the list").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            for label in ["Open on the website", "GitHub", "Scan locally", "Remove Lucky", "Report a bug", "Issues", "Report abuse"] {
+                let button = find(label).unwrap_or_else(|| panic!("{label} is there"));
+                let size = button.size();
+                assert!((size.width - size.height).abs() < 1.0, "{label} is a square icon button: {size:?}");
+            }
+        }
+    }
+
     mod settings {
         use i_slint_backend_testing::{AccessibleRole, ElementHandle, ElementRoot};
         use slint::platform::{Key, PointerEventButton, WindowEvent};

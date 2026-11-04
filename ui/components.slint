@@ -1164,54 +1164,68 @@ export component DetailView inherits VerticalLayout {
         }
     }
 
+    // Icons named by their tooltips: the addon's own places and this computer first, then, as on
+    // the website, bugs, the discussion and a report to the admins. Writing needs the website's
+    // GitHub login; the launcher has none.
     HorizontalLayout {
         alignment: start;
-        spacing: 12px;
-        if root.detail.on-website : ActionButton {
-            text: "Open on the website";
+        spacing: Theme.gap-tight;
+        if root.detail.on-website : GlyphButton {
+            label: "Open on the website";
+            // A globe.
+            glyph: "M 1.5 8 A 6.5 6.5 0 0 1 14.5 8 A 6.5 6.5 0 0 1 1.5 8 Z M 1.5 8 L 14.5 8 M 8 1.5 C 5 4.5 5 11.5 8 14.5 M 8 1.5 C 11 4.5 11 11.5 8 14.5";
             enabled: root.links-enabled;
             clicked => { root.website(); }
         }
-        if root.detail.row.can-open : ActionButton {
-            text: "GitHub";
+        if root.detail.row.can-open : GlyphButton {
+            label: "GitHub";
+            // Code brackets.
+            glyph: "M 5 4 L 1.5 8 L 5 12 M 11 4 L 14.5 8 L 11 12 M 9.5 2.5 L 6.5 13.5";
             enabled: root.links-enabled;
             clicked => { root.open(); }
         }
-        if root.detail.row.can-remove && !root.detail.row.busy : ActionButton {
-            text: "Scan locally";
+        if root.detail.row.can-remove && !root.detail.row.busy : GlyphButton {
+            label: "Scan locally";
+            // A magnifier.
+            glyph: "M 1.5 6.5 A 5 5 0 0 1 11.5 6.5 A 5 5 0 0 1 1.5 6.5 Z M 10.1 10.1 L 14.5 14.5";
             clicked => { root.scan(); }
         }
         if root.detail.row.can-remove && !root.detail.row.busy : RemoveButton {
             label: "Remove " + root.detail.row.name;
             clicked => { root.remove(); }
         }
-    }
-
-    // As on the website: bugs, the discussion and a report to the admins. Writing needs the
-    // website's GitHub login; the launcher has none.
-    if root.detail.on-website : HorizontalLayout {
-        alignment: start;
-        spacing: 12px;
-        ActionButton {
-            text: root.detail.bug-label;
+        if root.detail.on-website : Rectangle {
+            width: 1px;
+            background: Theme.line;
+        }
+        if root.detail.on-website : GlyphButton {
+            label: root.detail.bug-label;
+            // A bug: body, head line and legs.
+            glyph: "M 4.5 8.5 A 3.5 4.5 0 0 1 11.5 8.5 A 3.5 4.5 0 0 1 4.5 8.5 Z M 8 5 L 8 13 M 6 4.5 L 5 2 M 10 4.5 L 11 2 M 4.5 7 L 1.5 6 M 11.5 7 L 14.5 6 M 4.6 10.5 L 1.5 11.5 M 11.4 10.5 L 14.5 11.5";
             enabled: root.links-enabled;
             clicked => { root.link("bug"); }
         }
-        if root.detail.issues-ready : ActionButton {
-            text: "Issues";
+        if root.detail.on-website && root.detail.issues-ready : GlyphButton {
+            label: "Issues";
+            // A ring with a dot, as GitHub marks an issue.
+            glyph: "M 1.5 8 A 6.5 6.5 0 0 1 14.5 8 A 6.5 6.5 0 0 1 1.5 8 Z M 7 8 A 1 1 0 0 1 9 8 A 1 1 0 0 1 7 8 Z";
             enabled: root.links-enabled;
             clicked => { root.link("issues"); }
         }
-        if root.detail.comments-on : ActionButton {
-            text: "Comments";
+        if root.detail.on-website && root.detail.comments-on : GlyphButton {
+            label: "Comments";
+            // A speech bubble.
+            glyph: "M 2 3 L 14 3 L 14 11 L 7 11 L 4 14 L 4 11 L 2 11 Z";
             clicked => { root.comments(); }
         }
-        ActionButton {
-            text: "Report abuse";
+        if root.detail.on-website : GlyphButton {
+            label: "Report abuse";
+            // A flag.
+            glyph: "M 3.5 15 L 3.5 1.5 M 3.5 2.5 L 13 2.5 L 10.5 6 L 13 9.5 L 3.5 9.5";
             enabled: root.links-enabled;
             clicked => { root.link("abuse"); }
         }
-        if !root.links-enabled : VerticalLayout {
+        if root.detail.on-website && !root.links-enabled : VerticalLayout {
             alignment: center;
             Text {
                 text: "The website opens in Desktop Mode.";
