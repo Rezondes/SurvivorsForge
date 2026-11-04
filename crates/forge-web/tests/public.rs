@@ -995,3 +995,13 @@ async fn one_page_of_addons_still_shows_the_pager() {
     assert!(pager.contains("1–3 of 3 addons") && pager.contains(r#"aria-current="page">1<"#), "{pager}");
     assert!(!pager.contains(r#"rel="prev""#) && !pager.contains(r#"rel="next""#), "{pager}");
 }
+
+#[tokio::test]
+async fn a_risky_version_shows_its_findings_before_a_toned_down_install() {
+    let mut web = with_addon("flagged", "available").await;
+    let page = web.get("/addons/lucky").await.body;
+    let findings = page.find("<details class=\"findings-box\" open>").expect("findings open");
+    let install = page.find("Install anyway with the launcher").expect("no big install button for a flagged version");
+    assert!(findings < install, "read first, then install");
+    assert!(!page.contains("button large\" href=\"survivorsforge://"), "{page}");
+}
