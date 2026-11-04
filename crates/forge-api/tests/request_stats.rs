@@ -36,6 +36,37 @@ async fn counts_by_route_template(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn active_launchers_are_counted_per_hour_platform_and_version(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let with_id = |agent: &str, id: &str| Request::get("/v1/addons").header("user-agent", agent).header("x-survivorsforge-install", id).body(Body::empty()).unwrap();
+    let a = "11111111-2222-3333-4444-555555555555";
+    let b = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    for request in [
+        with_id("SurvivorsForge/0.6.4 (windows)", a),
+        with_id("SurvivorsForge/0.6.4 (windows)", a),
+        with_id("SurvivorsForge/0.6.4 (linux)", b),
+        // Before 0.6.4 the launcher did not name its platform; a strange one is not stored as it is.
+        with_id("SurvivorsForge/0.6.3", "cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee"),
+        with_id("SurvivorsForge/0.6.4 (amiga)", "dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee"),
+        // Without an install ID nobody can be told apart; another client is no launcher.
+        get("/v1/addons", "SurvivorsForge/0.6.4 (windows)"),
+        with_id("curl/8", "eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee"),
+    ] {
+        send(&app.router, request).await;
+    }
+    app.app_state.request_stats.flush(&app.pool).await.unwrap();
+    let active: Vec<(String, String, i64)> =
+        sqlx::query_as("SELECT os, version, count(DISTINCT install_id) FROM launcher_active GROUP BY 1, 2 ORDER BY 1, 2").fetch_all(&app.pool).await.unwrap();
+    assert_eq!(
+        active,
+        [("linux".into(), "0.6.4".into(), 1), ("unknown".into(), "0.6.3".into(), 1), ("unknown".into(), "0.6.4".into(), 1), ("windows".into(), "0.6.4".into(), 1)]
+    );
+    let hours: Vec<DateTime<Utc>> = sqlx::query_scalar("SELECT DISTINCT hour FROM launcher_active").fetch_all(&app.pool).await.unwrap();
+    assert_eq!(hours.len(), 1);
+    assert_eq!(hours[0].timestamp() % 3600, 0, "a whole hour");
+}
+
+#[sqlx::test]
 async fn unknown_paths_are_unmatched(pool: PgPool) {
     let app = TestApp::new(pool);
     send(&app.router, get("/wp-admin/setup.php", "bot")).await;

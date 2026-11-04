@@ -114,6 +114,18 @@ async fn prune_forgets_install_ids(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn prune_forgets_old_active_launchers(pool: PgPool) {
+    let app = setup(pool).await;
+    let now = *app.now.lock().unwrap();
+    for (hour, id) in [(now - Duration::days(91), "old"), (now - Duration::hours(2), "new")] {
+        sqlx::query("INSERT INTO launcher_active (hour, install_id, version, os) VALUES ($1, $2, '0.6.4', 'windows')").bind(hour).bind(id).execute(&app.pool).await.unwrap();
+    }
+    forge_api::routes::telemetry::prune(&app.pool, now).await.unwrap();
+    let left: Vec<String> = sqlx::query_scalar("SELECT install_id FROM launcher_active").fetch_all(&app.pool).await.unwrap();
+    assert_eq!(left, ["new"], "installation IDs go after as many days as in the events");
+}
+
+#[sqlx::test]
 async fn bad_install_header_ignored(pool: PgPool) {
     let app = setup(pool).await;
     let reply = post(&app.router, Some("my-name-is-bob"), json!([event("install")])).await;

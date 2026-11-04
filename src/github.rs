@@ -104,13 +104,19 @@ impl Default for Client {
     }
 }
 
+/// `SurvivorsForge/<version> (<platform>)`: the platform counts the active launchers by both
+/// (`forge-api` request_stats::launcher_build).
+pub fn user_agent() -> String {
+    format!("{}/{} ({})", crate::APP_NAME, crate::APP_VERSION, std::env::consts::OS)
+}
+
 impl Client {
     pub fn new() -> Client {
         let builder = || {
             ureq::AgentBuilder::new()
                 .timeout_connect(Duration::from_secs(10))
                 .timeout_read(Duration::from_secs(60))
-                .user_agent(&format!("{}/{}", crate::APP_NAME, crate::APP_VERSION))
+                .user_agent(&user_agent())
         };
         Client { agent: builder().build(), install_id: None, downloads: builder().redirects(0).build() }
     }
@@ -367,6 +373,11 @@ impl GitHub for WebGitHub {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_version_and_platform_for_the_active_launcher_counts() {
+        assert_eq!(user_agent(), format!("SurvivorsForge/{} ({})", crate::APP_VERSION, std::env::consts::OS));
+    }
 
     /// Talks to github.com: `cargo test -- --ignored web_github_live`.
     #[test]

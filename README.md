@@ -344,6 +344,11 @@ It is sent as `X-SurvivorsForge-Install` with requests to the platform API, neve
 helps to find the requests of one installation when something goes wrong. *Settings, Statistics*
 turns off the events (and with them the ID) or only the ID.
 
+Every request names the launcher version and operating system in its User-Agent
+(`SurvivorsForge/0.6.4 (windows)`). A request with an installation ID marks that launcher active for the
+hour (`launcher_active`, forgotten with the IDs after 90 days); Grafana's *Launcher and downloads* shows
+the active launchers of this hour and of today (Europe/Berlin) by platform and version.
+
 ## Releases and self-update
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request: launcher tests and Clippy on Windows, Ubuntu 22.04, and macOS, the platform tests against Postgres, the compose files and images, and a gitleaks secret scan.

@@ -277,6 +277,98 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 9,
+      "title": "Active launchers this hour",
+      "description": "Launchers that asked the platform something since the start of this hour, by platform and version; it starts at zero every hour. Only launchers that send their installation ID count; versions before 0.6.4 name no platform (unknown).",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT os AS \"Platform\", version AS \"Version\", count(*) AS \"Launchers\" FROM launcher_active WHERE hour = date_trunc('hour', now()) GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": [
+            "Launchers"
+          ],
+          "countRows": false
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Active launchers today",
+      "description": "Launchers active since midnight (Europe/Berlin), by platform and version; it starts at zero every day. A launcher updated during the day counts under both versions.",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT os AS \"Platform\", version AS \"Version\", count(DISTINCT install_id) AS \"Launchers\" FROM launcher_active WHERE hour >= date_trunc('day', now() AT TIME ZONE 'Europe/Berlin') AT TIME ZONE 'Europe/Berlin' GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": [
+            "Launchers"
+          ],
+          "countRows": false
+        }
+      }
     }
   ]
 }

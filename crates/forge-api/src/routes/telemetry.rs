@@ -133,13 +133,15 @@ pub async fn events(State(state): State<AppState>, VisitorIp(ip): VisitorIp, hea
     Ok((StatusCode::ACCEPTED, Json(json!({ "accepted": accepted, "rejected": rejected }))))
 }
 
-/// Forgets install IDs after `KEEP_INSTALL_ID_DAYS` and dedupe rows after two days.
+/// Forgets install IDs after `KEEP_INSTALL_ID_DAYS` (in the events and the active launchers) and
+/// dedupe rows after two days.
 pub async fn prune(pool: &sqlx::PgPool, now: DateTime<Utc>) -> Result<(), String> {
     let run = async {
         sqlx::query("UPDATE telemetry_events SET install_id = NULL WHERE install_id IS NOT NULL AND created_at < $1")
             .bind(now - TimeDelta::days(KEEP_INSTALL_ID_DAYS))
             .execute(pool)
             .await?;
+        sqlx::query("DELETE FROM launcher_active WHERE hour < $1").bind(now - TimeDelta::days(KEEP_INSTALL_ID_DAYS)).execute(pool).await?;
         sqlx::query("DELETE FROM telemetry_seen WHERE day < $1").bind((now - TimeDelta::days(2)).date_naive()).execute(pool).await?;
         Ok::<_, sqlx::Error>(())
     };

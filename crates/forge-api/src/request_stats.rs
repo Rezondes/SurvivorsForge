@@ -1,5 +1,7 @@
 //! Counts of API requests per hour, route, method, status and client. They gather in memory, go to
 //! `api_request_stats` once a minute, and also feed the Prometheus metrics on `METRICS_BIND_ADDR`.
+//! Launchers that send their installation ID are also noted per hour with their version and
+//! platform (`launcher_active`), for the active launchers in Grafana.
 
 use axum::extract::{MatchedPath, Request, State};
 use axum::http::{header, Method};
@@ -8,7 +10,7 @@ use axum::response::Response;
 use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -35,6 +37,22 @@ impl Client {
             Client::Other => "other",
         }
     }
+}
+
+/// The version and platform a launcher names in its User-Agent, `SurvivorsForge/<version> (<os>)`.
+/// Launchers before 0.6.4 name no platform, and anything but the three known ones reads `unknown`;
+/// an odd version is not stored at all, so no client fills the table with labels of its own.
+pub fn launcher_build(user_agent: &str) -> Option<(String, &'static str)> {
+    let rest = user_agent.strip_prefix("SurvivorsForge/")?;
+    let (version, platform) = rest.split_once(' ').map_or((rest, ""), |(v, p)| (v, p.trim()));
+    let version_ok = !version.is_empty() && version.len() <= 32 && version.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-+".contains(&b));
+    let os = match platform.trim_start_matches('(').trim_end_matches(')') {
+        "windows" => "windows",
+        "linux" => "linux",
+        "macos" => "macos",
+        _ => "unknown",
+    };
+    version_ok.then(|| (version.to_string(), os))
 }
 
 /// The launcher sends `SurvivorsForge/<version>`; the website calls from `WEBSITE_IP`.
@@ -64,10 +82,20 @@ struct Bucket {
     max_ms: i64,
 }
 
-/// The counts since the last flush.
+/// A launcher seen in an hour.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct Active {
+    hour: DateTime<Utc>,
+    install_id: String,
+    version: String,
+    os: &'static str,
+}
+
+/// The counts and the active launchers since the last flush.
 #[derive(Default)]
 pub struct RequestStats {
     pending: Mutex<HashMap<Key, Bucket>>,
+    active: Mutex<HashSet<Active>>,
 }
 
 impl RequestStats {
@@ -81,8 +109,21 @@ impl RequestStats {
         bucket.max_ms = bucket.max_ms.max(millis);
     }
 
+    /// Notes a launcher that asked something in the hour of `at`.
+    pub fn record_active(&self, at: DateTime<Utc>, install_id: String, version: String, os: &'static str) {
+        let hour = at.duration_trunc(TimeDelta::hours(1)).unwrap_or(at);
+        self.active.lock().unwrap_or_else(|e| e.into_inner()).insert(Active { hour, install_id, version, os });
+    }
+
     /// Writes the gathered counts and starts over; on an error they are kept for the next try.
     pub async fn flush(&self, pool: &PgPool) -> sqlx::Result<()> {
+        let active = std::mem::take(&mut *self.active.lock().unwrap_or_else(|e| e.into_inner()));
+        if !active.is_empty()
+            && let Err(e) = write_active(pool, &active).await
+        {
+            self.active.lock().unwrap_or_else(|e| e.into_inner()).extend(active);
+            return Err(e);
+        }
         let taken = std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()));
         if taken.is_empty() {
             return Ok(());
@@ -99,6 +140,24 @@ impl RequestStats {
         }
         result
     }
+}
+
+/// One row per launcher and hour; a later request in the hour names the newer version.
+async fn write_active(pool: &PgPool, active: &HashSet<Active>) -> sqlx::Result<()> {
+    let mut tx = pool.begin().await?;
+    for a in active {
+        sqlx::query(
+            "INSERT INTO launcher_active (hour, install_id, version, os) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (hour, install_id) DO UPDATE SET version = EXCLUDED.version, os = EXCLUDED.os",
+        )
+        .bind(a.hour)
+        .bind(&a.install_id)
+        .bind(&a.version)
+        .bind(a.os)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
 }
 
 async fn write(pool: &PgPool, buckets: &HashMap<Key, Bucket>) -> sqlx::Result<()> {
@@ -168,6 +227,9 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let span = tracing::info_span!("request", method = %method, route = %route, client = client.as_str(), install_id = tracing::field::Empty, status = tracing::field::Empty, trace_id = tracing::field::Empty);
     if let Some(id) = crate::routes::telemetry::install_id(request.headers()) {
         span.record("install_id", id.as_str());
+        if let Some((version, os)) = user_agent.filter(|_| client == Client::Launcher).and_then(launcher_build) {
+            recorder.stats.record_active((recorder.clock)(), id, version, os);
+        }
     }
     forge_trace::continue_trace(&span, request.headers());
     // GitHub requests this request causes count for its route (`github::usage`).
@@ -226,6 +288,17 @@ mod tests {
         assert_eq!(classify(Some("reqwest"), website, Some(website)), Client::Website);
         assert_eq!(classify(Some("curl/8.0"), other, Some(website)), Client::Other);
         assert_eq!(classify(None, other, None), Client::Other);
+    }
+
+    #[test]
+    fn reads_version_and_platform_from_the_launcher() {
+        assert_eq!(launcher_build("SurvivorsForge/0.6.4 (windows)"), Some(("0.6.4".into(), "windows")));
+        assert_eq!(launcher_build("SurvivorsForge/0.7.0-rc.1 (macos)"), Some(("0.7.0-rc.1".into(), "macos")));
+        assert_eq!(launcher_build("SurvivorsForge/0.6.3"), Some(("0.6.3".into(), "unknown")), "before the platform was sent");
+        assert_eq!(launcher_build("SurvivorsForge/0.6.4 (amiga)"), Some(("0.6.4".into(), "unknown")));
+        assert_eq!(launcher_build("SurvivorsForge/<script>"), None);
+        assert_eq!(launcher_build(&format!("SurvivorsForge/{}", "9".repeat(40))), None);
+        assert_eq!(launcher_build("curl/8.0"), None);
     }
 
     #[test]
