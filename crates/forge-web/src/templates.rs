@@ -597,13 +597,21 @@ pub struct DeleteAddonPage {
 pub struct AdminIndexPage {
     pub user: Option<Visitor>,
     pub csrf: String,
-    pub queue: usize,
-    pub reports: usize,
-    pub verifications: usize,
+    /// What waits; `None` when its count did not load.
+    pub queue: Option<usize>,
+    pub reports: Option<usize>,
+    pub verifications: Option<usize>,
     /// The viewer may open `/admin/stats` (`ADMIN_STATS_ROLES`).
     pub stats: bool,
     /// The viewer may open Grafana (admins).
     pub grafana: bool,
+}
+
+impl AdminIndexPage {
+    /// Nothing waits anywhere (and every count loaded).
+    pub fn all_done(&self) -> bool {
+        [self.queue, self.reports, self.verifications].iter().all(|n| *n == Some(0))
+    }
 }
 
 /// A titled table of `/admin/stats`; the first column is text, the others are numbers.

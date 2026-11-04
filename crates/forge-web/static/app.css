@@ -118,6 +118,9 @@ h3 { font-size: 17px; color: var(--gold); }
 /* The release zip name means nothing for the source zip of a tag. */
 form:has(#source_type option[value="tag"]:checked) :is(label[for="asset_pattern"], #asset_pattern, .asset-hint) { display: none; }
 
+/* An admin tile with work waiting. */
+.tile.due { border-color: var(--outline-active); }
+
 /* `hidden` wins over the display of buttons and layouts below. */
 [hidden] { display: none !important; }
 

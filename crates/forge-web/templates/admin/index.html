@@ -7,17 +7,26 @@
   <input id="q" type="search" name="q" placeholder="Name">
   <button type="submit">Find</button>
 </form>
+<section class="home-section">
+<h2>To do</h2>
+{% if self.all_done() %}<p class="notice ok">Nothing to review: the queue, the reports and the verification requests are empty.</p>{% endif %}
 <div class="grid">
-  <a class="panel tile" href="/admin/review"><strong>{{ queue }}</strong> version{% if queue != 1 %}s{% endif %} to review</a>
-  <a class="panel tile" href="/admin/reports"><strong>{{ reports }}</strong> open report{% if reports != 1 %}s{% endif %}</a>
-  <a class="panel tile" href="/admin/verification-requests"><strong>{{ verifications }}</strong> verification request{% if verifications != 1 %}s{% endif %}</a>
+  {% match queue %}{% when Some with (n) %}<a class="panel tile{% if *n > 0 %} due{% endif %}" href="/admin/review"><strong>{{ n }}</strong> version{% if *n != 1 %}s{% endif %} to review{% if *n > 0 %} <span class="badge warn">Open</span>{% endif %}</a>{% when None %}<a class="panel tile" href="/admin/review"><span class="muted">Could not load the review queue</span></a>{% endmatch %}
+  {% match reports %}{% when Some with (n) %}<a class="panel tile{% if *n > 0 %} due{% endif %}" href="/admin/reports"><strong>{{ n }}</strong> open report{% if *n != 1 %}s{% endif %}{% if *n > 0 %} <span class="badge warn">Open</span>{% endif %}</a>{% when None %}<a class="panel tile" href="/admin/reports"><span class="muted">Could not load the reports</span></a>{% endmatch %}
+  {% match verifications %}{% when Some with (n) %}<a class="panel tile{% if *n > 0 %} due{% endif %}" href="/admin/verification-requests"><strong>{{ n }}</strong> verification request{% if *n != 1 %}s{% endif %}{% if *n > 0 %} <span class="badge warn">Open</span>{% endif %}</a>{% when None %}<a class="panel tile" href="/admin/verification-requests"><span class="muted">Could not load the verification requests</span></a>{% endmatch %}
+</div>
+</section>
+<section class="home-section">
+<h2>Manage</h2>
+<div class="grid">
   <a class="panel tile" href="/admin/users">Users and bans</a>
-  <a class="panel tile" href="/packs?all=1">All packs, also unlisted</a>
-  <a class="panel tile" href="/admin/addons/new">Add an addon of someone else</a>
+  <a class="panel tile" href="/packs?all=1">All packs, including unlisted</a>
+  <a class="panel tile" href="/admin/addons/new">Add an addon for another creator</a>
   <a class="panel tile" href="/admin/list/game-versions">Game versions</a>
   <a class="panel tile" href="/admin/list/categories">Categories</a>
   <a class="panel tile" href="/admin/audit">Audit log</a>
   {% if stats %}<a class="panel tile" href="/admin/stats">Statistics: API, jobs, launcher</a>{% endif %}
   {% if grafana %}<a class="panel tile" href="/grafana/">Monitoring in Grafana</a>{% endif %}
 </div>
+</section>
 {% endblock %}

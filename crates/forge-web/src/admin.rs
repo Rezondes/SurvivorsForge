@@ -91,17 +91,20 @@ pub struct NoteForm {
 
 pub async fn index(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
     let (user, token) = admin(&state, &jar).await?;
-    let queue = state.api.get("/v1/admin/review-queue", Some(&token)).await?;
-    let reports = state.api.get("/v1/admin/reports", Some(&token)).await?;
-    let verifications = state.api.get("/v1/admin/verification-requests", Some(&token)).await?;
+    // A count that does not load leaves the hub and the other tiles usable.
+    let count = |path: &'static str| {
+        let (state, token) = (state.clone(), token.clone());
+        async move { state.api.get(path, Some(&token)).await.ok().map(|v| v.as_array().map_or(0, Vec::len)) }
+    };
+    let (queue, reports, verifications) = tokio::join!(count("/v1/admin/review-queue"), count("/v1/admin/reports"), count("/v1/admin/verification-requests"));
     Ok(render(&AdminIndexPage {
         stats: user.can(Permission::ViewAdminStats),
         grafana: user.can(Permission::ViewGrafana),
         user: Some(user),
         csrf: csrf.0,
-        queue: queue.as_array().map(Vec::len).unwrap_or(0),
-        reports: reports.as_array().map(Vec::len).unwrap_or(0),
-        verifications: verifications.as_array().map(Vec::len).unwrap_or(0),
+        queue,
+        reports,
+        verifications,
     }))
 }
 

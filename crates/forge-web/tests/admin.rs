@@ -650,7 +650,7 @@ async fn verification_requests_are_listed_and_decided() {
         { "id": 4, "slug": "lucky", "name": "Lucky", "version_id": 9, "tag": "v2", "trust": "flagged", "discord_url": link, "requested_by": "alice", "created_at": "2026-05-01T10:00:00Z" }
     ]))
     .await;
-    assert!(web.get("/admin").await.body.contains(r#"<a class="panel tile" href="/admin/verification-requests"><strong>1</strong> verification request"#));
+    assert!(web.get("/admin").await.body.contains(r#"<a class="panel tile due" href="/admin/verification-requests"><strong>1</strong> verification request"#));
     let page = web.get("/admin/verification-requests").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     for text in ["Lucky", "v2", "alice", &format!(r#"href="{link}""#), r#"action="/admin/verification-requests/4/approve""#, r#"action="/admin/verification-requests/4/reject""#, "Flagged"] {
