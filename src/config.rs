@@ -221,11 +221,16 @@ pub fn suggestion_label(addons: &Path, home: Option<&Path>) -> String {
 #[derive(Debug, PartialEq)]
 pub enum DirWarning {
     NotNamedAddOns,
+    /// An AddOns folder, but not in the game's `benilla-config`: maybe another game's.
+    NoGame,
 }
 
 impl fmt::Display for DirWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("The folder is not named \"AddOns\". Is this really the game's AddOns folder?")
+        f.write_str(match self {
+            DirWarning::NotNamedAddOns => "The folder is not named \"AddOns\". Is this really the game's AddOns folder?",
+            DirWarning::NoGame => "No Azeroth Survivors game found next to this folder. The AddOns folder is usually <game>/benilla-config/AddOns.",
+        })
     }
 }
 
@@ -320,12 +325,27 @@ pub fn validate_addons_dir(path: &Path) -> Result<Option<DirWarning>, DirError> 
     let named_addons = path
         .file_name()
         .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("AddOns"));
-    Ok((!named_addons).then_some(DirWarning::NotNamedAddOns))
+    if !named_addons {
+        return Ok(Some(DirWarning::NotNamedAddOns));
+    }
+    let in_game = path.parent().and_then(Path::file_name).is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("benilla-config"));
+    Ok((!in_game).then_some(DirWarning::NoGame))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_addons_folder_outside_the_game_is_questioned() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("Interface").join("AddOns");
+        let game = dir.path().join("benilla-config").join("AddOns");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::create_dir_all(&game).unwrap();
+        assert!(matches!(validate_addons_dir(&elsewhere), Ok(Some(DirWarning::NoGame))));
+        assert!(matches!(validate_addons_dir(&game), Ok(None)));
+    }
 
     #[test]
     fn one_bad_setting_does_not_block_the_others() {
@@ -451,9 +471,9 @@ mod tests {
     #[test]
     fn validate_accepts_addons_and_warns_on_unusual_name() {
         let dir = tempfile::tempdir().unwrap();
-        let addons = dir.path().join("AddOns");
+        let addons = dir.path().join("benilla-config").join("AddOns");
         let foo = dir.path().join("foo");
-        std::fs::create_dir(&addons).unwrap();
+        std::fs::create_dir_all(&addons).unwrap();
         std::fs::create_dir(&foo).unwrap();
         assert_eq!(validate_addons_dir(&addons), Ok(None));
         assert_eq!(validate_addons_dir(&foo), Ok(Some(DirWarning::NotNamedAddOns)));

@@ -26,8 +26,9 @@ component TypePathHint inherits Text {
 
 component SetupView inherits Rectangle {
     in-out property <string> path;
-    in property <string> error;
-    in property <string> warning;
+    // Both go once the path is typed again: they were about the old one.
+    in-out property <string> error;
+    in-out property <string> warning;
     in property <string> example;
     in property <bool> file-dialog;
     in property <bool> game-mode;
@@ -72,6 +73,10 @@ component SetupView inherits Rectangle {
                             placeholder: "AddOns folder";
                             label: "AddOns folder path";
                             accepted => { root.confirm(); }
+                            edited(_) => {
+                                root.error = "";
+                                root.warning = "";
+                            }
                         }
                         if root.file-dialog : ActionButton {
                             text: "Browse...";
@@ -340,8 +345,8 @@ export component AppWindow inherits Window {
     // First start
     in property <bool> needs-setup;
     in-out property <string> setup-path;
-    in property <string> setup-error;
-    in property <string> setup-warning;
+    in-out property <string> setup-error;
+    in-out property <string> setup-warning;
     in property <[Suggestion]> setup-suggestions;
     in property <bool> setup-searching: true;
     callback setup-browse();
@@ -539,8 +544,8 @@ export component AppWindow inherits Window {
             width: parent.width;
             height: parent.height - root.title-height;
             path <=> root.setup-path;
-            error: root.setup-error;
-            warning: root.setup-warning;
+            error <=> root.setup-error;
+            warning <=> root.setup-warning;
             example: root.addons-example;
             suggestions: root.setup-suggestions;
             searching: root.setup-searching;
