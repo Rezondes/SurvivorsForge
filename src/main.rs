@@ -2736,6 +2736,50 @@ mod layout_tests {
             assert!(order.windows(2).all(|w| w[0] < w[1]), "tabs in the website's order: {order:?}");        }
     }
 
+    mod dropdown {
+        use slint::platform::{Key, WindowEvent};
+        use slint::ComponentHandle;
+
+        slint::slint! {
+            import { Dropdown } from "ui/components.slint";
+            export component DropdownProbe inherits Window {
+                in-out property <int> picked;
+                width: 300px;
+                height: 400px;
+                Dropdown {
+                    y: 10px;
+                    height: 38px;
+                    label: "Sort by";
+                    model: ["Most downloads", "Recently updated", "Name"];
+                    current-index <=> root.picked;
+                }
+            }
+        }
+
+        fn press(ui: &DropdownProbe, key: Key) {
+            let text: slint::SharedString = key.into();
+            ui.window().dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            ui.window().dispatch_event(WindowEvent::KeyReleased { text });
+        }
+
+        #[test]
+        fn the_open_list_answers_the_keys() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = DropdownProbe::new().unwrap();
+            ui.show().unwrap();
+            press(&ui, Key::Tab);
+            press(&ui, Key::Return);
+            press(&ui, Key::DownArrow);
+            press(&ui, Key::DownArrow);
+            press(&ui, Key::Return);
+            assert_eq!(ui.get_picked(), 2, "Return opens the list, Down walks it, Return picks");
+            press(&ui, Key::Return);
+            press(&ui, Key::UpArrow);
+            press(&ui, Key::Escape);
+            assert_eq!(ui.get_picked(), 2, "Escape closes it unchanged");
+        }
+    }
+
     mod settings {
         use i_slint_backend_testing::{AccessibleRole, ElementHandle, ElementRoot};
         use slint::platform::{Key, PointerEventButton, WindowEvent};
