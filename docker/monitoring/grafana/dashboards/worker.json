@@ -167,6 +167,237 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 6,
+      "title": "Oldest waiting job",
+      "description": "How long the job that waits longest has been due without a worker taking it. Above a few minutes the worker falls behind.",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT coalesce(extract(epoch FROM max(now() - run_at)), 0) AS \"waiting\" FROM jobs WHERE done_at IS NULL AND failed_at IS NULL AND run_at <= now() AND (locked_until IS NULL OR locked_until < now())",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Lowest GitHub quota left",
+      "description": "The quota with the smallest share left until its reset (github_quota). Below 10 % syncs and update checks start to fail.",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 26,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT min(remaining * 100.0 / nullif(\"limit\", 0)) AS \"left\" FROM github_quota WHERE reset_at > now()",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Queue now",
+      "description": "Per kind: due and waiting, running (locked by a worker), and planned for later (periodic jobs and retries).",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT kind AS \"Kind\", count(*) FILTER (WHERE run_at <= now() AND (locked_until IS NULL OR locked_until < now())) AS \"Waiting\", count(*) FILTER (WHERE locked_until >= now()) AS \"Running\", count(*) FILTER (WHERE run_at > now()) AS \"Later\", max(now() - run_at) FILTER (WHERE run_at <= now()) AS \"Oldest due\" FROM jobs WHERE done_at IS NULL AND failed_at IS NULL GROUP BY 1 ORDER BY 2 DESC, 1",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 9,
+      "title": "Jobs waiting by kind",
+      "description": "Jobs that were due and not finished, every 5 minutes. Retries move a job's due time, so the past is close, not exact.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT t AS time, j.kind AS metric, count(j.id) AS value FROM generate_series(date_trunc('minute', $__timeFrom()::timestamptz), $__timeTo()::timestamptz, interval '5 minutes') AS t JOIN jobs j ON j.created_at <= t AND j.run_at <= t AND coalesce(j.done_at, j.failed_at, 'infinity') > t GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 10,
+      "title": "Failed jobs",
+      "description": "Jobs that gave up after their last attempt in the time range, by kind, with the newest error.",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT kind AS \"Kind\", count(*) AS \"Failed\", max(failed_at) AS \"Last\", (array_agg(last_error ORDER BY failed_at DESC))[1] AS \"Last error\" FROM jobs WHERE $__timeFilter(failed_at) GROUP BY 1 ORDER BY 2 DESC",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
     }
   ]
 }
