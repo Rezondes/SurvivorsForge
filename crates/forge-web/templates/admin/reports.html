@@ -3,21 +3,23 @@
 {% block content %}
 <p><a href="/admin">Admin</a></p>
 <h1>Open reports</h1>
+<p class="muted">Harmful code first, then oldest first. Read the report, act on the addon if needed, then close it with a note.</p>
 {% include "admin/flash.html" %}
-{% if rows.is_empty() %}<section class="panel"><p>No open reports.</p></section>{% endif %}
+{% if rows.is_empty() %}<section class="panel"><p>No open reports. <a href="/admin/audit?action=resolve_report">Closed reports are in the audit log.</a></p></section>{% endif %}
 <div class="list">
 {% for r in rows %}
 <section class="panel">
-  <h2>{{ r.reason }}: <a href="{{ r.link }}">{{ r.addon }}</a> <span class="muted">({{ r.target }})</span></h2>
+  <h2>{% if r.harmful %}<span class="badge bad">{{ r.reason_label }}</span>{% else %}{{ r.reason_label }}{% endif %}:
+    {% if r.gone %}<span class="muted">deleted since</span>{% else %}<a href="{{ r.link }}">{{ r.addon }}</a>{% endif %} <span class="muted">({{ r.target }})</span></h2>
   <p class="muted">by {{ r.reporter }}, {{ r.created }}</p>
   {% if r.text != "" %}<p>{{ r.text }}</p>{% endif %}
   {% if let Some(c) = r.comment %}<blockquote class="reported-comment">{% if c.is_empty() %}<span class="muted">Deleted since.</span>{% else %}{{ c }}{% endif %}</blockquote>{% endif %}
-  <p><a href="/admin/addons/{{ r.addon }}">Block or hand over the addon</a></p>
+  {% if r.gone %}<p class="muted">Nothing is left to act on; close it with a note such as "already removed".</p>{% else %}<p><a href="/admin/addons/{{ r.addon }}">Block or hand over the addon</a></p>{% endif %}
   <form method="post" action="/admin/reports/{{ r.id }}/resolve" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     {# First, disabled: Enter in the note sends nothing; the admin picks the action. #}
     <button type="submit" hidden disabled aria-hidden="true"></button>
-    <label for="note-{{ r.id }}">Note</label>
+    <label for="note-{{ r.id }}">Note for the audit log (the reporter does not see it)</label>
     <input id="note-{{ r.id }}" name="note" required>
     <button type="submit" name="status" value="actioned">Close: acted on it</button>
     <button type="submit" name="status" value="dismissed" class="secondary">Close: nothing to do</button>

@@ -746,6 +746,12 @@ pub struct AdminReviewAddonPage {
 
 pub struct ReportRow {
     pub id: i64,
+    /// The reported thing is gone (an image deleted since).
+    pub gone: bool,
+    /// What the reason means, as the report form says it.
+    pub reason_label: String,
+    /// Harmful code or stolen work: comes first.
+    pub harmful: bool,
     pub target: String,
     pub addon: String,
     /// Where the reported thing is shown: the addon page, or the comment in its discussion.

@@ -161,7 +161,8 @@ async fn actions_ask_for_note() {
 
     expect(&web, "POST", "/v1/admin/reports/3/resolve", json!({ "status": "dismissed", "note": "fine" })).await;
     web.post_form("/admin/reports/3/resolve", &[("status", "dismissed"), ("note", "fine")]).await;
-    assert!(web.get("/admin/reports").await.body.contains("Deletes files"));
+    let reports = web.get("/admin/reports").await.body;
+    assert!(reports.contains("Deletes files") && reports.contains(r#"<span class="badge bad">Harmful code"#), "the reason in words, marked: {reports}");
 
     get_json(&web, "/v1/admin/users/eve", json!({ "github_id": 5, "login": "eve", "role": "user", "banned": false, "addons": 2 })).await;
     let users = web.get("/admin/users?login=eve").await;

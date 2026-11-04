@@ -282,11 +282,14 @@ pub async fn version_action(
 pub async fn reports(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, Query(flash): Query<Flash>) -> WebResult<Html<String>> {
     let (user, token) = admin(&state, &jar).await?;
     let list = state.api.get("/v1/admin/reports", Some(&token)).await?;
-    let rows = list
+    let mut rows: Vec<crate::templates::ReportRow> = list
         .as_array()
         .into_iter()
         .flatten()
         .map(|r| crate::templates::ReportRow {
+            gone: r["addon"].is_null() || s(&r["addon"]).is_empty(),
+            reason_label: crate::report::REASONS.iter().find(|(v, _)| *v == s(&r["reason"])).map_or_else(|| s(&r["reason"]), |(_, l)| (*l).to_string()),
+            harmful: matches!(r["reason"].as_str(), Some("malware" | "stolen")),
             id: r["id"].as_i64().unwrap_or(0),
             target: format!("{} {}", s(&r["target_type"]), s(&r["target_id"])),
             link: match r["target_type"].as_str() {
@@ -298,9 +301,11 @@ pub async fn reports(State(state): State<AppState>, jar: PrivateCookieJar, Exten
             reason: s(&r["reason"]),
             text: s(&r["text"]),
             reporter: s(&r["reporter"]),
-            created: s(&r["created_at"]).chars().take(16).collect(),
+            created: s(&r["created_at"]).chars().take(16).collect::<String>().replace('T', " ") + " UTC",
         })
         .collect();
+    // Harmful code and stolen work first, each kind oldest first (the API's order).
+    rows.sort_by_key(|r| !r.harmful);
     Ok(render(&AdminReportsPage { user: Some(user), csrf: csrf.0, rows, msg: flash.msg, error: flash.error }))
 }
 
