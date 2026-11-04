@@ -186,6 +186,8 @@ pub struct AddonsPage {
     /// When the releases were checked; `None` when the API cannot tell.
     pub checks: Option<crate::stats::Checks>,
     pub q: String,
+    /// How many filters are set (categories and the safety check), shown on the Filters button.
+    pub filters: usize,
     /// The ticked categories; an addon in any of them (or their subcategories) is listed.
     pub chosen_categories: Vec<String>,
     pub trust: String,

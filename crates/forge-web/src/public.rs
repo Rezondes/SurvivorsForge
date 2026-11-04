@@ -134,8 +134,8 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
     let param = |k: &str| params.iter().find(|(key, v)| key == k && !v.is_empty()).map(|(_, v)| v.clone());
     // Every ticked category goes along; the other filters once.
     let chosen_categories: Vec<String> = params.iter().filter(|(k, v)| k == "category" && !v.is_empty()).map(|(_, v)| v.clone()).collect();
-    // No relevance sort to choose: the list starts with the most downloaded addons.
-    let sort = param("sort").unwrap_or_else(|| "downloads".into());
+    // A search lists the best matches first; without one the list starts with the most downloaded.
+    let sort = param("sort").unwrap_or_else(|| if param("q").is_some() { "relevance".into() } else { "downloads".into() });
     let mut query: Vec<(&str, String)> = ["q", "trust", "author", "page"].iter().filter_map(|k| param(k).map(|v| (*k, v))).collect();
     query.push(("sort", sort.clone()));
     query.extend(chosen_categories.iter().map(|c| ("category", c.clone())));
@@ -157,6 +157,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         csrf: csrf.0,
         checks: crate::stats::checks(&state).await,
         q: param("q").unwrap_or_default(),
+        filters: chosen_categories.len() + usize::from(param("trust").is_some()),
         chosen_categories,
         trust: param("trust").unwrap_or_default(),
         sort,

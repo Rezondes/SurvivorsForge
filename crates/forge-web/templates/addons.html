@@ -8,14 +8,14 @@
 <form id="search" class="search browse-side" method="get" action="/addons" role="search"
       hx-get="/addons" hx-trigger="input changed delay:300ms from:#q, change from:select, change from:.cats, search" hx-target="#results" hx-select="#results" hx-push-url="true" hx-indicator="#results" hx-select-oob="#result-status,#result-count,#pager" hx-swap="innerHTML scroll:top">
   {% if !author.is_empty() %}<input type="hidden" name="author" value="{{ author }}">{% endif %}
-  <label for="q" class="sr-only">Search</label>
+  <label for="q" class="sr-only">Search addons</label>
   <div class="search-row">
     <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search addons..." autocomplete="off">
-    <button type="button" class="secondary filter-open" aria-controls="filter-sheet" aria-expanded="false">Filters</button>
+    <button type="button" class="secondary filter-open" aria-controls="filter-sheet" aria-expanded="false">Filters{% if filters > 0 %} ({{ filters }}){% endif %}</button>
   </div>
   {# On phones the filters slide up as a sheet (view.js); elsewhere they stand in the column. #}
   <div class="sheet-backdrop" data-sheet-close hidden></div>
-  <div class="filter-sheet" id="filter-sheet" role="dialog" aria-labelledby="filter-title">
+  <div class="filter-sheet" id="filter-sheet" aria-labelledby="filter-title">
   <div class="sheet-head" data-sheet-drag>
     <h2 class="side-title" id="filter-title">Filters</h2>
     <button type="button" class="sheet-close" data-sheet-close aria-label="Close filters"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3 3 13"/></svg></button>
@@ -57,6 +57,7 @@
     <div class="result-tools">
       <label for="sort" class="sr-only">Sort</label>
       <select id="sort" name="sort" form="search">
+        {% if !q.is_empty() %}<option value="relevance" {% if sort == "relevance" %}selected{% endif %}>Best match</option>{% endif %}
         <option value="downloads" {% if sort == "downloads" %}selected{% endif %}>Most downloads</option>
         <option value="updated" {% if sort == "updated" %}selected{% endif %}>Recently updated</option>
         <option value="name" {% if sort == "name" %}selected{% endif %}>Name</option>
@@ -67,7 +68,13 @@
   <p id="result-status" class="sr-only" role="status">{{ total }} addon{% if total != 1 %}s{% endif %}</p>
   <div id="results" class="browse-results">
     {% if cards.is_empty() %}
-      <section class="panel"><p>No addon matches. Try fewer words or another filter.</p><p><a href="/addons">Show all addons</a></p></section>
+      <section class="panel">
+        {% if !q.is_empty() %}<p>No addon matches "{{ q }}". Try fewer or other words.</p>
+        {% else if filters > 0 %}<p>No addon fits these filters.</p>
+        {% else %}<p>No addons yet. Creators publish theirs from GitHub: <a href="/docs/creator-guide">how to</a>.</p>{% endif %}
+        <p>{% if !q.is_empty() %}<a href="/addons{% if filters > 0 %}?{% for c in chosen_categories %}category={{ c|urlencode }}&amp;{% endfor %}{% if trust != "" %}trust={{ trust|urlencode }}{% endif %}{% endif %}">Clear the search</a>{% endif %}
+          {% if filters > 0 %}{% if !q.is_empty() %} · {% endif %}<a href="/addons{% if !q.is_empty() %}?q={{ q|urlencode }}{% endif %}">Clear the filters</a>{% endif %}</p>
+      </section>
     {% else %}
     <div class="grid addon-grid">
       {% for c in cards %}

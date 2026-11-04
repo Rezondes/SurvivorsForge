@@ -311,7 +311,7 @@ async fn phones_open_the_filters_in_a_sheet() {
     let page = web.get("/addons").await.body;
     for text in [
         r#"<button type="button" class="secondary filter-open" aria-controls="filter-sheet" aria-expanded="false">Filters</button>"#,
-        r#"<div class="filter-sheet" id="filter-sheet" role="dialog" aria-labelledby="filter-title">"#,
+        r#"<div class="filter-sheet" id="filter-sheet" aria-labelledby="filter-title">"#,
         r#"<div class="sheet-backdrop" data-sheet-close hidden></div>"#,
         r#"<button type="button" class="sheet-close" data-sheet-close aria-label="Close filters">"#,
     ] {
@@ -484,7 +484,9 @@ async fn an_empty_search_offers_the_way_back() {
     mock(&web, "/v1/categories", categories()).await;
     mock(&web, "/v1/addons", json!({ "total": 0, "addons": [] })).await;
     mock(&web, "/v1/packs", json!({ "total": 0, "packs": [] })).await;
-    assert!(web.get("/addons?q=nothing").await.body.contains(r#"<a href="/addons">Show all addons</a>"#));
+    let page = web.get("/addons?q=nothing").await.body;
+    assert!(page.contains("No addon matches \"nothing\""), "the search it was: {page}");
+    assert!(page.contains(r#"<a href="/addons">Clear the search</a>"#), "{page}");
     assert!(web.get("/packs?q=nothing").await.body.contains(r#"<a href="/packs">Show all packs</a>"#));
 }
 

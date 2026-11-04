@@ -404,6 +404,10 @@
   function openSheet() {
     var sheet = filterSheet();
     sheet.classList.add("open");
+    // A dialog only while open on a phone: the page behind it is out of reach.
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-modal", "true");
+    document.querySelectorAll(".browse-main, header, footer").forEach(function (el) { el.inert = true; });
     document.querySelector(".sheet-backdrop").hidden = false;
     document.querySelector('[aria-controls="filter-sheet"]').setAttribute("aria-expanded", "true");
     document.documentElement.classList.add("sheet-open");
@@ -413,6 +417,9 @@
     var sheet = filterSheet();
     if (!sheet || !sheet.classList.contains("open")) return;
     sheet.classList.remove("open");
+    sheet.removeAttribute("role");
+    sheet.removeAttribute("aria-modal");
+    document.querySelectorAll(".browse-main, header, footer").forEach(function (el) { el.inert = false; });
     sheet.style.transform = "";
     document.querySelector(".sheet-backdrop").hidden = true;
     var button = document.querySelector('[aria-controls="filter-sheet"]');
