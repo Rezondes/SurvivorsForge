@@ -287,7 +287,18 @@ async fn admin_adds_addon_without_app() {
         ("category", "Miscellaneous"), ("source_type", "release"), ("asset_pattern", "LuckyOdds-v*.zip"), ("folders", "LuckyOdds"),
     ];
     let page = web.post_form("/admin/addons/new", &fields).await;
-    assert_eq!((page.status, page.location()), (StatusCode::SEE_OTHER, "/addons/luckyodds"), "{}", page.body);
+    assert_eq!(page.status, StatusCode::SEE_OTHER, "{}", page.body);
+    assert!(page.location().starts_with("/admin/addons/luckyodds?msg=LuckyOdds+is+added."), "says it worked: {}", page.location());
+}
+
+#[tokio::test]
+async fn blocking_sits_in_a_danger_zone_and_notes_name_their_version() {
+    let mut web = as_admin().await;
+    get_json(&web, "/v1/addons/lucky", json!({ "slug": "lucky", "name": "Lucky", "owner": "alice", "blocked": false })).await;
+    get_json(&web, "/v1/addons/lucky/versions", json!([{ "id": 9, "tag": "v2", "trust": "warn", "findings": { "critical": 0, "warn": 1 } }])).await;
+    let page = web.get("/admin/addons/lucky").await.body;
+    assert!(page.contains(r#"<section class="panel danger-zone">"#), "{page}");
+    assert!(page.contains(r#"placeholder="Note for block v2""#), "{page}");
 }
 
 #[tokio::test]

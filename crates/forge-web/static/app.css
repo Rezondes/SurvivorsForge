@@ -502,6 +502,8 @@ pre code { color: var(--text); word-break: normal; }
 .subnav a:hover { border-color: var(--outline-hover); background: var(--control); }
 .subnav a[aria-current="page"] { border-color: var(--outline-active); background: var(--crimson); color: var(--gold-bright); }
 .danger-link { color: var(--bad); }
+.danger-zone { border-color: var(--bad); }
+.danger-zone h2 { color: var(--bad); }
 .danger-link:hover { color: var(--bad); }
 label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
 /* Tick boxes as in the launcher: a gold-rimmed field, a gold square when ticked */

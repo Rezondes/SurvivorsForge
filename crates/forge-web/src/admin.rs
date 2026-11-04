@@ -562,7 +562,10 @@ pub async fn add_addon(State(state): State<AppState>, jar: PrivateCookieJar, Ext
         "source_type": f.source_type, "asset_pattern": f.asset_pattern.trim(), "folders": folders, "author_name": form.author_name.trim(),
     });
     match state.api.post("/v1/admin/addons", Some(&token), &body).await {
-        Ok(created) => Ok(Redirect::to(&format!("/addons/{}", s(&created["slug"]))).into_response()),
+        Ok(created) => {
+            let done = format!("{} is added. {} can claim it after logging in with GitHub.", f.name.trim(), form.author_name.trim());
+            Ok(with_notice(&format!("/admin/addons/{}", s(&created["slug"])), "msg", &done))
+        }
         Err(ApiError::Api { message, status, .. }) if status < 500 && status != 403 => {
             let categories = crate::app::selectable_categories(&state).await?;
             let (owner, name) = form.base.repo.split_once('/').unwrap_or_default();

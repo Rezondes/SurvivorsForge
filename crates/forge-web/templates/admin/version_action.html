@@ -1,6 +1,6 @@
 <form method="post" action="/admin/versions/{{ v.id }}/{{ action }}" class="inline-action">
   <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="/admin/addons/{{ slug }}">
   <label class="sr-only" for="{{ action }}-{{ v.id }}">Note for {{ label }} {{ v.tag }}</label>
-  <input id="{{ action }}-{{ v.id }}" name="note" placeholder="Note" {% if action != "verify" || v.trust == "flagged" %}required{% endif %}>
+  <input id="{{ action }}-{{ v.id }}" name="note" placeholder="Note for {{ label|lower }} {{ v.tag }}" {% if action != "verify" || v.trust == "flagged" %}required{% endif %}>
   <button type="submit" class="{{ class }}"{% if action == "block" %} data-confirm="Block {{ v.tag }}? Players cannot install it until you unblock it."{% endif %}>{{ label }}</button>
 </form>
