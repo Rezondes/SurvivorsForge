@@ -186,7 +186,7 @@ async fn issue_page_shows_replies_and_tools_only_on_own_posts() {
     addon(&web).await;
     mock_get(&web, "/v1/addons/lucky/issues/6", issue("bob")).await;
     web.login_with_github("t", me("bob", "user"), github_token("2030-01-01T00:00:00Z")).await;
-    let page = web.get_htmx("/addons/lucky/issues/6?done=Saved").await;
+    let page = web.get_htmx(&web.notice("/addons/lucky/issues/6?done=Saved")).await;
     let body = &page.body;
     assert!(body.contains("In progress") && body.contains("<p>Same here</p>") && body.contains("· edited"), "{body}");
     assert!(body.contains(r#"role="status">Saved<"#));
@@ -219,7 +219,7 @@ async fn pages_that_ask_github_answer_at_once_and_load_the_rest() {
     addon(&web).await;
     Mock::given(method("GET")).and(path("/v1/addons/lucky/issues")).respond_with(ResponseTemplate::new(200).set_body_json(list(true))).expect(1).mount(&web.api).await;
     Mock::given(method("GET")).and(path("/v1/addons/lucky/issues/6")).respond_with(ResponseTemplate::new(200).set_body_json(issue("bob"))).expect(1).mount(&web.api).await;
-    for (uri, shape) in [("/addons/lucky/issues?state=closed", "skeleton-rows"), ("/addons/lucky/issues/6?done=Saved", "skeleton-line w-50 tall"), ("/addons/lucky/issues/new?kind=bug", "skeleton-block area")] {
+    for (uri, shape) in [("/addons/lucky/issues?state=closed", "skeleton-rows"), ("/addons/lucky/issues/6", "skeleton-line w-50 tall"), ("/addons/lucky/issues/new?kind=bug", "skeleton-block area")] {
         let page = web.get(uri).await;
         assert_eq!(page.status, StatusCode::OK, "{uri}: {}", page.body);
         let body = &page.body;
@@ -230,7 +230,8 @@ async fn pages_that_ask_github_answer_at_once_and_load_the_rest() {
         assert!(body.contains(r#"href="/addons/lucky/issues/new?kind=bug">Report a bug</a>"#), "{uri}: with the tab on, bugs are reported here");
         assert!(body.contains("full=1"), "{uri}: a way without JavaScript");
     }
-    assert!(web.get("/addons/lucky/issues/6?done=Saved").await.body.contains(r#"role="status">Saved<"#), "notices at once");
+    let saved = web.notice("/addons/lucky/issues/6?done=Saved");
+    assert!(web.get(&saved).await.body.contains(r#"role="status">Saved<"#), "notices at once");
     // Asked by htmx (or with full=1), the page comes whole; the API mocks expect one call each.
     assert!(web.get_htmx("/addons/lucky/issues").await.body.contains(r#"<div id="lazy-content">"#));
     assert!(web.get("/addons/lucky/issues/6?full=1").await.body.contains(r#"<div id="lazy-content">"#));

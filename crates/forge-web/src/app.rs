@@ -200,7 +200,8 @@ pub fn router(state: AppState) -> Router {
         .route("/static/fonts/marcellus.ttf", get(|| async { font(include_bytes!("../../../ui/fonts/Marcellus-Regular.ttf")) }))
         .route("/static/fonts/morpheus.ttf", get(|| async { font(include_bytes!("../../../ui/fonts/Morpheus.ttf")) }))
         .fallback(|| async { WebError::NotFound })
-        .layer(middleware::from_fn_with_state(state.clone(), csrf::middleware));
+        .layer(middleware::from_fn_with_state(state.clone(), csrf::middleware))
+        .layer(middleware::from_fn_with_state(state.clone(), crate::flash::middleware));
     let limiter = Arc::new(RateLimiter::new(state.config.rate_limit_per_minute, state.config.trusted_proxies.clone()));
     Router::new()
         .route("/healthz", get(healthz))

@@ -117,7 +117,11 @@ async fn a_reply_goes_to_the_api_and_back_to_the_comment() {
         .mount(&web.api)
         .await;
     let page = web.post_form("/addons/lucky/comments", &[("body", "Agreed"), ("parent_id", "3")]).await;
-    assert_eq!(page.location(), "/addons/lucky/comments?done=Your+comment+is+posted.#comment-4");
+    assert_eq!(page.location(), web.notice("/addons/lucky/comments?done=Your+comment+is+posted.#comment-4"));
+    let back = web.get(page.location()).await;
+    assert!(back.body.contains("Your comment is posted."), "the signed notice shows");
+    let made_up = web.get("/addons/lucky/comments?done=Your+account+is+locked").await;
+    assert_eq!(made_up.location(), "/addons/lucky/comments", "a notice nobody signed is dropped");
 }
 
 #[tokio::test]

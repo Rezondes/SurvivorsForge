@@ -671,3 +671,17 @@
     });
   });
 })();
+
+// A notice from the address shows once: it leaves the address, so a reload or a shared link
+// does not show it again.
+(function () {
+  var url = new URL(location.href);
+  var had = false;
+  ["done", "error", "msg", "sig"].forEach(function (name) {
+    if (url.searchParams.has(name)) {
+      url.searchParams.delete(name);
+      had = true;
+    }
+  });
+  if (had) history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+})();

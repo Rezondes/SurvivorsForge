@@ -8,6 +8,7 @@ pub mod creator;
 pub mod comments;
 pub mod csrf;
 pub mod error;
+pub mod flash;
 pub mod issues;
 pub mod metrics;
 pub mod packs;

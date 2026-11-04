@@ -44,6 +44,12 @@ impl TestWeb {
         TestWeb { router, api, cookies: HashMap::new() }
     }
 
+    /// `target` with its notice (`?done=`, `?error=`, `?msg=`) signed, as the site's own
+    /// redirects send it.
+    pub fn notice(&self, target: &str) -> String {
+        forge_web::flash::sign(&AppState::new(Config::for_tests(&self.api.uri())), target)
+    }
+
     pub async fn request(&mut self, request: Request<Body>) -> Page {
         let response = self.router.clone().oneshot(request).await.unwrap();
         let status = response.status();

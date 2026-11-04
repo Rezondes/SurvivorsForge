@@ -177,7 +177,7 @@ async fn the_repo_owner_may_claim_an_unclaimed_addon() {
     // GitHub logins ignore case; the repo is alice/lucky.
     let mut web = unclaimed().await;
     web.login_as("alice-token", common::me("ALICE", "user")).await;
-    let page = web.get("/addons/lucky?error=Install+the+App+first").await;    assert!(page.body.contains(claim) && page.body.contains("Claim it"), "the repo alice/lucky is hers: {}", page.body);
+    let page = web.get(&web.notice("/addons/lucky?error=Install+the+App+first")).await;    assert!(page.body.contains(claim) && page.body.contains("Claim it"), "the repo alice/lucky is hers: {}", page.body);
     assert!(page.body.contains("Install the App first"), "the claim error shows");
 }
 
