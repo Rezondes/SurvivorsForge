@@ -644,8 +644,15 @@ export component AppWindow inherits Window {
                         text: root.game-missing;
                         font-size: Theme.meta;
                         color: Theme.text-muted;
-                        horizontal-alignment: right;
+                        horizontal-alignment: center;
                         wrap: word-wrap;
+                    }
+                    if root.game-missing != "" && root.page != 2 : HorizontalLayout {
+                        alignment: center;
+                        LinkButton {
+                            text: "Open Settings";
+                            clicked => { root.open-page(2); }
+                        }
                     }
                 }
             }

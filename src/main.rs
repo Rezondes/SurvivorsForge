@@ -723,8 +723,8 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_checking(core.checking);
     let game_missing = match config::game_executable(core.addons_dir(), USE_WINDOWS_GAME) {
         Some(_) => "",
-        None if USE_WINDOWS_GAME => "AzerothSurvivors.exe is not next to the benilla-config folder.",
-        None => "No Linux build of the game next to benilla-config. Start a Windows build through Steam.",
+        None if USE_WINDOWS_GAME => "Can't launch: AzerothSurvivors.exe was not found next to benilla-config. Check the AddOns folder in Settings.",
+        None => "Can't launch: no Linux build of the game next to benilla-config. Start a Windows build through Steam, or check the AddOns folder in Settings.",
     };
     ui.set_game_missing(game_missing.into());
     ui.set_game_running(core.game_running);
