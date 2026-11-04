@@ -2309,27 +2309,30 @@ fn on_version_install(ui: &AppWindow, shared: &Shared, tag: String) {
         let Some(remote) = version.install.clone() else { return };
         let addon = registry_entry(&core, &id).map(|a| (a.name.clone(), a.latest.as_ref().map(|l| l.tag.clone())));
         let (name, newest) = addon.unwrap_or_default();
-        (id, version, remote, name, newest.as_deref() != Some(tag.as_str()))
+        let held = core.config.held.contains(&id);
+        (id, version, remote, name, newest.as_deref() != Some(tag.as_str()), held)
     };
-    let (id, version, remote, name, older) = job;
-    let mut lines = vec![if older {
-        format!("{} is not the newest version. SurvivorsForge does not update {name} on its own until you install the newest again, here under Versions or with Update.", version.name)
-    } else {
-        format!("{} is the newest version.", version.name)
-    }];
-    let danger = version.trust == forge_core::trust::Trust::Flagged;
-    match version.trust {
-        forge_core::trust::Trust::Flagged => lines.push("The automatic check found something in this version. Read it on the addon's page first.".into()),
-        forge_core::trust::Trust::Unscanned => lines.push("This version was not checked automatically yet.".into()),
-        _ => {}
-    }
+    let (id, version, remote, name, older, held) = job;
+    // The same warnings, counts and closing line as for the newest version.
+    let warnings = controller::version_warnings(&version);
     let (weak, shared) = (ui.as_weak(), shared.clone());
-    let ok = if danger { "Install anyway" } else { "Install" };
-    ask(ui, &format!("Install {}?", controller::version_title(&name, &version.name)), &lines.join("\n\n"), ok, danger, move || {
+    let install = move || {
         if let Some(ui) = weak.upgrade() {
             start_install(&ui, &shared, id, Vec::new(), Some(remote));
         }
-    });
+    };
+    if !older && !held && warnings.is_empty() {
+        return install();
+    }
+    let title = format!("Install {}?", controller::version_title(&name, &version.name));
+    let first = if older {
+        format!("{} is not the newest version. SurvivorsForge does not update {name} on its own until you install the newest again, here under Versions or with Update.", version.name)
+    } else {
+        format!("{} is the newest version. Installing it ends the hold: SurvivorsForge updates {name} on its own again.", version.name)
+    };
+    let (_, warned, danger) = controller::warning_dialog(&name, &warnings);
+    let text = if warnings.is_empty() { first } else { format!("{first}\n\n{warned}") };
+    ask(ui, &title, &text, if danger { "Install anyway" } else { "Install" }, danger, install);
 }
 
 fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {

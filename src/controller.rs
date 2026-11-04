@@ -612,6 +612,22 @@ pub struct VersionLine {
     /// What installing exactly this version takes; `None` when the platform blocks it or its file is
     /// gone from GitHub.
     pub install: Option<RemoteVersion>,
+    /// What the automatic check found in it.
+    pub findings: forge_core::registry::FindingCounts,
+}
+
+/// The warnings for installing exactly `version`, as `install_warnings` gives them for the newest.
+pub fn version_warnings(version: &VersionLine) -> Vec<Warning> {
+    let mut warnings = Vec::new();
+    if version.install.as_ref().is_some_and(|r| r.sha256.is_none()) {
+        warnings.push(Warning::NoHash);
+    }
+    match version.trust {
+        Trust::Unscanned => warnings.push(Warning::Unscanned),
+        Trust::Flagged => warnings.push(Warning::Flagged { critical: version.findings.critical, warn: version.findings.warn }),
+        _ => {}
+    }
+    warnings
 }
 
 /// How a version is named in a dialog: release names often start with the addon's name already.
@@ -639,6 +655,7 @@ pub fn version_lines(json: &str) -> Option<Vec<VersionLine>> {
                     install,
                     downloads: v["downloads"].as_u64().unwrap_or_default(),
                     prerelease: v["prerelease"] == true,
+                    findings: serde_json::from_value(v["findings"].clone()).unwrap_or_default(),
                     tag,
                 })
             })
@@ -1099,6 +1116,22 @@ mod tests {
     }
 
     #[test]
+    fn an_older_version_warns_like_the_newest() {
+        let remote = RemoteVersion { id: "v1".into(), label: "v1".into(), download: String::new(), sha256: None };
+        let line = VersionLine {
+            tag: "v1".into(),
+            name: "v1".into(),
+            date: String::new(),
+            trust: Trust::Flagged,
+            downloads: 0,
+            prerelease: false,
+            install: Some(remote),
+            findings: forge_core::registry::FindingCounts { critical: 1, warn: 2 },
+        };
+        assert_eq!(version_warnings(&line), [Warning::NoHash, Warning::Flagged { critical: 1, warn: 2 }]);
+    }
+
+    #[test]
     fn update_all_selects_only_update_available() {
         let remote = RemoteVersion { id: "v2".into(), label: "v2".into(), download: String::new(), sha256: None };
         let statuses = HashMap::from([
@@ -1450,7 +1483,7 @@ mod tests {
             {"tag":"v0","name":"","published_at":"2026-09-01T10:00:00+00:00","trust":"verified","downloads":1,"prerelease":false,"source":"deleted","asset_url":"https://g/v0.zip","sha256":"ef"}]"#;
         let versions = version_lines(json).unwrap();
         let remote = RemoteVersion { id: "v2".into(), label: "Lucky 2".into(), download: "https://g/v2.zip".into(), sha256: Some("ab".into()) };
-        assert_eq!(versions[0], VersionLine { tag: "v2".into(), name: "Lucky 2".into(), date: "2026-11-04".into(), trust: Trust::Scanned, downloads: 278, prerelease: false, install: Some(remote) });
+        assert_eq!(versions[0], VersionLine { tag: "v2".into(), name: "Lucky 2".into(), date: "2026-11-04".into(), trust: Trust::Scanned, downloads: 278, prerelease: false, install: Some(remote), findings: Default::default() });
         assert_eq!((versions[1].name.as_str(), versions[1].trust), ("v1", Trust::Blocked), "without a name the tag stands in");
         assert!(versions[1].install.is_none(), "a blocked version cannot be installed");
         assert!(versions[2].install.is_none(), "nor one whose file is gone from GitHub");
