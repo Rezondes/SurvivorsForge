@@ -1673,32 +1673,35 @@ fn settings_error(ui: &AppWindow, shared: &Shared, text: String) {
 fn on_settings_save(ui: &AppWindow, shared: &Shared) {
     let path = typed_path(&ui.get_settings_path());
     ui.set_settings_path(path.to_string_lossy().into_owned().into());
-    let warning = match config::validate_addons_dir(&path) {
-        Ok(warning) => warning,
-        Err(e) => return settings_error(ui, shared, e.to_string()),
-    };
-    let urls = config::platform_url(&ui.get_settings_api_url()).and_then(|api| Ok((api, config::platform_url(&ui.get_settings_web_url())?)));
-    let (api_url, web_url) = match urls {
-        Ok(urls) => urls,
-        Err(e) => return settings_error(ui, shared, e),
-    };
-    let (saved, recheck) = {
+    let (saved, recheck, warning, errors) = {
         let mut core = lock(shared);
         let game_index = ui.get_settings_game_index();
         let game_version =
             if game_index > 0 { core.game_versions.get(game_index as usize - 1).map(|g| g.name.clone()) } else { None };
-        let platform_changed = api_url != core.config.api_url;
-        let telemetry = ui.get_settings_telemetry();
-        let send_install_id = ui.get_settings_send_install_id();
-        let auto_update_all = ui.get_settings_auto_update();
-        let config = Config { addons_dir: path, game_version, api_url, web_url, telemetry, send_install_id, auto_update_all, ..core.config.clone() };
+        let input = config::SettingsInput {
+            addons_dir: path,
+            game_version,
+            api_url: ui.get_settings_api_url().into(),
+            web_url: ui.get_settings_web_url().into(),
+            telemetry: ui.get_settings_telemetry(),
+            send_install_id: ui.get_settings_send_install_id(),
+            auto_update_all: ui.get_settings_auto_update(),
+        };
+        // A bad field keeps its saved value and its text in the field; the others still save.
+        let (config, errors, warning) = config::apply_settings(&core.config, input);
+        let platform_changed = config.api_url != core.config.api_url;
         // The values are valid again: an error about them is over.
-        if let Some(id) = core.settings_error.take() {
+        if errors.is_empty()
+            && let Some(id) = core.settings_error.take()
+        {
             core.toasts.dismiss(id);
         }
         // Saving runs on every focus change: nothing changed, nothing to write.
         if config == core.config {
             drop(core);
+            if !errors.is_empty() {
+                return settings_error(ui, shared, errors.join(" "));
+            }
             return refresh(ui, shared);
         }
         // Another platform: its list, versions and categories replace the old ones.
@@ -1709,10 +1712,15 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         } else {
             core.config = config;
         }
-        (saved, recheck)
+        (saved, recheck, warning, errors)
     };
+    if !errors.is_empty() {
+        settings_error(ui, shared, errors.join(" "));
+    }
     match saved {
         // Saved, but the folder looks odd (no game next to it): a warning.
+        // The error toast names what was not saved; the rest saved quietly.
+        Ok(()) if !errors.is_empty() => {}
         Ok(()) => match warning {
             Some(w) => lock(shared).notify(format!("Settings saved. {w}"), Kind::Warning),
             None => lock(shared).notify("Settings saved.".into(), Kind::Success),

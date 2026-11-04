@@ -79,6 +79,48 @@ pub fn platform_url(input: &str) -> Result<Option<String>, String> {
     }
 }
 
+/// What the settings page holds, typed or ticked.
+pub struct SettingsInput {
+    pub addons_dir: PathBuf,
+    pub game_version: Option<String>,
+    pub api_url: String,
+    pub web_url: String,
+    pub telemetry: bool,
+    pub send_install_id: bool,
+    pub auto_update_all: bool,
+}
+
+/// The settings with every valid field of `input` taken over; an invalid field keeps the saved
+/// value and gives an error naming it, so one typo never blocks the other settings. Also the
+/// warning about an odd AddOns folder.
+pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Vec<String>, Option<DirWarning>) {
+    let mut errors = Vec::new();
+    let mut config = Config {
+        game_version: input.game_version,
+        telemetry: input.telemetry,
+        send_install_id: input.send_install_id,
+        auto_update_all: input.auto_update_all,
+        ..saved.clone()
+    };
+    let mut warning = None;
+    match validate_addons_dir(&input.addons_dir) {
+        Ok(w) => {
+            warning = w;
+            config.addons_dir = input.addons_dir;
+        }
+        Err(e) => errors.push(format!("AddOns folder: {e}")),
+    }
+    match platform_url(&input.api_url) {
+        Ok(url) => config.api_url = url,
+        Err(e) => errors.push(format!("Platform API: {e}")),
+    }
+    match platform_url(&input.web_url) {
+        Ok(url) => config.web_url = url,
+        Err(e) => errors.push(format!("Platform website: {e}")),
+    }
+    (config, errors, warning)
+}
+
 /// `%APPDATA%\SurvivorsForge` on Windows, `~/.config/SurvivorsForge` on Linux.
 /// `SURVIVORSFORGE_DATA_DIR` overrides it, for testing against a copy of an AddOns folder.
 pub fn data_dir() -> PathBuf {
@@ -284,6 +326,30 @@ pub fn validate_addons_dir(path: &Path) -> Result<Option<DirWarning>, DirError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_bad_setting_does_not_block_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let addons = dir.path().join("AddOns");
+        std::fs::create_dir(&addons).unwrap();
+        let saved = Config { addons_dir: addons.clone(), ..Default::default() };
+        let input = SettingsInput {
+            addons_dir: dir.path().join("Typo"),
+            game_version: None,
+            api_url: "not a url".into(),
+            web_url: "https://forge.example".into(),
+            telemetry: false,
+            send_install_id: true,
+            auto_update_all: false,
+        };
+        let (config, errors, _) = apply_settings(&saved, input);
+        assert!(!config.telemetry, "the privacy toggle is taken over");
+        assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));
+        assert_eq!(config.addons_dir, addons, "the bad path keeps the saved one");
+        assert_eq!(config.api_url, None);
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].starts_with("AddOns folder: ") && errors[1].starts_with("Platform API: "), "{errors:?}");
+    }
 
     #[test]
     fn an_addon_held_at_an_older_version_does_not_update_on_its_own() {
