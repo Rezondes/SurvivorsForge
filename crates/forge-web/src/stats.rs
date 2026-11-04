@@ -123,7 +123,11 @@ fn stat(value: String, label: &str) -> Stat {
 
 pub async fn stats(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>) -> WebResult<Html<String>> {
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
-    let s = state.api.get("/v1/stats", None).await?;
+    // Without the API the page still explains what is counted; only the numbers are missing.
+    let Ok(s) = state.api.get("/v1/stats", None).await else {
+        let empty = StatsPage { user, csrf: csrf.0, website: Vec::new(), launcher: Vec::new(), addons: Vec::new(), platform: Vec::new(), top: Vec::new(), checks: Checks::default() };
+        return Ok(render(&empty));
+    };
     let (l, a, p) = (&s["launcher"], &s["addons"], &s["platform"]);
     let current = l["current_tag"].as_str().unwrap_or_default();
     let active = a["active_installations_30d"].as_i64().unwrap_or(0);

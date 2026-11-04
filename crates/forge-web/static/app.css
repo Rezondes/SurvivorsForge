@@ -169,7 +169,7 @@ td.row-actions > * + * { margin-left: 8px; }
 .home-points h2 { margin: 0 0 6px; font-size: 17px; }
 .home-points p { margin: 0; color: var(--muted); }
 .home-section { margin-bottom: 32px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0 0 12px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); gap: 12px; margin: 0 0 12px; }
 .stat { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 4px; padding: 14px 16px; background: var(--row); border: 1px solid var(--line); border-radius: var(--radius); }
 .stat dt { color: var(--muted); font-size: var(--meta); }
 .stat dd { margin: 0; font-size: 1.6rem; color: var(--gold); font-variant-numeric: tabular-nums; }

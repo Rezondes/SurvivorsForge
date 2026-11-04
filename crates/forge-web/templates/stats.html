@@ -3,7 +3,8 @@
 {% block head %}<meta name="description" content="How often SurvivorsForge and its addons are downloaded, installed and updated.">{% endblock %}
 {% block content %}
 <h1>Statistics</h1>
-<p class="lead">How SurvivorsForge and its addons are used. The numbers are anonymous; <a href="#privacy">what the launcher sends</a>.</p>
+<p class="lead">How SurvivorsForge and its addons are used. The numbers are anonymous; <a href="#privacy">what is counted</a>.</p>
+{% if website.is_empty() && addons.is_empty() %}<p class="notice warn">The numbers cannot be loaded right now. Try again in a few minutes.</p>{% endif %}
 
 <section class="home-section">
   <h2>The website</h2>
@@ -34,19 +35,27 @@
 </section>
 
 <section class="home-section">
-  <h2>Checks</h2>
+  <h2>How fresh the addon data is</h2>
   <dl class="stats">
-    <div class="stat"><dt>New releases, every 15 minutes</dt><dd class="small">{% let c = checks.releases %}{% include "check_line.html" %}</dd></div>
-    <div class="stat"><dt>Files unchanged on GitHub, every 6 hours</dt><dd class="small">{% let c = checks.sources %}{% include "check_line.html" %}</dd></div>
+    <div class="stat"><dt>Checks for new releases (every 15 minutes)</dt><dd class="small">{% let c = checks.releases %}{% include "check_line.html" %}</dd></div>
+    <div class="stat"><dt>Checks that release files still match (every 6 hours)</dt><dd class="small">{% let c = checks.sources %}{% include "check_line.html" %}</dd></div>
   </dl>
 </section>
 
 <section class="panel home-section" id="privacy">
-  <h2>What the launcher sends</h2>
+  <h2>What is counted and what is not</h2>
+  <ul>
+    <li>No cookies and no tracking script.</li>
+    <li>No IP addresses stored.</li>
+    <li>The launcher's installation ID is forgotten after 90 days.</li>
+    <li>Search words without a result are deleted after 90 days.</li>
+  </ul>
+  <h3>Launcher</h3>
   <p>After each install or update of a verified addon, the launcher sends one anonymous event: whether it was an install, an update or a rollback to an older version, the addon and its version, the launcher version and the operating system. When it fails, a fixed code such as <code>hash_mismatch</code> goes along, never an error text, a path or a name.</p>
   <p>Each launcher also has a random installation ID. It says nothing about you or your computer and helps to find out what went wrong when something fails. It goes only to this platform, never to GitHub, and is forgotten after 90 days; the counts stay. With it the platform counts how many launchers of each version and operating system were active in an hour and in a day.</p>
+  <h3>Website</h3>
   <p>The website counts page views the same way: which page, the site a visitor came from, the country Cloudflare reports and whether it is a phone, a computer or a Steam Deck. It sets no cookie and runs no tracking script. A search of the addon list that finds nothing is counted with its words (at most four, no e-mail addresses) to see which addons people miss; these are deleted after 90 days.</p>
   <p>No IP address is stored. To count each visitor once a day, the address is turned into a code with a key that changes every day and is never written down.</p>
-  <p>In the launcher, <strong>Settings, Statistics</strong> turns the events off, or only the installation ID.</p>
+  <p>In the launcher, <strong>Settings &gt; Statistics</strong> turns the events off, or only the installation ID.</p>
 </section>
 {% endblock %}
