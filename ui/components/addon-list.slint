@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { AddonRow } from "types.slint";
-import { ActionButton, LinkButton, RemoveButton } from "buttons.slint";
+import { ActionButton, GlyphButton, RemoveButton } from "buttons.slint";
 import { PickBox } from "fields.slint";
 import { AddonIcon, Pill, ProgressBar } from "addon-parts.slint";
 
@@ -127,17 +127,16 @@ export component AddonRowView inherits Rectangle {
                 enabled: !root.addon.busy;
                 clicked => { root.action(); }
             }
-            // GitHub is a link, so it never looks like Install; the bin stays square at the right.
+            // GitHub as the same icon button as in the details, so it never looks like Install.
             HorizontalLayout {
                 spacing: 6px;
-                if root.addon.can-open : VerticalLayout {
-                    alignment: center;
-                    LinkButton {
-                        text: "GitHub";
-                        clicked => { root.open(); }
-                    }
+                alignment: end;
+                if root.addon.can-open : GlyphButton {
+                    label: "GitHub";
+                    // Code brackets.
+                    glyph: "M 5 4 L 1.5 8 L 5 12 M 11 4 L 14.5 8 L 11 12 M 9.5 2.5 L 6.5 13.5";
+                    clicked => { root.open(); }
                 }
-                Rectangle { horizontal-stretch: 1; }
                 if root.addon.can-remove && !root.addon.busy : RemoveButton {
                     label: "Remove " + root.addon.name;
                     clicked => { root.remove(); }
@@ -265,14 +264,13 @@ export component AddonTileView inherits Rectangle {
         }
         HorizontalLayout {
             spacing: 6px;
-            if root.addon.can-open : VerticalLayout {
-                alignment: center;
-                LinkButton {
-                    text: "GitHub";
-                    clicked => { root.open(); }
-                }
+            alignment: end;
+            if root.addon.can-open : GlyphButton {
+                label: "GitHub";
+                // Code brackets.
+                glyph: "M 5 4 L 1.5 8 L 5 12 M 11 4 L 14.5 8 L 11 12 M 9.5 2.5 L 6.5 13.5";
+                clicked => { root.open(); }
             }
-            Rectangle { horizontal-stretch: 1; }
             if root.addon.can-remove && !root.addon.busy : RemoveButton {
                 label: "Remove " + root.addon.name;
                 clicked => { root.remove(); }
