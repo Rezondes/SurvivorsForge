@@ -1125,6 +1125,8 @@ pub struct ReportDonePage {
     pub csrf: String,
     pub slug: String,
     pub name: String,
+    /// The reported version; empty for the whole addon.
+    pub version: String,
 }
 
 /// The page navigation of a long list.

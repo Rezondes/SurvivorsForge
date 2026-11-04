@@ -107,6 +107,7 @@ pub fn router(state: AppState) -> Router {
         .route("/addons/{slug}/versions/{tag}", get(crate::public::version))
         .route("/addons/{slug}/versions/{tag}/download", get(crate::public::download))
         .route("/addons/{slug}/report", get(crate::report::report_page).post(crate::report::send_report))
+        .route("/addons/{slug}/report/sent", get(crate::report::report_sent))
         .route("/addons/{slug}/issues", get(crate::issues::list).post(crate::issues::create))
         .route("/addons/{slug}/issues/new", get(crate::issues::new_form))
         .route("/addons/{slug}/issues/{number}", get(crate::issues::show))

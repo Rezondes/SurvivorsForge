@@ -926,8 +926,11 @@ async fn addons_and_versions_can_be_reported() {
         .mount(&web.api)
         .await;
     let done = web.post_form("/addons/lucky/report", &[("version", "v1"), ("reason", "malware"), ("text", "Sends my name somewhere")]).await;
-    assert_eq!(done.status, StatusCode::OK, "{}", done.body);
-    assert!(done.body.contains("Thank you") && done.body.contains(r#"href="/addons/lucky""#), "{}", done.body);
+    assert_eq!(done.location(), "/addons/lucky/report/sent?version=v1", "a page of its own: a reload sends nothing again");
+    let sent = web.get(done.location()).await;
+    assert!(sent.body.contains("Report sent") && sent.body.contains("version v1") && sent.body.contains(r#"href="/addons/lucky""#), "{}", sent.body);
+    let bare = web.post_form("/addons/lucky/report", &[("version", ""), ("reason", "other"), ("text", " ")]).await;
+    assert_eq!(bare.status, StatusCode::UNPROCESSABLE_ENTITY, "something else needs a word on it");
 
     Mock::given(method("POST"))
         .and(path("/v1/reports"))
@@ -937,7 +940,7 @@ async fn addons_and_versions_can_be_reported() {
         .await;
     let again = web.post_form("/addons/lucky/report", &[("version", ""), ("reason", "spam"), ("text", "same again")]).await;
     assert_eq!(again.status, StatusCode::CONFLICT);
-    for text in ["You reported this already", "same again", r#"value="spam" required checked"#] {
+    for text in ["You reported this already and no admin has looked at it yet", "same again", r#"value="spam" required checked"#] {
         assert!(again.body.contains(text), "missing {text}: {}", again.body);
     }
 }

@@ -8,7 +8,7 @@ use crate::error::{WebError, WebResult};
 use crate::templates::{ReportDonePage, ReportPage, render};
 use axum::extract::{Form, Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::{Extension, response::Html};
 use axum_extra::extract::PrivateCookieJar;
 use serde::Deserialize;
@@ -77,13 +77,24 @@ pub async fn send_report(
 ) -> WebResult<Response> {
     let (user, token) = visitor(&state, &jar).await?.ok_or(WebError::LoginRequired)?;
     let (name, versions) = addon(&state, &slug).await?;
+    // "Something else" and "not their work" say nothing without a word on what was seen.
+    if matches!(form.reason.as_str(), "other" | "stolen") && form.text.trim().is_empty() {
+        let page = page(user, csrf.0, slug, name, versions, form, Some("Write what you noticed, so the admins know what to look at.".into()));
+        return Ok((StatusCode::UNPROCESSABLE_ENTITY, render(&page)).into_response());
+    }
     let body = match versions.iter().find(|(tag, _)| !form.version.is_empty() && *tag == form.version) {
         Some((_, id)) => json!({ "target_type": "version", "target": id.to_string(), "reason": form.reason, "text": form.text.trim() }),
         None => json!({ "target_type": "addon", "target": slug, "reason": form.reason, "text": form.text.trim() }),
     };
     match state.api.post("/v1/reports", Some(&token), &body).await {
-        Ok(_) => Ok(render(&ReportDonePage { user: Some(user), csrf: csrf.0, slug, name }).into_response()),
+        // To a page of its own, so reloading it sends nothing twice.
+        Ok(_) => Ok(Redirect::to(&format!("/addons/{slug}/report/sent?{}", crate::issues::query(&[("version", &form.version)]))).into_response()),
         Err(ApiError::Api { status, message, .. }) if matches!(status, 409 | 422 | 429) => {
+            let message = match status {
+                409 => "You reported this already and no admin has looked at it yet. No need to send it again.".to_string(),
+                429 => "You sent 10 reports in the last 24 hours. Try again tomorrow, or open an issue if it is urgent.".to_string(),
+                _ => message,
+            };
             let page = page(user, csrf.0, slug, name, versions, form, Some(message));
             Ok((StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST), render(&page)).into_response())
         }
@@ -104,4 +115,17 @@ fn page(user: crate::templates::Visitor, csrf: String, slug: String, name: Strin
         text: form.text,
         error,
     }
+}
+
+/// `GET /addons/{slug}/report/sent?version=`: what happens to the report now.
+pub async fn report_sent(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Extension(csrf): Extension<CsrfToken>,
+    Path(slug): Path<String>,
+    Query(q): Query<ReportQuery>,
+) -> WebResult<Html<String>> {
+    let user = visitor(&state, &jar).await?.map(|(u, _)| u);
+    let (name, _) = addon(&state, &slug).await?;
+    Ok(render(&ReportDonePage { user, csrf: csrf.0, slug, name, version: q.version }))
 }

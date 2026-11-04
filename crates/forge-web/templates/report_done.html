@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Report sent - SurvivorsForge{% endblock %}
 {% block content %}
-<h1>Thank you</h1>
+<h1>Report sent</h1>
 <section class="panel">
-  <p>Your report on {{ name }} reached the admins. They look at it and act if something is wrong.</p>
+  <p>Your report on {{ name }}{% if version != "" %} version {{ version }}{% endif %} is in the admins' queue. They check every report; a harmful version gets blocked and the launcher stops installing it. You get no reply here.</p>
   <p><a class="button" href="/addons/{{ slug }}">Back to {{ name }}</a></p>
 </section>
 {% endblock %}

@@ -284,7 +284,7 @@ pub async fn report(State(state): State<AppState>, jar: PrivateCookieJar, Path((
     let token = token(&state, &jar).await?;
     let body = json!({ "target_type": "comment", "target": id.to_string(), "reason": form.reason, "text": form.text.trim() });
     let result = state.api.post("/v1/reports", Some(&token), &body).await;
-    back(&slug, Some(id), result, "Thank you. The admins will look at it.")
+    back(&slug, Some(id), result, "Report sent. An admin will check this comment.")
 }
 
 #[cfg(test)]
