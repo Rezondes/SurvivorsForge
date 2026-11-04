@@ -8,6 +8,7 @@ use crate::templates::{
     AddonPage, AddonsPage, BlockedPage, Card, Dep, DownloadPage, FindingRow, LatestBlock, Shot, VersionPage, VersionRow, VersionsPage, render,
 };
 use crate::trust::{Notice, notice};
+use crate::visits::{SearchMiss, search_term};
 use axum::Extension;
 use axum::extract::{Path, Query, RawQuery, State};
 use axum::http::StatusCode;
@@ -124,7 +125,7 @@ pub(crate) fn card(a: &Value) -> Card {
     }
 }
 
-pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, RawQuery(raw): RawQuery) -> WebResult<Html<String>> {
+pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extension(csrf): Extension<CsrfToken>, RawQuery(raw): RawQuery) -> WebResult<(Option<Extension<SearchMiss>>, Html<String>)> {
     let user = visitor(&state, &jar).await?.map(|(v, _)| v);
     let raw = raw.unwrap_or_default();
     let params: Vec<(String, String)> =
@@ -143,13 +144,14 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
     let cards: Vec<Card> = list["addons"].as_array().into_iter().flatten().map(card).collect();
     let page = param("page").and_then(|p| p.parse().ok()).unwrap_or(1i64).max(1);
     let total = list["total"].as_i64().unwrap_or(0);
+    let miss = param("q").filter(|_| total == 0).and_then(|q| search_term(&q)).map(|t| Extension(SearchMiss(t)));
     let per_page = list["per_page"].as_i64().unwrap_or(20).max(1);
     let link = |p: i64| {
         let mut q: Vec<(&str, String)> = query.iter().filter(|(k, _)| *k != "page").cloned().collect();
         q.push(("page", p.to_string()));
         reqwest::Url::parse_with_params("http://x/addons", &q).map(|u| format!("/addons?{}", u.query().unwrap_or_default())).unwrap_or_default()
     };
-    Ok(render(&AddonsPage {
+    Ok((miss, render(&AddonsPage {
         user,
         csrf: csrf.0,
         checks: crate::stats::checks(&state).await,
@@ -162,7 +164,7 @@ pub async fn addons(State(state): State<AppState>, jar: PrivateCookieJar, Extens
         categories: crate::templates::CategoryOption::groups(crate::app::categories(&state).await?),
         cards,
         pager: crate::templates::Pager::new(page, per_page, total, "addons", link),
-    }))
+    })))
 }
 
 /// `24365` as `24,365`.

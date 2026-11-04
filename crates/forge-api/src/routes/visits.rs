@@ -10,8 +10,10 @@ use axum::http::StatusCode;
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use serde::Deserialize;
 
-/// The daily job that deletes old dedupe rows.
+/// The daily job that deletes old dedupe rows and old searches without a result.
 pub const PRUNE: &str = "prune_web_seen";
+/// Days a search without a result is kept: unlike the page counts it is text a visitor typed.
+pub const KEEP_SEARCH_DAYS: i64 = 90;
 
 #[derive(Deserialize)]
 pub struct Row {
@@ -38,7 +40,7 @@ fn invalid(what: &str) -> ApiError {
 pub async fn record(State(state): State<AppState>, _: FromWebsite, Json(batch): Json<Batch>) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
     for row in &batch.rows {
-        if !matches!(row.kind.as_str(), "site" | "page" | "referrer" | "country" | "device") {
+        if !matches!(row.kind.as_str(), "site" | "page" | "referrer" | "country" | "device" | "search_miss") {
             return Err(invalid("kind"));
         }
         if row.value.len() > 200 || row.target.len() > 100 || row.views < 0 {
@@ -78,10 +80,13 @@ pub async fn record(State(state): State<AppState>, _: FromWebsite, Json(batch): 
 }
 
 pub async fn prune(pool: &sqlx::PgPool, now: DateTime<Utc>) -> Result<(), String> {
-    sqlx::query("DELETE FROM web_seen WHERE day < $1")
-        .bind((now - TimeDelta::days(2)).date_naive())
-        .execute(pool)
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    let run = async {
+        sqlx::query("DELETE FROM web_seen WHERE day < $1").bind((now - TimeDelta::days(2)).date_naive()).execute(pool).await?;
+        sqlx::query("DELETE FROM web_counts WHERE kind = 'search_miss' AND day < $1")
+            .bind((now - TimeDelta::days(KEEP_SEARCH_DAYS)).date_naive())
+            .execute(pool)
+            .await?;
+        Ok::<_, sqlx::Error>(())
+    };
+    run.await.map_err(|e| e.to_string())
 }

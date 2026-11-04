@@ -245,6 +245,42 @@
         "showHeader": true
       },
       "description": "Views of an addon's main page next to its downloads from the website and installs by the launcher. Few downloads per 100 visits on a much viewed page can mean the page does not convince or the download is hard to find."
+    },
+    {
+      "id": 8,
+      "title": "Searches without a result",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT value AS \"Search\", sum(visitors) AS \"Visitors\", sum(views) AS \"Searches\", max(day) AS \"Last\" FROM web_counts WHERE kind = 'search_miss' AND $__timeFilter(day::timestamptz) GROUP BY 1 HAVING sum(visitors) >= 2 ORDER BY 2 DESC, 3 DESC LIMIT 50",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "Addon searches that found nothing, by how many visitors typed them. Terms one visitor alone searched are left out. Kept 90 days. While typing, a word's beginnings can show up too."
     }
   ]
 }

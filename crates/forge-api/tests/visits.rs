@@ -44,6 +44,16 @@ async fn batches_add_up_and_visitors_count_once(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn search_misses_are_kept_90_days(pool: PgPool) {
+    let app = setup(pool);
+    let reply = post(&app, WEBSITE, json!([row("search_miss", "dragon ui", "", 2, &["aa01", "bb02"])])).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.body);
+    assert_eq!(counts(&app).await, [("search_miss".into(), "dragon ui".into(), "".into(), 2, 2)]);
+    forge_api::routes::visits::prune(&app.pool, Utc::now() + Duration::days(91)).await.unwrap();
+    assert!(counts(&app).await.is_empty(), "old searches go, unlike the page counts");
+}
+
+#[sqlx::test]
 async fn only_the_website_sends_visits(pool: PgPool) {
     let app = setup(pool);
     assert_eq!(post(&app, [203, 0, 113, 9], json!([row("site", "", "", 1000, &[])])).await.status, StatusCode::FORBIDDEN);

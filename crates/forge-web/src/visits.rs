@@ -73,6 +73,19 @@ pub fn target(route: &str, path: &str) -> String {
     }
 }
 
+/// Marks the answer of an addon search that found nothing; the middleware counts the term.
+#[derive(Clone)]
+pub struct SearchMiss(pub String);
+
+/// The term of a search without a result as it is counted: lowercased, single spaces, at most 40
+/// characters and four words, no `@`. Anything else is more likely a sentence or an address than
+/// an addon name, so it is not counted.
+pub fn search_term(q: &str) -> Option<String> {
+    let words: Vec<String> = q.split_whitespace().map(str::to_lowercase).collect();
+    let term = words.join(" ");
+    (!term.is_empty() && words.len() <= 4 && term.chars().count() <= 40 && !term.contains('@')).then_some(term)
+}
+
 /// One view, as the rows it counts in.
 pub struct View {
     pub route: String,
@@ -130,6 +143,15 @@ impl Visits {
         }
     }
 
+    /// Counts a search of the addon list that found nothing, once per visitor and day.
+    pub fn record_search_miss(&self, day: NaiveDate, ip: IpAddr, term: String) {
+        let sender = self.sender(day, ip);
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = pending.entry((day, "search_miss", term, String::new())).or_default();
+        entry.0 += 1;
+        entry.1.insert(sender);
+    }
+
     /// The rows of `POST /v1/internal/visits`; empties the counts.
     pub fn take(&self) -> Vec<serde_json::Value> {
         let pending = std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()));
@@ -151,6 +173,14 @@ pub async fn middleware(State(state): State<AppState>, request: Request, next: N
     let response = next.run(request).await;
     let html = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|t| t.starts_with("text/html"));
     let user_agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default();
+    // Searches run as htmx parts while typing, so they count apart from the page views.
+    if let Some(SearchMiss(term)) = response.extensions().get::<SearchMiss>().cloned()
+        && response.status() == StatusCode::OK
+        && !is_bot(user_agent)
+        && let Ok(ip) = crate::rate_limit::CLIENT_IP.try_with(|ip| *ip)
+    {
+        VISITS.record_search_miss(Utc::now().date_naive(), ip, term);
+    }
     if !(counted && html && response.status() == StatusCode::OK && !is_bot(user_agent)) {
         return response;
     }
@@ -170,6 +200,15 @@ pub async fn middleware(State(state): State<AppState>, request: Request, next: N
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_terms_are_short_and_plain() {
+        assert_eq!(search_term("  Dragon   UI "), Some("dragon ui".into()));
+        assert_eq!(search_term(""), None);
+        assert_eq!(search_term("me@example.com"), None, "no addresses");
+        assert_eq!(search_term(&"a".repeat(41)), None, "long text is no addon name");
+        assert_eq!(search_term("one two three four five"), None);
+    }
 
     #[test]
     fn people_not_bots() {
