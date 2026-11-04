@@ -29,7 +29,7 @@
     </form>
     <form method="post" action="/addons/{{ slug }}/members/{{ m.github_id }}/delete" class="inline">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" class="danger">Remove</button>
+      <button type="submit" class="danger" aria-label="Remove {{ m.login }}" data-confirm="Remove {{ m.login }} from this addon? They lose their edit rights at once.">Remove</button>
     </form>
   </div>
   {% endfor %}

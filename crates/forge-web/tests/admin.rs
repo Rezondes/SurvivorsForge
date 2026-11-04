@@ -696,3 +696,14 @@ async fn enter_in_a_note_field_never_picks_an_action() {
         enter_sends_nothing(&page.body);
     }
 }
+
+#[tokio::test]
+async fn destructive_admin_actions_ask_first() {
+    let mut web = as_admin().await;
+    grouped_queue(&web).await;
+    let review = web.get("/admin/review/lucky").await.body;
+    assert!(review.contains("data-confirm=\"Block every queued version") && review.contains("data-confirm=\"Block v2?"), "{review}");
+    get_json(&web, "/v1/admin/users/eve", json!({ "github_id": 5, "login": "eve", "role": "user", "banned": false, "addons": 2 })).await;
+    let users = web.get("/admin/users?login=eve").await.body;
+    assert!(users.contains("data-confirm=\"Ban eve?") && users.contains("data-confirm=\"Change the role of eve?"), "{users}");
+}

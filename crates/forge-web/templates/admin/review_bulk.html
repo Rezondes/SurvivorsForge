@@ -6,5 +6,5 @@
   <input id="bulk-{{ bulk_slug }}" name="note">
   <button type="submit" formaction="/admin/review/{{ bulk_slug }}/verify">Verify all</button>
   <button type="submit" class="secondary">Skip all</button>
-  <button type="submit" class="danger" formaction="/admin/review/{{ bulk_slug }}/block">Block all</button>
+  <button type="submit" class="danger" formaction="/admin/review/{{ bulk_slug }}/block" data-confirm="Block every queued version of this addon? Players cannot install them until you unblock.">Block all</button>
 </form>

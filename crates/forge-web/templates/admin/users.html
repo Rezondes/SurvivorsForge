@@ -12,7 +12,7 @@
     {% if a.by_config %}
       <span class="muted">set in ADMIN_GITHUB_IDS on the server</span>
     {% else if manage_roles %}
-    <form method="post" action="/admin/users/{{ a.github_id }}/role">
+    <form method="post" action="/admin/users/{{ a.github_id }}/role" data-confirm="Change the role of {{ a.login }}? User takes away every staff right.">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="">
       <label class="sr-only" for="role-{{ a.github_id }}">Role</label>
       <select id="role-{{ a.github_id }}" name="role">
@@ -21,7 +21,7 @@
         <option value="admin"{% if a.role == "admin" %} selected{% endif %}>Admin</option>
       </select>
       <label class="sr-only" for="note-{{ a.github_id }}">Note</label><input id="note-{{ a.github_id }}" name="note" placeholder="Note" required>
-      <button type="submit">Change role</button>
+      <button type="submit" aria-label="Change the role of {{ a.login }}">Change role</button>
     </form>
     {% endif %}
   </div>
@@ -56,7 +56,7 @@
     </select>
     <label for="role-note">Why</label><input id="role-note" name="note" required>
     <p class="muted">Moderators review and verify versions, block addons, ban users and manage the lists. Admins also give roles and see the monitoring.</p>
-    <button type="submit">Change the role of {{ u.login }}</button>
+    <button type="submit" data-confirm="Change the role of {{ u.login }}?">Change the role of {{ u.login }}</button>
   </form>
   {% endif %}
   {% if u.role == "user" || (u.role == "moderator" && manage_roles) %}
@@ -64,7 +64,7 @@
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="login" value="{{ u.login }}">
     <label for="ban-note">Reason</label><input id="ban-note" name="note" required>
     <p class="muted">Banning ends their sessions and blocks every addon they own until the ban is lifted.</p>
-    <button type="submit" class="danger">Ban {{ u.login }}</button>
+    <button type="submit" class="danger" data-confirm="Ban {{ u.login }}? This ends their sessions and blocks their addons until the ban is lifted.">Ban {{ u.login }}</button>
   </form>
   {% endif %}
   {% endif %}

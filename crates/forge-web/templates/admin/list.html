@@ -33,7 +33,7 @@
     </form>
     <form method="post" action="/admin/list/{{ kind }}/{{ key }}/delete" class="inline">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button type="submit" class="danger">Delete</button>
+      <button type="submit" class="danger" aria-label="Delete {{ name }}" data-confirm="Delete {{ name }}? This cannot be undone.">Delete</button>
     </form>
   </div>
   {% endfor %}

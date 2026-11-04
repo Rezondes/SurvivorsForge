@@ -113,12 +113,13 @@
     saveCaption(form);
   });
 
-  // Forms that destroy something ask first; without script they act at once.
+  // Forms (or one button of a form) that destroy something ask first; without script they act
+  // at once.
   document.addEventListener(
     "submit",
     function (event) {
-      var form = event.target.closest("form[data-confirm]");
-      if (form && !window.confirm(form.getAttribute("data-confirm"))) {
+      var asker = (event.submitter && event.submitter.closest("[data-confirm]")) || event.target.closest("form[data-confirm]");
+      if (asker && !window.confirm(asker.getAttribute("data-confirm"))) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }

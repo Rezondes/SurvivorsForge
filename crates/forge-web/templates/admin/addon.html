@@ -13,7 +13,7 @@
     <input id="new-owner" name="login" required>
     <label for="owner-note">Note</label>
     <input id="owner-note" name="note" required>
-    <button type="submit">Hand over</button>
+    <button type="submit" class="danger" data-confirm="Hand over this addon? The new owner gets every right to it.">Hand over</button>
   </form>
 </section>
 <section class="panel">
@@ -57,7 +57,7 @@
   <form method="post" action="/admin/addons/{{ slug }}/block" class="admin-actions">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label for="block-note">Reason (shown on the addon page)</label><input id="block-note" name="note" required>
-    <button type="submit" class="danger">Block the whole addon</button>
+    <button type="submit" class="danger" data-confirm="Block the whole addon? Players cannot install any version until you unblock it.">Block the whole addon</button>
   </form>
   {% endif %}
 </section>

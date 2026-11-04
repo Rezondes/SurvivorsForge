@@ -38,7 +38,7 @@
     <button type="submit" formaction="/admin/versions/{{ item.version_id }}/verify">Verify this file</button>
     {% endif %}
     <button type="submit" class="secondary">Skip</button>
-    <button type="submit" class="danger" formaction="/admin/versions/{{ item.version_id }}/block">Block this version</button>
+    <button type="submit" class="danger" formaction="/admin/versions/{{ item.version_id }}/block" data-confirm="Block {{ item.tag }}? Players cannot install it until you unblock it.">Block this version</button>
   </form>
 </section>
 {% endfor %}
