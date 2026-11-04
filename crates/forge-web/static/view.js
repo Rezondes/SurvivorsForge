@@ -267,13 +267,26 @@
     event.preventDefault();
     var figure = form.closest("[data-image-id]");
     var list = figure.parentNode;
-    if (new FormData(form).get("direction") === "up") list.insertBefore(figure, figure.previousElementSibling);
+    var up = new FormData(form).get("direction") === "up";
+    if (up) list.insertBefore(figure, figure.previousElementSibling);
     else list.insertBefore(figure, figure.nextElementSibling && figure.nextElementSibling.nextElementSibling);
-    saved(fetch(form.action, { method: "POST", body: new URLSearchParams(new FormData(form)) }), list);
+    // Moving the screenshot dropped the focus; it goes back to the arrow that moved it.
+    form.querySelector("button").focus();
+    say(list, "Saving the order...");
+    saved(fetch(form.action, { method: "POST", body: new URLSearchParams(new FormData(form)) }), list, figure, up);
   });
 
-  // After a move is saved the first and last arrows switch off; a failed save shows the real order.
-  function saved(request, list) {
+  // The order's status line, read out by screen readers.
+  function say(list, text, bad) {
+    var status = list.parentNode.querySelector("[data-order-status]");
+    if (!status) return;
+    status.textContent = text;
+    status.className = "muted" + (bad ? " field-error" : "");
+  }
+
+  // After a move is saved the first and last arrows switch off; a failed save says so, then shows
+  // the real order.
+  function saved(request, list, figure, up) {
     request
       .then(function (response) {
         if (!response.ok) throw new Error(response.status);
@@ -283,9 +296,18 @@
           buttons[0].disabled = i === 0;
           buttons[1].disabled = i === figures.length - 1;
         });
+        // An arrow that just switched off hands the focus to the other one.
+        if (figure) {
+          var arrows = figure.querySelectorAll("form[data-move] button");
+          var arrow = arrows[up ? 0 : 1];
+          if (arrow.disabled && document.activeElement === arrow) arrows[up ? 1 : 0].focus();
+        }
+        var place = figure ? Array.prototype.indexOf.call(figures, figure) + 1 : 0;
+        say(list, place ? "Moved to position " + place + " of " + figures.length + ". Order saved." : "Order saved.");
       })
       .catch(function () {
-        location.reload();
+        say(list, "Could not save the order. Check your connection and try again.", true);
+        setTimeout(function () { location.reload(); }, 2500);
       });
   }
 
