@@ -64,6 +64,7 @@ pub fn listen(open: impl Fn(String) + Send + 'static) -> bool {
 /// Lets the system open `survivorsforge://` links with this executable. Per user, no admin rights;
 /// written on every start, so the link follows the executable when it moves.
 pub fn register() {
+    #[cfg(any(windows, target_os = "linux"))]
     let Ok(exe) = std::env::current_exe() else { return };
     #[cfg(windows)]
     {

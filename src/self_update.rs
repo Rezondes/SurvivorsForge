@@ -23,7 +23,11 @@ pub fn asset_name_for(windows: bool) -> String {
 }
 
 pub fn asset_name() -> String {
-    asset_name_for(cfg!(windows))
+    if cfg!(target_os = "macos") {
+        format!("{}-macos-arm64.zip", crate::APP_NAME)
+    } else {
+        asset_name_for(cfg!(windows))
+    }
 }
 
 /// The AppImage file to replace: `$APPIMAGE`, set by the AppImage runtime, if it points at a file.
@@ -99,7 +103,7 @@ pub fn apply_store() -> Result<bool> {
 
 /// Whether this process can replace itself; otherwise the update banner links to the release.
 pub fn can_replace_self() -> bool {
-    cfg!(windows) || appimage_path(std::env::var_os("APPIMAGE")).is_some()
+    cfg!(windows) || (cfg!(target_os = "linux") && appimage_path(std::env::var_os("APPIMAGE")).is_some())
 }
 
 fn parse(version: &str) -> Option<semver::Version> {

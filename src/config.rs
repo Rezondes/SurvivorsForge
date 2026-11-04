@@ -227,13 +227,12 @@ pub fn find_addons_dirs(roots: &[PathBuf], max_depth: usize) -> Vec<PathBuf> {
     found
 }
 
-/// The game's executable next to `<game>/benilla-config/AddOns`: `AzerothSurvivors.exe` on Windows,
-/// on Linux a native build whose name starts with `AzerothSurvivors`. A Windows build on Linux runs
-/// through Proton and can't be started from here.
-pub fn game_executable(addons_dir: &Path, windows: bool) -> Option<PathBuf> {
+/// The game's executable next to `<game>/benilla-config/AddOns`: `AzerothSurvivors.exe` on
+/// Windows and macOS, or a native build whose name starts with `AzerothSurvivors` on Linux.
+pub fn game_executable(addons_dir: &Path, windows_build: bool) -> Option<PathBuf> {
     let game = addons_dir.parent()?.parent()?;
-    if windows {
-        return Some(game.join("AzerothSurvivors.exe")).filter(|p| p.is_file());
+    if windows_build {
+        return Some(game.join(crate::game_update::GAME_EXE)).filter(|p| p.is_file());
     }
     // ponytail: first match by name; pin the exact name once the Linux build's file is known
     let mut native: Vec<PathBuf> = std::fs::read_dir(game)

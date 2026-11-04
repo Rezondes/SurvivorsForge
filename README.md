@@ -46,6 +46,11 @@ On first start the app asks for the `AddOns` folder, e.g. `<game>\benilla-config
 
 A debug build (`cargo run`) talks to a local platform (`http://localhost:3081`, website `:3080`) and does not register the `survivorsforge://` links. Against the official one: `SURVIVORSFORGE_API_URL=https://forgeapi.rezondes.net SURVIVORSFORGE_WEB_URL=https://forge.rezondes.net cargo run`, or set both in *Settings*.
 
+### macOS app
+
+Build a local app for Apple Silicon with bundled Wine. It requires macOS 26.2 or
+later and Rosetta 2. See the [macOS build and setup instructions](packaging/macos/README.md).
+
 ### Linux AppImage
 
 ```bash
