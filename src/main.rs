@@ -323,7 +323,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         RowState::Manual => ("Installed from zip".into(), 0, ""),
         RowState::CheckFailed(_) => ("Check failed".into(), 3, ""),
         RowState::Missing => ("Folder missing".into(), 3, if row.badge == Badge::Zip { "" } else { "Reinstall" }),
-        RowState::Unmanaged => ("Not managed".into(), 0, ""),
+        RowState::Unmanaged => ("Found in the AddOns folder".into(), 0, ""),
     };
     let warning = match &row.state {
         RowState::CheckFailed(message) => message.clone(),
@@ -367,6 +367,14 @@ fn row_progress(core: &Core, id: &str) -> Option<(String, i32, f32)> {
     core.outcomes.get(id).map(|(text, failed)| (text.clone(), if *failed { 3 } else { 1 }, -1.0))
 }
 
+/// Why a Browse card has no Install button.
+fn not_installable(trust: Option<forge_core::trust::Trust>) -> &'static str {
+    match trust {
+        Some(forge_core::trust::Trust::SourceChanged) => "Repo changed: waits for a new check",
+        _ => "Blocked by the admins",
+    }
+}
+
 /// A Browse card. An installed addon shows its card from Installed (status, Update, Remove), only
 /// with the pack box Browse adds.
 fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
@@ -377,7 +385,7 @@ fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
     }
     let (status, status_kind) = match (b.installed, b.installable) {
         (true, _) => ("Installed".to_string(), 1),
-        (false, false) => ("Not installable".to_string(), 3),
+        (false, false) => (not_installable(core.registry.get(&b.id).and_then(|a| a.latest.as_ref()).map(|l| l.trust)).to_string(), 3),
         (false, true) => (String::new(), 0),
     };
     let (status, status_kind, progress) = row_progress(core, &b.id).unwrap_or((status, status_kind, -1.0));
@@ -1813,6 +1821,10 @@ fn fill_game_versions(ui: &AppWindow, core: &Core) {
 /// dialog (Game Mode) the zip goes to the Downloads folder.
 fn on_pack_save(ui: &AppWindow, shared: &Shared) {
     let name = "SurvivorsForge-pack.zip";
+    // Before the save dialog: offline nothing can be packed.
+    if lock(shared).offline {
+        return lock(shared).notify(Error::Offline.to_string(), Kind::Error);
+    }
     let dest = if ui.get_file_dialog() && !ui.get_game_mode() {
         let Some(dest) = rfd::FileDialog::new().add_filter("Zip archive", &["zip"]).set_file_name(name).save_file() else { return };
         dest
@@ -2574,6 +2586,12 @@ mod card_tests {
         // As text: two empty images never compare equal.
         assert_eq!(format!("{:?}", AddonRow { can_pick: card.can_pick, picked: card.picked, ..shown }), format!("{card:?}"));
         assert_eq!(browse(&other.id).action, "Install", "an addon that is not installed keeps its Browse card");
+    }
+
+    #[test]
+    fn a_card_says_why_it_cannot_be_installed() {
+        assert_eq!(not_installable(Some(forge_core::trust::Trust::Blocked)), "Blocked by the admins");
+        assert_eq!(not_installable(Some(forge_core::trust::Trust::SourceChanged)), "Repo changed: waits for a new check");
     }
 }
 

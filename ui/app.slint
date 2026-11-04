@@ -957,10 +957,13 @@ export component AppWindow inherits Window {
                     if root.page == 1 && !root.showing-detail && root.picked-count > 0 : HorizontalLayout {
                         spacing: 10px;
                         Text {
-                            text: root.picked-count == 1 ? "1 addon picked for a pack" : root.picked-count + " addons picked for a pack";
+                            horizontal-stretch: 1;
+                            text: (root.picked-count == 1 ? "1 addon picked" : root.picked-count + " addons picked")
+                                + ": one zip with all of them, for the browser version of the game";
                             font-size: Theme.body;
                             color: Theme.gold;
                             vertical-alignment: center;
+                            wrap: word-wrap;
                         }
                         Rectangle { horizontal-stretch: 1; }
                         ActionButton {
