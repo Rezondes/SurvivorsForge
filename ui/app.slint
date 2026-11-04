@@ -160,6 +160,18 @@ component SettingRow inherits HorizontalLayout {
     @children
 }
 
+// The reason a settings field was refused, under it and lined up with the fields.
+component FieldError inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: 180px + Theme.gap-loose;
+    Text {
+        text: "Error: " + root.text;
+        font-size: Theme.meta;
+        color: Theme.danger;
+        wrap: word-wrap;
+    }
+}
+
 component SettingsView inherits VerticalLayout {
     in-out property <string> path;
     // "Not set" first, then the platform's game versions; empty without the platform.
@@ -170,6 +182,10 @@ component SettingsView inherits VerticalLayout {
     in property <bool> game-mode;
     // Another platform than the built-in one; empty uses the address shown as placeholder.
     in-out property <string> api-url;
+    // Why a field was not saved, under it; empty when it was.
+    in property <string> path-error;
+    in property <string> api-error;
+    in property <string> web-error;
     in-out property <string> web-url;
     in property <string> api-default;
     in property <string> web-default;
@@ -191,6 +207,7 @@ component SettingsView inherits VerticalLayout {
         Field {
             text <=> root.path;
             label: "AddOns folder";
+            invalid: root.path-error != "";
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
@@ -199,6 +216,7 @@ component SettingsView inherits VerticalLayout {
             clicked => { root.browse(); }
         }
     }
+    if root.path-error != "" : FieldError { text: root.path-error; }
     if !root.file-dialog : HorizontalLayout {
         padding-left: 180px + Theme.gap-loose;
         TypePathHint {
@@ -220,20 +238,24 @@ component SettingsView inherits VerticalLayout {
             text <=> root.api-url;
             placeholder: root.api-default;
             label: "Platform API address";
+            invalid: root.api-error != "";
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
     }
+    if root.api-error != "" : FieldError { text: root.api-error; }
     SettingRow {
         label: "Platform website";
         Field {
             text <=> root.web-url;
             placeholder: root.web-default;
             label: "Platform website address";
+            invalid: root.web-error != "";
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
     }
+    if root.web-error != "" : FieldError { text: root.web-error; }
     SettingRow {
         label: "Statistics";
         VerticalLayout {
@@ -479,6 +501,9 @@ export component AppWindow inherits Window {
     in property <[string]> settings-game-versions;
     in-out property <int> settings-game-index;
     in-out property <string> settings-api-url;
+    in property <string> settings-path-error;
+    in property <string> settings-api-error;
+    in property <string> settings-web-error;
     in-out property <string> settings-web-url;
     in property <string> settings-api-default;
     in property <string> settings-web-default;
@@ -1001,6 +1026,9 @@ export component AppWindow inherits Window {
                         game-versions: root.settings-game-versions;
                         game-index <=> root.settings-game-index;
                         api-url <=> root.settings-api-url;
+                        path-error: root.settings-path-error;
+                        api-error: root.settings-api-error;
+                        web-error: root.settings-web-error;
                         web-url <=> root.settings-web-url;
                         api-default: root.settings-api-default;
                         web-default: root.settings-web-default;

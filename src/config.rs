@@ -93,8 +93,8 @@ pub struct SettingsInput {
 /// The settings with every valid field of `input` taken over; an invalid field keeps the saved
 /// value and gives an error naming it, so one typo never blocks the other settings. Also the
 /// warning about an odd AddOns folder.
-pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Vec<String>, Option<DirWarning>) {
-    let mut errors = Vec::new();
+pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, SettingsErrors, Option<DirWarning>) {
+    let mut errors = SettingsErrors::default();
     let mut config = Config {
         game_version: input.game_version,
         telemetry: input.telemetry,
@@ -108,17 +108,39 @@ pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Vec<Stri
             warning = w;
             config.addons_dir = input.addons_dir;
         }
-        Err(e) => errors.push(format!("AddOns folder: {e}")),
+        Err(e) => errors.path = Some(e.to_string()),
     }
     match platform_url(&input.api_url) {
         Ok(url) => config.api_url = url,
-        Err(e) => errors.push(format!("Platform API: {e}")),
+        Err(e) => errors.api = Some(e),
     }
     match platform_url(&input.web_url) {
         Ok(url) => config.web_url = url,
-        Err(e) => errors.push(format!("Platform website: {e}")),
+        Err(e) => errors.web = Some(e),
     }
     (config, errors, warning)
+}
+
+/// Why a settings field was not taken over, per field; shown under the field and in a toast.
+#[derive(Debug, Default, PartialEq)]
+pub struct SettingsErrors {
+    pub path: Option<String>,
+    pub api: Option<String>,
+    pub web: Option<String>,
+}
+
+impl SettingsErrors {
+    pub fn is_empty(&self) -> bool {
+        self.path.is_none() && self.api.is_none() && self.web.is_none()
+    }
+
+    /// Each error with the field it is about, for the toast.
+    pub fn messages(&self) -> Vec<String> {
+        [("AddOns folder", &self.path), ("Platform API", &self.api), ("Platform website", &self.web)]
+            .into_iter()
+            .filter_map(|(field, e)| e.as_ref().map(|e| format!("{field}: {e}")))
+            .collect()
+    }
 }
 
 /// `%APPDATA%\SurvivorsForge` on Windows, `~/.config/SurvivorsForge` on Linux.
@@ -367,8 +389,9 @@ mod tests {
         assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));
         assert_eq!(config.addons_dir, addons, "the bad path keeps the saved one");
         assert_eq!(config.api_url, None);
-        assert_eq!(errors.len(), 2);
-        assert!(errors[0].starts_with("AddOns folder: ") && errors[1].starts_with("Platform API: "), "{errors:?}");
+        assert!(errors.path.is_some() && errors.api.is_some() && errors.web.is_none(), "{errors:?}");
+        let messages = errors.messages();
+        assert!(messages[0].starts_with("AddOns folder: ") && messages[1].starts_with("Platform API: "), "{messages:?}");
     }
 
     #[test]

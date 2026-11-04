@@ -8,6 +8,8 @@ export component Field inherits Rectangle {
     in property <string> placeholder;
     // What screen readers call the field; the placeholder when empty.
     in property <string> label;
+    // Its value was refused: a red border, the reason stands under the field.
+    in property <bool> invalid;
     in property <bool> enabled: true;
     callback accepted();
     callback edited(string);
@@ -20,8 +22,8 @@ export component Field inherits Rectangle {
 
     height: Theme.touch ? 44px : 38px;
     border-radius: Theme.radius;
-    border-width: input.has-focus ? 2px : 1px;
-    border-color: input.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline-hover : Theme.outline;
+    border-width: input.has-focus || root.invalid ? 2px : 1px;
+    border-color: root.invalid ? Theme.danger : input.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline-hover : Theme.outline;
     background: Theme.field;
 
     hover := TouchArea {

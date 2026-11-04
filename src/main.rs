@@ -1704,7 +1704,11 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
             auto_update_all: ui.get_settings_auto_update(),
         };
         // A bad field keeps its saved value and its text in the field; the others still save.
-        let (config, errors, warning) = config::apply_settings(&core.config, input);
+        let (config, field_errors, warning) = config::apply_settings(&core.config, input);
+        ui.set_settings_path_error(field_errors.path.clone().unwrap_or_default().into());
+        ui.set_settings_api_error(field_errors.api.clone().unwrap_or_default().into());
+        ui.set_settings_web_error(field_errors.web.clone().unwrap_or_default().into());
+        let errors = field_errors.messages();
         let platform_changed = config.api_url != core.config.api_url;
         // The values are valid again: an error about them is over.
         if errors.is_empty()
@@ -2905,6 +2909,21 @@ mod layout_tests {
             let clear = ElementHandle::find_by_accessible_label(&ui, "Clear search and filters").next().expect("a way out of an empty filtered list");
             clear.invoke_accessible_default_action();
             assert!(cleared.get() && ui.get_search().is_empty(), "the search is gone");
+        }
+
+        #[test]
+        fn a_refused_setting_says_why_under_its_field() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_page(2);
+            ui.set_settings_api_error("\"x\" is not a web address (http:// or https://)".into());
+            ui.show().unwrap();
+            if ElementHandle::find_by_accessible_label(&ui, "Installed (0)").next().is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            let text = "Error: \"x\" is not a web address (http:// or https://)";
+            assert!(ElementHandle::find_by_accessible_label(&ui, text).next().is_some(), "the reason stands under the field");
         }
 
         #[test]
