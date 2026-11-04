@@ -4,7 +4,7 @@ use crate::archive::DetectedAddon;
 use crate::registry::{Registry, VerifiedAddon};
 use crate::scan::InstalledAddon;
 use crate::state::{Reconciled, Source, State, TOC_PREFIX};
-use crate::updates::UpdateStatus;
+use crate::updates::{RemoteVersion, UpdateStatus};
 use forge_core::trust::Trust;
 use std::collections::HashMap;
 
@@ -547,6 +547,14 @@ pub struct VersionLine {
     pub trust: Trust,
     pub downloads: u64,
     pub prerelease: bool,
+    /// What installing exactly this version takes; `None` when the platform blocks it or its file is
+    /// gone from GitHub.
+    pub install: Option<RemoteVersion>,
+}
+
+/// How a version is named in a dialog: release names often start with the addon's name already.
+pub fn version_title(addon: &str, version: &str) -> String {
+    if version.to_lowercase().starts_with(&addon.to_lowercase()) { version.to_string() } else { format!("{addon} {version}") }
 }
 
 /// Every version of `/v1/addons/{slug}/versions`, newest first as the platform sends them.
@@ -557,10 +565,16 @@ pub fn version_lines(json: &str) -> Option<Vec<VersionLine>> {
             .filter_map(|v| {
                 let tag = v["tag"].as_str()?.to_string();
                 let name = v["name"].as_str().filter(|n| !n.is_empty()).map_or_else(|| tag.clone(), str::to_string);
+                let trust: Trust = serde_json::from_value(v["trust"].clone()).unwrap_or(Trust::Unscanned);
+                let install = (trust.installable() && v["source"] == "available")
+                    .then(|| v["asset_url"].as_str())
+                    .flatten()
+                    .map(|url| RemoteVersion { id: tag.clone(), label: name.clone(), download: url.to_string(), sha256: v["sha256"].as_str().map(str::to_string) });
                 Some(VersionLine {
                     name,
                     date: v["published_at"].as_str().unwrap_or_default().chars().take(10).collect(),
-                    trust: serde_json::from_value(v["trust"].clone()).unwrap_or(Trust::Unscanned),
+                    trust,
+                    install,
                     downloads: v["downloads"].as_u64().unwrap_or_default(),
                     prerelease: v["prerelease"] == true,
                     tag,
@@ -1342,11 +1356,17 @@ mod tests {
     #[test]
     fn the_versions_tab_reads_every_version_newest_first() {
         let json = r#"[
-            {"tag":"v2","name":"Lucky 2","published_at":"2026-11-04T12:41:27+00:00","trust":"scanned","downloads":278,"prerelease":false,"source":"available"},
-            {"tag":"v1","name":"","published_at":"2026-10-01T10:00:00+00:00","trust":"blocked","downloads":5,"prerelease":true,"source":"deleted"}]"#;
+            {"tag":"v2","name":"Lucky 2","published_at":"2026-11-04T12:41:27+00:00","trust":"scanned","downloads":278,"prerelease":false,"source":"available","asset_url":"https://g/v2.zip","sha256":"ab"},
+            {"tag":"v1","name":"","published_at":"2026-10-01T10:00:00+00:00","trust":"blocked","downloads":5,"prerelease":true,"source":"available","asset_url":"https://g/v1.zip","sha256":"cd"},
+            {"tag":"v0","name":"","published_at":"2026-09-01T10:00:00+00:00","trust":"verified","downloads":1,"prerelease":false,"source":"deleted","asset_url":"https://g/v0.zip","sha256":"ef"}]"#;
         let versions = version_lines(json).unwrap();
-        assert_eq!(versions[0], VersionLine { tag: "v2".into(), name: "Lucky 2".into(), date: "2026-11-04".into(), trust: Trust::Scanned, downloads: 278, prerelease: false });
+        let remote = RemoteVersion { id: "v2".into(), label: "Lucky 2".into(), download: "https://g/v2.zip".into(), sha256: Some("ab".into()) };
+        assert_eq!(versions[0], VersionLine { tag: "v2".into(), name: "Lucky 2".into(), date: "2026-11-04".into(), trust: Trust::Scanned, downloads: 278, prerelease: false, install: Some(remote) });
         assert_eq!((versions[1].name.as_str(), versions[1].trust), ("v1", Trust::Blocked), "without a name the tag stands in");
+        assert!(versions[1].install.is_none(), "a blocked version cannot be installed");
+        assert!(versions[2].install.is_none(), "nor one whose file is gone from GitHub");
+        assert_eq!(version_title("Lucky", "Lucky 2"), "Lucky 2", "the name is not said twice");
+        assert_eq!(version_title("Lucky", "v1"), "Lucky v1");
         assert_eq!(version_lines("{}"), None);
     }
 

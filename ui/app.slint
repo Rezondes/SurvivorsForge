@@ -405,6 +405,8 @@ export component AppWindow inherits Window {
     callback detail-tab-changed(int);
     // A list page that failed, asked again.
     callback detail-retry(int);
+    // Install exactly this version of the detail view's addon (an older one, after a confirmation).
+    callback version-install(string);
     in property <[IssueLine]> issues-rows;
     in property <int> issues-open;
     in property <bool> issues-loading;
@@ -755,7 +757,9 @@ export component AppWindow inherits Window {
                     rows: root.versions-rows;
                     loading: root.versions-loading;
                     failed: root.versions-failed;
+                    busy: root.detail.row.busy;
                     retry => { root.detail-retry(3); }
+                    install(tag) => { root.version-install(tag); }
                 }
 
                 if root.page == 0 && !root.showing-detail : ScrollPanel {

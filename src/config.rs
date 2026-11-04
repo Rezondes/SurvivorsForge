@@ -33,6 +33,10 @@ pub struct Config {
     /// Entry ids that update on their own while `auto_update_all` is off.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auto_update: Vec<String>,
+    /// Entry ids the user put back to an older version: they do not update on their own until the
+    /// newest is installed again by hand.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -56,6 +60,7 @@ impl Default for Config {
             tile_pages: Vec::new(),
             auto_update_all: false,
             auto_update: Vec::new(),
+            held: Vec::new(),
         }
     }
 }
@@ -99,7 +104,15 @@ impl Config {
 
     /// Whether the installed addon `id` updates on its own.
     pub fn auto_updates(&self, id: &str) -> bool {
-        self.auto_update_all || self.auto_update.iter().any(|a| a == id)
+        !self.held.iter().any(|h| h == id) && (self.auto_update_all || self.auto_update.iter().any(|a| a == id))
+    }
+
+    /// Holds `id` at the older version just installed, or (`false`) lets it update again.
+    pub fn hold(&mut self, id: &str, held: bool) {
+        self.held.retain(|h| h != id);
+        if held {
+            self.held.push(id.to_string());
+        }
     }
 
     /// The saved settings. A file from before `install_id` gets one now and keeps it.
@@ -271,6 +284,19 @@ pub fn validate_addons_dir(path: &Path) -> Result<Option<DirWarning>, DirError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_addon_held_at_an_older_version_does_not_update_on_its_own() {
+        let mut config = Config { auto_update_all: true, ..Config::default() };
+        assert!(config.auto_updates("lucky"));
+        config.hold("lucky", true);
+        assert!(!config.auto_updates("lucky"), "the user went back to an older version");
+        assert!(config.auto_updates("other"));
+        config.hold("lucky", true);
+        assert_eq!(config.held, ["lucky"], "held once");
+        config.hold("lucky", false);
+        assert!(config.auto_updates("lucky"), "installing the newest by hand lets it update again");
+    }
 
     #[test]
     fn finds_the_game_executable() {

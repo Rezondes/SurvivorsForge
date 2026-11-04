@@ -441,6 +441,7 @@ fn detail(core: &Core, rows: &[Row]) -> Option<AddonDetail> {
         can_auto_update: !*browse && matches!(core.state.get(id).map(|e| &e.source), Some(Source::Verified { .. })),
         auto_update: core.config.auto_updates(id),
         auto_update_all: core.config.auto_update_all,
+        held: core.config.held.iter().any(|h| h == id),
     })
 }
 
@@ -657,8 +658,9 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_issues_loading(loading);
     ui.set_issues_failed(failed);
     let verified_author = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).is_some_and(|a| a.verified_author == Some(true));
+    let installed = core.detail.as_ref().and_then(|(id, _)| core.state.get(id)).map(|e| e.version.clone()).unwrap_or_default();
     let (versions, loading, failed) = match &core.versions {
-        Some(Listing { rows: Some(rows), .. }) => (rows.iter().map(|v| version_line(v, verified_author)).collect(), false, false),
+        Some(Listing { rows: Some(rows), .. }) => (rows.iter().map(|v| version_line(v, verified_author, &installed)).collect(), false, false),
         Some(l) => (Vec::new(), !l.failed, l.failed),
         None => (Vec::new(), false, false),
     };
@@ -1048,6 +1050,9 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>,
     };
     refresh(ui, shared);
     let Some((name, repo, spec, source, remote)) = job else { return };
+    // An older version than the platform's newest is held there; any other install lets it update again.
+    let newest = registry_entry(&lock(shared), &id).and_then(|a| a.latest.as_ref()).map(|l| l.tag.clone());
+    let held = pinned.as_ref().is_some_and(|p| newest.is_some_and(|n| n != p.id));
     let remote = pinned.or(remote);
     run_bg(ui.as_weak(), shared.clone(), Some(id.clone()), move |shared| {
         for dep in &deps {
@@ -1058,7 +1063,13 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>,
             install_remote(shared, dep, &dep_name, &dep_repo, &dep_spec, dep_source, dep_remote)
                 .map_err(|e| Error::NotInstallable(format!("{dep_name} failed ({e}), so {name} was not installed")))?;
         }
-        install_remote(shared, &id, &name, &repo, &spec, source, remote)
+        let done = install_remote(shared, &id, &name, &repo, &spec, source, remote)?;
+        let mut core = lock(shared);
+        if core.config.held.contains(&id) != held {
+            core.config.hold(&id, held);
+            let _ = core.config.save(&core.data_dir);
+        }
+        Ok(done)
     });
 }
 
@@ -2027,6 +2038,7 @@ fn main() -> Result<(), slint::PlatformError> {
         _ => load_detail_list(&ui, shared, tab),
     });
     on!(on_detail_retry, |ui, shared, tab| load_detail_list(&ui, shared, tab));
+    on!(on_version_install, |ui, shared, tag| on_version_install(&ui, shared, tag.to_string()));
     on!(on_comments_older, |ui, shared| load_comments(&ui, shared, true));
     on!(on_comments_retry, |ui, shared| {
         let older = lock(shared).comments.as_ref().is_some_and(|c| !c.loaded.is_empty());
@@ -2158,7 +2170,7 @@ fn issue_line(i: &controller::IssueLine) -> IssueLine {
     IssueLine { number: i.number as i32, title: i.title.as_str().into(), author: i.author.as_str().into(), comments: i.comments as i32, date: i.date.as_str().into() }
 }
 
-fn version_line(v: &controller::VersionLine, verified_author: bool) -> VersionLine {
+fn version_line(v: &controller::VersionLine, verified_author: bool, installed: &str) -> VersionLine {
     use forge_core::trust::Trust;
     let trust_kind = match v.trust {
         Trust::Verified | Trust::Scanned => 1,
@@ -2173,7 +2185,42 @@ fn version_line(v: &controller::VersionLine, verified_author: bool) -> VersionLi
         trust_kind,
         downloads: v.downloads as i32,
         prerelease: v.prerelease,
+        installed: v.tag == installed,
+        can_install: v.install.is_some(),
     }
+}
+
+/// Installs exactly the version `tag` of the detail view's addon, after a confirmation that says
+/// what an older one means: it stays until the newest is installed again by hand.
+fn on_version_install(ui: &AppWindow, shared: &Shared, tag: String) {
+    let job = {
+        let core = lock(shared);
+        let Some((id, _)) = core.detail.clone() else { return };
+        let Some(version) = core.versions.as_ref().and_then(|l| l.rows.as_ref()).and_then(|rows| rows.iter().find(|v| v.tag == tag)).cloned() else { return };
+        let Some(remote) = version.install.clone() else { return };
+        let addon = registry_entry(&core, &id).map(|a| (a.name.clone(), a.latest.as_ref().map(|l| l.tag.clone())));
+        let (name, newest) = addon.unwrap_or_default();
+        (id, version, remote, name, newest.as_deref() != Some(tag.as_str()))
+    };
+    let (id, version, remote, name, older) = job;
+    let mut lines = vec![if older {
+        format!("{} is not the newest version. SurvivorsForge does not update {name} on its own until you install the newest again.", version.name)
+    } else {
+        format!("{} is the newest version.", version.name)
+    }];
+    let danger = version.trust == forge_core::trust::Trust::Flagged;
+    match version.trust {
+        forge_core::trust::Trust::Flagged => lines.push("The automatic check found something in this version. Read it on the addon's page first.".into()),
+        forge_core::trust::Trust::Unscanned => lines.push("This version was not checked automatically yet.".into()),
+        _ => {}
+    }
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    let ok = if danger { "Install anyway" } else { "Install" };
+    ask(ui, &format!("Install {}?", controller::version_title(&name, &version.name)), &lines.join("\n\n"), ok, danger, move || {
+        if let Some(ui) = weak.upgrade() {
+            start_install(&ui, &shared, id, Vec::new(), Some(remote));
+        }
+    });
 }
 
 fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {

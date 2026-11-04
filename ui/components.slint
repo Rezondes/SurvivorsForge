@@ -76,6 +76,8 @@ export struct AddonDetail {
     auto-update: bool,
     // Switched on for all addons in the settings; the box here cannot turn it off.
     auto-update-all: bool,
+    // Put back to an older version on the Versions tab: no updates on its own until the newest.
+    held: bool,
     // "Report a bug" (the platform's form) or "Report on GitHub", as on the website.
     bug-label: string,
     // The platform takes bug reports: its Issues tab is worth a button.
@@ -103,6 +105,9 @@ export struct VersionLine {
     trust-kind: int,
     downloads: int,
     prerelease: bool,
+    // The installed one; and whether this one can be installed (not blocked, file still there).
+    installed: bool,
+    can-install: bool,
 }
 
 // One comment of an addon's discussion, in reading order; `depth` indents replies (0 to 3).
@@ -1263,7 +1268,8 @@ export component DetailView inherits VerticalLayout {
             toggled => { root.auto-update(); }
         }
         Text {
-            text: root.detail.auto-update-all ? "Updates automatically (switched on for all addons in the settings)" : "Update automatically when the platform found nothing in a new version";
+            text: root.detail.held ? "Kept at an older version: it updates on its own again once you install the newest"
+                : root.detail.auto-update-all ? "Updates automatically (switched on for all addons in the settings)" : "Update automatically when the platform found nothing in a new version";
             font-size: Theme.body;
             color: root.detail.auto-update-all ? Theme.text-muted : Theme.text;
             vertical-alignment: center;
@@ -2199,12 +2205,16 @@ export component IssuesView inherits VerticalLayout {
     }
 }
 
-// The Versions tab: every version the platform knows, newest first.
+// The Versions tab: every version the platform knows, newest first. The newest is what installs and
+// updates by default; an older one can be installed here, for an addon that broke.
 export component VersionsView inherits VerticalLayout {
     in property <[VersionLine]> rows;
     in property <bool> loading;
     in property <bool> failed;
+    // An install of this addon runs: the buttons wait.
+    in property <bool> busy;
     callback retry();
+    callback install(string);
 
     spacing: 12px;
 
@@ -2255,6 +2265,23 @@ export component VersionsView inherits VerticalLayout {
                     font-size: Theme.meta;
                     vertical-alignment: center;
                     color: version.trust-kind == 1 ? Theme.ok : version.trust-kind == 2 ? Theme.warn : version.trust-kind == 3 ? Theme.danger : Theme.text-muted;
+                }
+                if version.installed : Text {
+                    width: 90px;
+                    text: "Installed";
+                    font-size: Theme.meta;
+                    color: Theme.gold;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                if !version.installed : VerticalLayout {
+                    width: 90px;
+                    alignment: center;
+                    if version.can-install : ActionButton {
+                        text: "Install";
+                        enabled: !root.busy;
+                        clicked => { root.install(version.tag); }
+                    }
                 }
             }
         }
