@@ -70,6 +70,7 @@ component SetupView inherits Rectangle {
                         Field {
                             text <=> root.path;
                             placeholder: "AddOns folder";
+                            label: "AddOns folder path";
                             accepted => { root.confirm(); }
                         }
                         if root.file-dialog : ActionButton {
@@ -184,6 +185,7 @@ component SettingsView inherits VerticalLayout {
         label: "AddOns folder";
         Field {
             text <=> root.path;
+            label: "AddOns folder";
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
@@ -201,6 +203,7 @@ component SettingsView inherits VerticalLayout {
     if root.game-versions.length > 1 : SettingRow {
         label: "Game version";
         Dropdown {
+            label: "Game version";
             model: root.game-versions;
             current-index <=> root.game-index;
             selected => { root.save(); }
@@ -211,6 +214,7 @@ component SettingsView inherits VerticalLayout {
         Field {
             text <=> root.api-url;
             placeholder: root.api-default;
+            label: "Platform API address";
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
@@ -220,6 +224,7 @@ component SettingsView inherits VerticalLayout {
         Field {
             text <=> root.web-url;
             placeholder: root.web-default;
+            label: "Platform website address";
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
@@ -650,6 +655,7 @@ export component AppWindow inherits Window {
                     Field {
                         horizontal-stretch: 1;
                         placeholder: "Search name or author";
+                        label: "Search addons";
                         text <=> root.search;
                         edited(text) => { root.search-changed(text); }
                     }
@@ -694,6 +700,7 @@ export component AppWindow inherits Window {
                     spacing: Theme.gap-tight;
                     Dropdown {
                         width: 220px;
+                        label: "Category";
                         model: root.category-labels;
                         list-labels: root.category-list-labels;
                         levels: root.category-levels;
@@ -702,12 +709,14 @@ export component AppWindow inherits Window {
                     }
                     Dropdown {
                         width: 190px;
+                        label: "Safety check";
                         model: root.safety-labels;
                         current-index <=> root.safety-index;
                         selected => { root.safety-changed(self.current-index); }
                     }
                     Dropdown {
                         width: 190px;
+                        label: "Sort by";
                         model: root.sort-labels;
                         current-index <=> root.sort-index;
                         selected => { root.sort-changed(self.current-index); }
@@ -954,6 +963,7 @@ export component AppWindow inherits Window {
             Field {
                 text <=> root.repo-input;
                 placeholder: "owner/repo or https://github.com/owner/repo";
+                label: "GitHub repo";
                 enabled: !root.repo-busy;
                 init => { self.focus-input(); }
                 accepted => { root.repo-submit(); }

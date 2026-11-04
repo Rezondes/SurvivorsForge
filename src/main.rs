@@ -2742,6 +2742,22 @@ mod layout_tests {
         }
 
         #[test]
+        fn fields_and_choices_say_what_they_are() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.show().unwrap();
+            let role = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).find_map(|e| e.accessible_role());
+            if ElementHandle::find_by_accessible_label(&ui, "Installed (0)").next().is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert_eq!(role("Search addons"), Some(AccessibleRole::TextInput), "the search names itself, not only by its placeholder");
+            for choice in ["Safety check", "Sort by"] {
+                assert_eq!(role(choice), Some(AccessibleRole::Combobox), "{choice}");
+            }
+        }
+
+        #[test]
         fn a_toast_shows_bottom_right_and_closes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

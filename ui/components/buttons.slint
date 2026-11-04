@@ -13,6 +13,7 @@ export component ActionButton inherits Rectangle {
 
     accessible-role: button;
     accessible-label: root.text;
+    accessible-enabled: root.enabled;
     height: root.large ? 46px : Theme.touch ? 44px : 34px;
     min-width: label.preferred-width + (root.large ? 40px : 28px);
     border-radius: Theme.radius;

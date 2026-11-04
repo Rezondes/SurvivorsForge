@@ -6,6 +6,8 @@ import { ScrollPanel } from "layout.slint";
 export component Field inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
+    // What screen readers call the field; the placeholder when empty.
+    in property <string> label;
     in property <bool> enabled: true;
     callback accepted();
     callback edited(string);
@@ -18,7 +20,7 @@ export component Field inherits Rectangle {
 
     height: Theme.touch ? 44px : 38px;
     border-radius: Theme.radius;
-    border-width: 1px;
+    border-width: input.has-focus ? 2px : 1px;
     border-color: input.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline-hover : Theme.outline;
     background: Theme.field;
 
@@ -35,7 +37,8 @@ export component Field inherits Rectangle {
         height: parent.height;
         text: root.placeholder;
         font-size: Theme.body;
-        color: Theme.text-disabled;
+        // Readable: it often holds the default that an empty field means.
+        color: Theme.text-muted;
         vertical-alignment: center;
         overflow: elide;
     }
@@ -46,6 +49,7 @@ export component Field inherits Rectangle {
         height: parent.height;
         text <=> root.text;
         enabled: root.enabled;
+        accessible-label: root.label != "" ? root.label : root.placeholder;
         single-line: true;
         font-size: Theme.body;
         color: root.enabled ? Theme.text : Theme.text-muted;
@@ -123,6 +127,8 @@ export component Dropdown inherits Rectangle {
     in property <[string]> list-labels;
     in property <[int]> levels;
     in-out property <int> current-index;
+    // What screen readers call the choice ("Sort by").
+    in property <string> label;
     callback selected(int);
 
     property <length> item-height: Theme.touch ? 44px : 34px;
@@ -135,6 +141,7 @@ export component Dropdown inherits Rectangle {
     }
 
     accessible-role: combobox;
+    accessible-label: root.label;
     accessible-value: root.model[root.current-index];
     height: Theme.touch ? 44px : 38px;
     border-radius: Theme.radius;
