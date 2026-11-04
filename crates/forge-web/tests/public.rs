@@ -674,7 +674,7 @@ async fn the_home_page_explains_the_checks() {
     let mut web = TestWeb::new().await;
     let page = web.get("/").await.body;
     for text in ["Checked automatically", "Verified by hand", "Straight from GitHub"] {
-        assert!(page.contains(&format!("<h3>{text}</h3>")), "missing {text}: {page}");
+        assert!(page.contains(&format!("<h2>{text}</h2>")), "missing {text}, one level under the h1: {page}");
     }
 }
 

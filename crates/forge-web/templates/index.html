@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}SurvivorsForge: checked addons for Azeroth Survivors{% endblock %}
 {% block head %}<meta name="description" content="Addons for Azeroth Survivors, checked for harmful code. Install them with the SurvivorsForge launcher or as one pack for the browser version.">{% endblock %}
 {% block content %}
 <section class="hero">
@@ -12,9 +13,9 @@
 </section>
 
 <section class="home-points" aria-label="How addons are checked">
-  <div><h3>Checked automatically</h3><p>Every release is scanned for harmful code before it is listed.</p></div>
-  <div><h3>Verified by hand</h3><p>Admins look at files themselves; the Verified badge shows it.</p></div>
-  <div><h3>Straight from GitHub</h3><p>Nothing is repacked. The launcher installs a file only when its hash matches the checked one.</p></div>
+  <div><h2>Checked automatically</h2><p>Every release is scanned for harmful code before it is listed.</p></div>
+  <div><h2>Verified by hand</h2><p>Admins look at files themselves; the Verified badge shows it.</p></div>
+  <div><h2>Straight from GitHub</h2><p>Nothing is repacked. The launcher installs a file only when its hash matches the checked one.</p></div>
 </section>
 
 <section class="panel home-section">
@@ -36,7 +37,7 @@
 
 <section class="panel home-section">
   <h2>Made an addon?</h2>
-  <p>Log in with GitHub, pick your repo and the form fills itself in. Every new release shows up here and in the launcher, checked first.</p>
+  <p>{% if user.is_some() %}Pick your repo and the form fills itself in.{% else %}Log in with GitHub, pick your repo and the form fills itself in.{% endif %} Every new release shows up here and in the launcher, checked first.</p>
   <p><a class="button secondary" href="/addons/new">Publish it from your GitHub repo</a></p>
 </section>
 {% endblock %}

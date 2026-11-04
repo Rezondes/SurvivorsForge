@@ -164,7 +164,7 @@ td.row-actions > * + * { margin-left: 8px; }
 .button.large { min-height: 44px; padding: 10px 24px; font-size: 1.1rem; }
 /* Home page: three short points in a row, separated by a thin line, then the sections */
 .home-points { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; margin: 0 0 32px; padding: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.home-points h3 { margin: 0 0 6px; }
+.home-points h2 { margin: 0 0 6px; font-size: 17px; }
 .home-points p { margin: 0; color: var(--muted); }
 .home-section { margin-bottom: 32px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0 0 12px; }
