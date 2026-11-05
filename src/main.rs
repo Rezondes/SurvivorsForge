@@ -2000,12 +2000,50 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     #[cfg(target_os = "linux")]
     select_backend()?;
-    let data_dir = config::data_dir();
-    let config = Config::load(&data_dir);
-    let needs_setup = config.is_none();
-    let shared: Shared = Arc::new(Mutex::new(Core::new(data_dir, config)));
+    let game_mode = config::is_game_mode(
+        std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref(),
+        std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some(),
+    );
+    // The icon at once, before anything is read or built (ui/splash.slint).
+    let splash = Splash::new()?;
+    if game_mode {
+        splash.window().set_fullscreen(true);
+    }
+    splash.show()?;
+    // The config, the stored lists and the cache load beside the window being built.
+    let loading = std::thread::spawn(|| {
+        let data_dir = config::data_dir();
+        let config = Config::load(&data_dir);
+        let needs_setup = config.is_none();
+        (Core::new(data_dir, config), needs_setup)
+    });
+    // ponytail: a short delay so the splash is painted before the window is built on this thread;
+    // a zero timer can run before the first frame.
+    let started: std::rc::Rc<RefCell<Option<Result<AppWindow, slint::PlatformError>>>> = Default::default();
+    let holder = started.clone();
+    slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
+        let result = start(loading, link, game_mode);
+        if let Ok(ui) = &result {
+            let _ = ui.show();
+        }
+        let _ = splash.hide();
+        if result.is_err() {
+            let _ = slint::quit_event_loop();
+        }
+        *holder.borrow_mut() = Some(result);
+    });
+    slint::run_event_loop()?;
+    match started.take() {
+        Some(Err(e)) => Err(e),
+        _ => Ok(()),
+    }
+}
 
+/// Builds the window and wires it up while the splash shows; `loading` brings the Core.
+fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, game_mode: bool) -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
+    let (core, needs_setup) = loading.join().map_err(|_| slint::PlatformError::Other("loading the launcher failed".into()))?;
+    let shared: Shared = Arc::new(Mutex::new(core));
     {
         let (weak, s) = (ui.as_weak(), shared.clone());
         // ponytail: the closure holds the Arc of the Core it sits in; both live as long as the app.
@@ -2041,10 +2079,6 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_sort_labels(labels(&controller::SORT_LABELS));
     ui.set_self_update_in_place(self_update::can_replace_self());
 
-    let game_mode = config::is_game_mode(
-        std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref(),
-        std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some(),
-    );
     ui.set_game_mode(game_mode);
     ui.global::<Theme>().set_touch(game_mode);
     if game_mode {
@@ -2295,7 +2329,7 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(id) = link {
         open_link(&ui, &shared, id);
     }
-    ui.run()
+    Ok(ui)
 }
 
 /// One comment for the comments page; its avatar shows once it is loaded.
@@ -2638,6 +2672,17 @@ mod card_tests {
         assert!(!detail(&core, &[]).unwrap().about_failed, "still asking the platform");
         core.fetching.remove(&id);
         assert!(detail(&core, &[]).unwrap().about_failed, "the platform did not answer and nothing was stored");
+    }
+
+    #[test]
+    fn the_splash_shows_its_bar_after_400_ms() {
+        i_slint_backend_testing::init_no_event_loop();
+        let splash = Splash::new().unwrap();
+        splash.show().unwrap();
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(399));
+        assert!(!splash.get_bar_shown(), "a quick start shows only the icon");
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(2));
+        assert!(splash.get_bar_shown());
     }
 
     #[test]

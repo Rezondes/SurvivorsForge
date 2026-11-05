@@ -1,0 +1,55 @@
+import { Theme } from "theme.slint";
+
+// Shown at once on start while the launcher loads. The bar comes after 400 ms, only when the
+// wait gets noticeable, and runs without a value: the start has no steps worth counting.
+export component Splash inherits Window {
+    title: "SurvivorsForge";
+    icon: @image-url("../assets/icon.png");
+    no-frame: true;
+    preferred-width: 360px;
+    preferred-height: 280px;
+    background: Theme.bg;
+
+    out property <bool> bar-shown;
+    property <length> bar-width: 180px;
+    property <length> sweep-width: 64px;
+
+    Timer {
+        interval: 400ms;
+        running: !root.bar-shown;
+        triggered => { root.bar-shown = true; }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 28px;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("../assets/icon.png");
+                width: 128px;
+                height: 128px;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.bar-width;
+                height: 4px;
+                border-radius: 2px;
+                clip: true;
+                background: root.bar-shown ? Theme.line : transparent;
+                accessible-role: progress-indicator;
+                accessible-label: "Loading SurvivorsForge";
+                if root.bar-shown : Rectangle {
+                    // From beyond the left edge to beyond the right one, every 1.2 seconds.
+                    x: mod(animation-tick() / 1.2s, 1) * (root.bar-width + root.sweep-width) - root.sweep-width;
+                    width: root.sweep-width;
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: Theme.gold;
+                }
+            }
+        }
+    }
+}
