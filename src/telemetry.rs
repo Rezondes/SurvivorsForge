@@ -108,7 +108,7 @@ impl Sender for ApiSender {
         std::thread::spawn(move || {
             let mut request = ureq::post(&url)
                 .timeout(std::time::Duration::from_secs(10))
-                .set("User-Agent", &format!("{}/{}", crate::APP_NAME, crate::APP_VERSION))
+                .set("User-Agent", &crate::github::user_agent())
                 .set("Content-Type", "application/json");
             if let Some(id) = &install_id {
                 request = request.set(INSTALL_HEADER, id);
