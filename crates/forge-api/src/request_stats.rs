@@ -208,13 +208,15 @@ async fn write_public(pool: &PgPool, counts: &HashMap<PublicKey, i64>) -> sqlx::
     tx.commit().await
 }
 
-/// One row per launcher and hour; a later request in the hour names the newer version.
+/// One row per launcher and hour; a later request in the hour names the newer version. A request
+/// without a platform (the telemetry of launcher 0.7.1) keeps the one an earlier request named.
 async fn write_active(pool: &PgPool, active: &HashSet<Active>) -> sqlx::Result<()> {
     let mut tx = pool.begin().await?;
     for a in active {
         sqlx::query(
             "INSERT INTO launcher_active (hour, install_id, version, os) VALUES ($1, $2, $3, $4)
-             ON CONFLICT (hour, install_id) DO UPDATE SET version = EXCLUDED.version, os = EXCLUDED.os",
+             ON CONFLICT (hour, install_id) DO UPDATE SET version = EXCLUDED.version,
+               os = CASE WHEN EXCLUDED.os = 'unknown' THEN launcher_active.os ELSE EXCLUDED.os END",
         )
         .bind(a.hour)
         .bind(&a.install_id)

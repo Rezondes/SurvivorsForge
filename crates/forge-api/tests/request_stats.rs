@@ -67,6 +67,22 @@ async fn active_launchers_are_counted_per_hour_platform_and_version(pool: PgPool
 }
 
 #[sqlx::test]
+async fn a_request_without_the_platform_keeps_the_one_already_known(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let id = "11111111-2222-3333-4444-555555555555";
+    let with_id = |agent: &str| Request::get("/v1/addons").header("user-agent", agent).header("x-survivorsforge-install", id).body(Body::empty()).unwrap();
+    let os = || async { sqlx::query_scalar::<_, String>("SELECT os FROM launcher_active").fetch_one(&app.pool).await.unwrap() };
+    // In one flush, and over two: launcher 0.7.1 sent its telemetry without the platform.
+    send(&app.router, with_id("SurvivorsForge/0.7.1 (windows)")).await;
+    send(&app.router, with_id("SurvivorsForge/0.7.1")).await;
+    app.app_state.request_stats.flush(&app.pool).await.unwrap();
+    assert_eq!(os().await, "windows");
+    send(&app.router, with_id("SurvivorsForge/0.7.1")).await;
+    app.app_state.request_stats.flush(&app.pool).await.unwrap();
+    assert_eq!(os().await, "windows");
+}
+
+#[sqlx::test]
 async fn public_api_use_is_counted_by_client_and_country(pool: PgPool) {
     let app = TestApp::new(pool);
     let call = |uri: &str, agent: Option<&str>, country: Option<&str>| {
