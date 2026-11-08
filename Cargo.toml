@@ -32,6 +32,8 @@ sha2 = "0.11"
 # The login's PKCE verifier: random bytes from the operating system, base64url.
 getrandom = "0.3"
 base64 = "0.22"
+# Expiry of the GitHub token.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 flate2 = "1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 

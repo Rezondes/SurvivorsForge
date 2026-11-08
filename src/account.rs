@@ -2,7 +2,11 @@
 //! (Windows Credential Manager, macOS Keychain, Secret Service on Linux), never in `config.json`.
 //! One entry per platform API, so another API in the settings never sees this login.
 
+use crate::Error;
+use crate::github::Client;
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 #[cfg(test)]
 use std::collections::HashMap;
 #[cfg(test)]
@@ -129,9 +133,54 @@ impl Account {
     }
 }
 
+/// Why there is no GitHub token to use.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AccessError {
+    /// No token, or one that is gone or refused: the user has to log in again.
+    NeedsLogin,
+}
+
+/// A token is renewed when it has less than this left.
+const RENEW_BEFORE: Duration = Duration::minutes(5);
+
+fn parse_time(s: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Utc))
+}
+
+/// The user's GitHub token, renewed through the platform when it runs out within five minutes (as
+/// the website does). While the platform cannot be reached a token that still runs is used; one
+/// the platform refuses to renew is forgotten.
+pub fn github_access(client: &Client, store: &dyn SecretStore, api: &str, now: DateTime<Utc>) -> Result<String, AccessError> {
+    let mut account = Account::load(store, api).ok_or(AccessError::NeedsLogin)?;
+    let github = account.github.clone().ok_or(AccessError::NeedsLogin)?;
+    let expires = github.expires_at.as_deref().and_then(parse_time);
+    if expires.is_none_or(|e| e - RENEW_BEFORE > now) {
+        return Ok(github.access_token);
+    }
+    let still_valid = || if expires.is_some_and(|e| e > now) { Ok(github.access_token.clone()) } else { Err(AccessError::NeedsLogin) };
+    let (Some(session), Some(refresh)) = (&account.platform, &github.refresh_token) else { return still_valid() };
+    let body = json!({ "refresh_token": refresh });
+    match client.post_json(&format!("{api}/v1/auth/github/refresh"), Some(&session.token), &[], &body) {
+        Ok(text) => {
+            let renewed: GitHubToken = serde_json::from_str(&text).map_err(|_| AccessError::NeedsLogin)?;
+            account.github = Some(renewed.clone());
+            // A token that cannot be saved still works for now.
+            let _ = account.save(store, api);
+            Ok(renewed.access_token)
+        }
+        Err(Error::Api { code, .. }) if code == "github_reauth" => {
+            account.github = None;
+            let _ = account.save(store, api);
+            Err(AccessError::NeedsLogin)
+        }
+        Err(_) => still_valid(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_server::serve;
 
     const API: &str = "https://forgeapi.test";
 
@@ -175,6 +224,64 @@ mod tests {
         let store = MemoryStore { broken: true, ..Default::default() };
         assert_eq!(Account::load(&store, API), None);
         assert!(account().save(&store, API).is_err());
+    }
+
+    fn at(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    }
+
+    /// `account()` saved in a new store for `api`.
+    fn stored(api: &str) -> MemoryStore {
+        let store = MemoryStore::default();
+        account().save(&store, api).unwrap();
+        store
+    }
+
+    #[test]
+    fn fresh_token_needs_no_request() {
+        // The token runs until 20:00; at 19:50 it still has ten minutes.
+        let store = stored("http://127.0.0.1:1");
+        let token = github_access(&Client::new(), &store, "http://127.0.0.1:1", at("2026-11-08T19:50:00Z"));
+        assert_eq!(token, Ok("ghu_x".into()));
+    }
+
+    #[test]
+    fn expiring_token_is_renewed_and_saved() {
+        let renewed = r#"{"access_token":"ghu_new","expires_at":"2026-11-09T04:00:00Z","refresh_token":"ghr_new","refresh_token_expires_at":null}"#;
+        let (api, seen) = serve(vec![(200, vec![], renewed.into())]);
+        let store = stored(&api);
+        assert_eq!(github_access(&Client::new(), &store, &api, at("2026-11-08T19:57:00Z")), Ok("ghu_new".into()));
+        let request = seen.recv().unwrap();
+        assert_eq!(request.line, "POST /v1/auth/github/refresh HTTP/1.1");
+        assert_eq!(request.header("authorization"), Some("Bearer bearer"));
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&request.body).unwrap()["refresh_token"], "ghr_y");
+        let saved = Account::load(&store, &api).unwrap().github.unwrap();
+        assert_eq!((saved.access_token.as_str(), saved.refresh_token.as_deref()), ("ghu_new", Some("ghr_new")));
+    }
+
+    #[test]
+    fn refused_refresh_drops_github_token() {
+        let (api, _seen) = serve(vec![(403, vec![], r#"{"error":"github_reauth","message":"Log in again to post on GitHub"}"#.into())]);
+        let store = stored(&api);
+        assert_eq!(github_access(&Client::new(), &store, &api, at("2026-11-08T21:00:00Z")), Err(AccessError::NeedsLogin));
+        let saved = Account::load(&store, &api).unwrap();
+        assert_eq!(saved.github, None);
+        assert!(saved.platform.is_some(), "the platform login stays");
+    }
+
+    #[test]
+    fn api_down_keeps_valid_token() {
+        let api = "http://127.0.0.1:1";
+        let store = stored(api);
+        assert_eq!(github_access(&Client::new(), &store, api, at("2026-11-08T19:58:00Z")), Ok("ghu_x".into()), "two minutes left");
+        assert_eq!(github_access(&Client::new(), &store, api, at("2026-11-08T20:01:00Z")), Err(AccessError::NeedsLogin), "expired");
+        assert_eq!(Account::load(&store, api), Some(account()), "unchanged");
+    }
+
+    #[test]
+    fn no_github_token_needs_login() {
+        let store = MemoryStore::default();
+        assert_eq!(github_access(&Client::new(), &store, "http://127.0.0.1:1", at("2026-11-08T19:00:00Z")), Err(AccessError::NeedsLogin));
     }
 
     /// Writes to the real keyring of this machine: `cargo test -p survivorsforge real_keyring -- --ignored`.
