@@ -74,9 +74,8 @@ export component TextArea inherits Rectangle {
     in property <string> placeholder;
     in property <string> label;
     in property <bool> enabled: true;
-    // Each change puts the cursor into the field (a Reply link elsewhere asks for it).
-    in property <int> focus-asks;
-    changed focus-asks => { input.focus(); }
+    // It grows with its text up to this, then scrolls inside: a dialog keeps its buttons in sight.
+    in property <length> tallest: 240px;
     // Ctrl+Enter (Cmd+Enter on macOS): send what was written.
     callback submitted();
 
@@ -84,7 +83,10 @@ export component TextArea inherits Rectangle {
         input.focus();
     }
 
-    height: max(96px, input.preferred-height + 20px);
+    property <length> line: Theme.body * 1.5;
+    property <length> overflow: max(0px, flick.content-height - flick.height);
+
+    height: clamp(input.preferred-height + 20px, 96px, root.tallest);
     border-radius: Theme.radius;
     border-width: input.has-focus ? 2px : 1px;
     border-color: input.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline-hover : Theme.outline;
@@ -119,20 +121,44 @@ export component TextArea inherits Rectangle {
             }
             reject
         }
-        input := TextInput {
+        flick := Flickable {
             x: 12px;
             y: 10px;
             width: parent.width - 24px;
-            text <=> root.text;
-            enabled: root.enabled;
-            accessible-label: root.label != "" ? root.label : root.placeholder;
-            single-line: false;
-            wrap: word-wrap;
-            font-size: Theme.body;
-            color: root.enabled ? Theme.text : Theme.text-muted;
-            selection-background-color: #8A6C3A;
-            selection-foreground-color: Theme.gold-bright;
+            height: parent.height - 20px;
+            content-height: max(self.height, input.preferred-height);
+            input := TextInput {
+                width: parent.width;
+                height: max(flick.height, self.preferred-height);
+                text <=> root.text;
+                enabled: root.enabled;
+                accessible-label: root.label != "" ? root.label : root.placeholder;
+                single-line: false;
+                wrap: word-wrap;
+                font-size: Theme.body;
+                color: root.enabled ? Theme.text : Theme.text-muted;
+                selection-background-color: #8A6C3A;
+                selection-foreground-color: Theme.gold-bright;
+                // The line being written stays in sight while the text scrolls.
+                cursor-position-changed(pos) => {
+                    if (pos.y + flick.content-y < 0) {
+                        flick.content-y = -pos.y;
+                    } else if (pos.y + root.line + flick.content-y > flick.height) {
+                        flick.content-y = flick.height - pos.y - root.line;
+                    }
+                }
+            }
         }
+    }
+
+    // How far the text is scrolled, once it is longer than the box.
+    if root.overflow > 0 : Rectangle {
+        x: parent.width - 6px;
+        width: 3px;
+        height: max(24px, flick.height * flick.height / flick.content-height);
+        y: 10px + (flick.height - self.height) * (-flick.content-y / root.overflow);
+        border-radius: 2px;
+        background: Theme.outline;
     }
 }
 

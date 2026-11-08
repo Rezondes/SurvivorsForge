@@ -3,7 +3,7 @@ import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
-    IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon
+    IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
@@ -743,13 +743,17 @@ export component AppWindow inherits Window {
     in property <bool> comments-off;
     in property <bool> comments-more;
     in property <bool> comments-loading-more;
+    // The dialog to write a comment or a reply is open.
+    in property <bool> comments-compose-open;
     in-out property <string> comments-draft;
     in property <string> comments-reply-to;
     in property <bool> comments-sending;
     in property <string> comments-send-error;
     in property <bool> comments-needs-login;
     callback comments-send();
+    callback comments-compose();
     callback comments-reply(int);
+    // Closes the comment dialog; what was written stays for the next time.
     callback comments-cancel-reply();
     callback comments-show();
     callback comments-older();
@@ -859,6 +863,10 @@ export component AppWindow inherits Window {
             } else if (root.repo-open) {
                 if (!root.repo-busy) {
                     root.repo-cancel();
+                }
+            } else if (root.comments-compose-open) {
+                if (!root.comments-sending) {
+                    root.comments-cancel-reply();
                 }
             } else if (root.showing-detail) {
                 root.detail-page = -1;
@@ -1199,15 +1207,9 @@ export component AppWindow inherits Window {
                         loading-more: root.comments-loading-more;
                         links-enabled: !root.game-mode;
                         logged-in: root.account-login != "";
-                        draft <=> root.comments-draft;
-                        reply-to: root.comments-reply-to;
-                        sending: root.comments-sending;
-                        send-error: root.comments-send-error;
-                        needs-login: root.comments-needs-login;
                         login => { root.login(); }
-                        send => { root.comments-send(); }
+                        compose => { root.comments-compose(); }
                         reply(id) => { root.comments-reply(id); }
-                        cancel-reply => { root.comments-cancel-reply(); }
                         write => { root.detail-link("comments"); }
                         older => { root.comments-older(); }
                         retry => { root.comments-retry(); }
@@ -1476,6 +1478,56 @@ export component AppWindow inherits Window {
                         primary: true;
                         enabled: !root.repo-busy && root.repo-input != "";
                         clicked => { root.repo-submit(); }
+                    }
+                }
+            }
+        }
+
+        if root.comments-compose-open : Overlay {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            DialogCard {
+                width: 640px;
+                title: root.comments-reply-to != "" ? "Reply to " + root.comments-reply-to : "New comment";
+                TextArea {
+                    text <=> root.comments-draft;
+                    placeholder: root.comments-reply-to != "" ? "Your reply" : "Your comment";
+                    label: root.comments-reply-to != "" ? "Your reply" : "Your comment";
+                    enabled: !root.comments-sending;
+                    init => { self.focus-input(); }
+                    submitted => { if (!root.comments-sending) { root.comments-send(); } }
+                }
+                if root.comments-send-error != "" : Text {
+                    text: "Error: " + root.comments-send-error;
+                    font-size: Theme.meta;
+                    color: Theme.danger;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: Theme.gap-tight;
+                    Text {
+                        text: "Ctrl+Enter sends. Edit or delete it later on the website.";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    if root.comments-needs-login : ActionButton {
+                        text: "Log in again";
+                        enabled: !root.game-mode;
+                        clicked => { root.login(); }
+                    }
+                    ActionButton {
+                        text: "Cancel";
+                        enabled: !root.comments-sending;
+                        clicked => { root.comments-cancel-reply(); }
+                    }
+                    ActionButton {
+                        text: root.comments-sending ? "Sending" : root.comments-reply-to != "" ? "Send reply" : "Send";
+                        primary: true;
+                        enabled: !root.comments-sending && root.comments-draft != "";
+                        clicked => { root.comments-send(); }
                     }
                 }
             }

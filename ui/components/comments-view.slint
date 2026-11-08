@@ -3,10 +3,9 @@ import { CommentRow } from "types.slint";
 import { ActionButton, LinkButton } from "buttons.slint";
 import { ScrollPanel } from "layout.slint";
 import { AddonIcon, Placeholder } from "addon-parts.slint";
-import { TextArea } from "fields.slint";
 
-// The comments of an addon. Logged in with GitHub, the user writes and replies here; editing and
-// deleting stay on the website.
+// The comments of an addon, nothing else: writing and replying open a dialog of the window
+// (`compose`, `reply`), so the list keeps its room. Editing and deleting stay on the website.
 // While the platform answers, placeholders show (after 150 ms, `waiting` 1) and from 5 s a word
 // that the connection is slow (`waiting` 2); before 150 ms nothing shows (`waiting` 3).
 export component CommentsView inherits VerticalLayout {
@@ -20,24 +19,15 @@ export component CommentsView inherits VerticalLayout {
     in property <bool> links-enabled: true;
     // A tab of the detail view: its header names the addon, so no back link and title here.
     in property <bool> embedded;
-    // Logged in on the platform: the box to write shows instead of "Log in to write".
+    // Logged in on the platform: "Write a comment" shows instead of "Log in to write".
     in property <bool> logged-in;
-    in-out property <string> draft;
-    // The author of the comment being answered; empty for a new comment.
-    in property <string> reply-to;
-    in property <bool> sending;
-    in property <string> send-error;
-    // The error says the login ran out: a way to log in again next to it.
-    in property <bool> needs-login;
     callback back();
     // Opens the comments on the website (to edit or delete one's own).
     callback write();
     callback login();
-    callback send();
+    // Opens the dialog for a new comment, or (`reply`) for an answer to comment `id`.
+    callback compose();
     callback reply(int);
-    callback cancel-reply();
-    // Counts the Reply clicks: each one puts the cursor into the box.
-    property <int> reply-asks;
     callback older();
     callback retry();
 
@@ -76,52 +66,10 @@ export component CommentsView inherits VerticalLayout {
                 enabled: root.links-enabled;
                 clicked => { root.login(); }
             }
-        }
-    }
-
-    if !root.off && root.logged-in : VerticalLayout {
-        spacing: 8px;
-        if root.reply-to != "" : HorizontalLayout {
-            spacing: 8px;
-            alignment: start;
-            Text {
-                text: "Replying to " + root.reply-to;
-                font-size: Theme.meta;
-                color: Theme.gold;
-                vertical-alignment: center;
-            }
-            LinkButton {
-                text: "Cancel reply";
-                clicked => { root.cancel-reply(); }
-            }
-        }
-        TextArea {
-            focus-asks: root.reply-asks;
-            submitted => { if (!root.sending) { root.send(); } }
-            text <=> root.draft;
-            placeholder: root.reply-to != "" ? "Your reply" : "Write a comment";
-            label: root.reply-to != "" ? "Your reply" : "Write a comment";
-            enabled: !root.sending;
-        }
-        if root.send-error != "" : Text {
-            text: "Error: " + root.send-error;
-            font-size: Theme.meta;
-            color: Theme.danger;
-            wrap: word-wrap;
-        }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 10px;
-            if root.needs-login : ActionButton {
-                text: "Log in again";
-                enabled: root.links-enabled;
-                clicked => { root.login(); }
-            }
-            ActionButton {
-                text: root.sending ? "Sending" : root.reply-to != "" ? "Send reply" : "Send";
+            if !root.off && root.logged-in : ActionButton {
+                text: "Write a comment";
                 primary: true;
-                enabled: !root.sending && root.draft != "";
-                clicked => { root.send(); }
+                clicked => { root.compose(); }
             }
         }
     }
@@ -208,10 +156,7 @@ export component CommentsView inherits VerticalLayout {
                         spacing: 16px;
                         if !row.deleted : LinkButton {
                             text: "Reply";
-                            clicked => {
-                                root.reply(row.id);
-                                root.reply-asks += 1;
-                            }
+                            clicked => { root.reply(row.id); }
                         }
                         if row.own && !row.deleted && root.links-enabled : LinkButton {
                             text: "Edit on the website";

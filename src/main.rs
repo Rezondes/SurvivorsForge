@@ -147,6 +147,8 @@ struct Comments {
     request: u64,
     /// The comment being answered (id, author); `None` for a new comment.
     reply_to: Option<(i64, String)>,
+    /// The dialog to write is open.
+    composing: bool,
     sending: bool,
     /// Why the last comment was not sent; the text stays in the box.
     send_error: String,
@@ -831,6 +833,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         ui.set_comments_off(c.off);
         ui.set_comments_more(c.older.is_some());
         ui.set_comments_reply_to(c.reply_to.as_ref().map(|(_, who)| who.as_str()).unwrap_or_default().into());
+        ui.set_comments_compose_open(c.composing);
         ui.set_comments_sending(c.sending);
         ui.set_comments_send_error(c.send_error.as_str().into());
         ui.set_comments_needs_login(c.needs_login);
@@ -2495,6 +2498,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_issues_submit, |ui, shared| on_issues_submit(&ui, shared));
     on!(on_issue_send_reply, |ui, shared| on_issue_send_reply(&ui, shared));
     on!(on_comments_reply, |ui, shared, id| on_comment_reply(&ui, shared, id));
+    on!(on_comments_compose, |ui, shared| on_comment_compose(&ui, shared));
     on!(on_comments_cancel_reply, |ui, shared| on_comment_cancel_reply(&ui, shared));
     on!(on_login_cancel, |ui, shared| on_login_cancel(&ui, shared));
     on!(on_login_device, |ui, shared| on_login_device(&ui, shared));
@@ -2811,6 +2815,7 @@ fn on_comments_show(ui: &AppWindow, shared: &Shared) {
         off: false,
         request: 0,
         reply_to: None,
+        composing: false,
         sending: false,
         send_error: String::new(),
         needs_login: false,
@@ -2941,6 +2946,7 @@ fn on_comment_send(ui: &AppWindow, shared: &Shared) {
                 match &result {
                     Ok(_) => {
                         c.reply_to = None;
+                        c.composing = false;
                         true
                     }
                     Err(_) if logged_out => {
@@ -3122,14 +3128,29 @@ fn on_comment_reply(ui: &AppWindow, shared: &Shared, id: i32) {
         let Some(c) = core.comments.as_mut() else { return };
         let Some(author) = c.loaded.iter().find(|m| m.id == i64::from(id)).map(|m| m.author.clone()) else { return };
         c.reply_to = Some((i64::from(id), author));
+        c.composing = true;
         c.send_error.clear();
     }
     refresh(ui, shared);
 }
 
+/// Closes the dialog to write; the text stays for the next time.
 fn on_comment_cancel_reply(ui: &AppWindow, shared: &Shared) {
     if let Some(c) = lock(shared).comments.as_mut() {
         c.reply_to = None;
+        c.composing = false;
+        c.send_error.clear();
+        c.needs_login = false;
+    }
+    refresh(ui, shared);
+}
+
+/// Opens the dialog for a new comment.
+fn on_comment_compose(ui: &AppWindow, shared: &Shared) {
+    if let Some(c) = lock(shared).comments.as_mut() {
+        c.reply_to = None;
+        c.composing = true;
+        c.send_error.clear();
     }
     refresh(ui, shared);
 }
@@ -3655,14 +3676,17 @@ mod layout_tests {
         }
 
         #[test]
-        fn comments_are_written_and_answered_when_logged_in() {
+        fn comments_are_written_and_answered_in_a_dialog() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
-            let (logins, sends, replies) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
-            let (l, s, r) = (logins.clone(), sends.clone(), replies.clone());
+            let (logins, sends, replies, composes, cancels) =
+                (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+            let (l, s, r, c, x) = (logins.clone(), sends.clone(), replies.clone(), composes.clone(), cancels.clone());
             ui.on_login(move || l.set(l.get() + 1));
             ui.on_comments_send(move || s.set(s.get() + 1));
             ui.on_comments_reply(move |id| r.set(id));
+            ui.on_comments_compose(move || c.set(c.get() + 1));
+            ui.on_comments_cancel_reply(move || x.set(x.get() + 1));
             ui.set_page(1);
             ui.set_detail_page(1);
             ui.set_detail_tab(3);
@@ -3674,34 +3698,50 @@ mod layout_tests {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             }
-            assert!(find("Write a comment").is_none() && find("Reply").is_none(), "logged out: no box, no Reply");
+            assert!(find("Write a comment").is_none() && find("Reply").is_none(), "logged out: no button to write, no Reply");
             find("Log in to write").expect("logged out: a way to log in").invoke_accessible_default_action();
             assert_eq!(logins.get(), 1);
 
             ui.set_account_login("octo".into());
-            assert!(find("Log in to write").is_none());
-            assert!(find("Write a comment").is_some(), "logged in: the box");
+            assert!(find("Your comment").is_none(), "the list shows comments only, no box");
+            find("Write a comment").expect("logged in: a button to write").invoke_accessible_default_action();
+            assert_eq!(composes.get(), 1);
             find("Reply").expect("a Reply link on each comment").invoke_accessible_default_action();
             assert_eq!(replies.get(), 42);
+
+            ui.set_comments_compose_open(true);
+            assert!(find("New comment").is_some() && find("Your comment").is_some(), "the dialog with its box");
             slint::platform::update_timers_and_animations();
             press(&ui, "x");
-            assert_eq!(ui.get_comments_draft(), "x", "Reply puts the cursor into the box");
+            assert_eq!(ui.get_comments_draft(), "x", "the cursor starts in the box");
             let ctrl = slint::SharedString::from(Key::Control);
             ui.window().dispatch_event(WindowEvent::KeyPressed { text: ctrl.clone() });
             press(&ui, &slint::SharedString::from(Key::Return));
             ui.window().dispatch_event(WindowEvent::KeyReleased { text: ctrl });
-            assert_eq!(sends.get(), 1, "Ctrl+Enter sends from the box");
+            assert_eq!(sends.get(), 1, "Ctrl+Enter sends");
             assert_eq!(ui.get_comments_draft(), "x", "and adds no new line");
-            ui.set_comments_draft("".into());
-            ui.set_comments_reply_to("kex".into());
-            assert!(find("Replying to kex").is_some(), "the box says to whom");
 
+            ui.set_comments_reply_to("kex".into());
+            assert!(find("Reply to kex").is_some(), "the dialog says to whom");
             ui.set_comments_draft("Thanks!".into());
             find("Send reply").expect("a send button for the reply").invoke_accessible_default_action();
             assert_eq!(sends.get(), 2);
             ui.set_comments_send_error("At most 20 comments an hour, try again later".into());
             assert!(find("Error: At most 20 comments an hour, try again later").is_some(), "why it was not sent");
             assert_eq!(ui.get_comments_draft(), "Thanks!", "the text stays");
+
+            // A long text scrolls inside the box: the dialog and its buttons stay in the window.
+            ui.set_comments_send_error("".into());
+            ui.set_comments_draft((1..=60).map(|n| format!("line {n}")).collect::<Vec<_>>().join("
+").into());
+            let window = ui.window().size().to_logical(ui.window().scale_factor());
+            let send = find("Send reply").unwrap();
+            assert!(send.absolute_position().y + send.size().height <= window.height, "Send stays in the window: {:?} in {window:?}", send.absolute_position());
+            assert!(find("Reply to kex").unwrap().absolute_position().y >= 0.0, "the title too");
+            press(&ui, &slint::SharedString::from(Key::Escape));
+            assert_eq!(cancels.get(), 1, "Escape closes the dialog");
+            find("Cancel").expect("and so does Cancel").invoke_accessible_default_action();
+            assert_eq!(cancels.get(), 2);
         }
 
         #[test]
