@@ -3649,6 +3649,7 @@ mod layout_tests {
             ui.set_account_error("".into());
             ui.set_account_login("octo".into());
             assert!(find("octo").is_some(), "the login name");
+            assert!(find("You write comments and issues in the launcher as octo.").is_some(), "the hint fits the login");
             find("Log out").expect("logged in: a logout button").invoke_accessible_default_action();
             assert_eq!(logouts.get(), 1);
         }

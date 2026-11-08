@@ -425,6 +425,8 @@ component SettingsView inherits VerticalLayout {
             ? "The SurvivorsForge server cannot be reached, so its login waits until it is back."
             : root.game-mode && root.account-login == ""
             ? "Log in from the desktop: Game Mode opens no browser."
+            : root.account-login != ""
+            ? "You write comments and issues in the launcher as " + root.account-login + "."
             : "Optional. Lets you write comments and issues from the launcher, as on the website.";
     }
     SettingRow {
