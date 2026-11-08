@@ -90,6 +90,65 @@ async fn login_code_single_use_and_expires(pool: PgPool) {
     assert_eq!(late.error(), "invalid_code", "expires after 60 s");
 }
 
+/// The challenge of `verifier` (RFC 7636, S256).
+fn challenge(verifier: &str) -> String {
+    use base64::Engine;
+    use sha2::Digest;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()))
+}
+
+/// A login started with `code_challenge`, through GitHub's callback; the one-time code.
+async fn code_with_challenge(app: &TestApp, challenge: &str) -> String {
+    app.github.data().oauth_users.insert("pk".into(), forge_api::github::types::User { id: 31, login: "pk".into(), avatar_url: "".into() });
+    let reply = app.get(&format!("/v1/auth/github/start?return_to={}&code_challenge={challenge}", urlencode(RETURN_TO)), None).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
+    let state = query_param(&reply.location(), "state").unwrap();
+    let reply = app.get(&format!("/v1/auth/github/callback?state={state}&code=pk"), None).await;
+    query_param(&reply.location(), "code").unwrap()
+}
+
+#[sqlx::test]
+async fn exchange_needs_the_verifier_of_its_challenge(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+
+    let code = code_with_challenge(&app, &challenge(verifier)).await;
+    let missing = app.post("/v1/auth/exchange", None, json!({ "code": code, "return_to": RETURN_TO })).await;
+    assert_eq!(missing.error(), "invalid_code", "no verifier");
+    let used = app.post("/v1/auth/exchange", None, json!({ "code": code, "return_to": RETURN_TO, "code_verifier": verifier })).await;
+    assert_eq!(used.error(), "invalid_code", "a refused code is spent");
+
+    let code = code_with_challenge(&app, &challenge(verifier)).await;
+    let wrong = app.post("/v1/auth/exchange", None, json!({ "code": code, "return_to": RETURN_TO, "code_verifier": "another-verifier-of-enough-length-0123456789" })).await;
+    assert_eq!(wrong.error(), "invalid_code", "wrong verifier");
+
+    let code = code_with_challenge(&app, &challenge(verifier)).await;
+    let ok = app.post("/v1/auth/exchange", None, json!({ "code": code, "return_to": RETURN_TO, "code_verifier": verifier })).await;
+    assert_eq!(ok.status, StatusCode::OK, "{}", ok.body);
+    assert!(ok.json()["token"].is_string());
+}
+
+#[sqlx::test]
+async fn login_without_challenge_ignores_a_verifier(pool: PgPool) {
+    let app = TestApp::new(pool);
+    app.github.data().oauth_users.insert("c".into(), forge_api::github::types::User { id: 32, login: "w".into(), avatar_url: "".into() });
+    let state = app.start_login().await;
+    let code = query_param(&app.get(&format!("/v1/auth/github/callback?state={state}&code=c"), None).await.location(), "code").unwrap();
+    let ok = app.post("/v1/auth/exchange", None, json!({ "code": code, "return_to": RETURN_TO, "code_verifier": "anything" })).await;
+    assert_eq!(ok.status, StatusCode::OK, "{}", ok.body);
+}
+
+#[sqlx::test]
+async fn start_rejects_a_malformed_challenge(pool: PgPool) {
+    let app = TestApp::new(pool);
+    let long_enough = "a".repeat(43);
+    for bad in ["short", &"a".repeat(44), &format!("{}+", &long_enough[..42]), &format!("{}=", &long_enough[..42])] {
+        let reply = app.get(&format!("/v1/auth/github/start?return_to={}&code_challenge={}", urlencode(RETURN_TO), urlencode(bad)), None).await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{bad}");
+        assert_eq!(reply.error(), "invalid_challenge");
+    }
+}
+
 #[sqlx::test]
 async fn me_requires_valid_token(pool: PgPool) {
     let app = TestApp::new(pool);

@@ -132,7 +132,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `GITHUB_OAUTH_URL` | no | GitHub's OAuth pages | `https://github.com` |
 | `GITHUB_CLIENT_ID` | yes | Client ID from step 1 | `Iv1.abc...` |
 | `GITHUB_CLIENT_SECRET` | yes | Client secret from step 1 | secret |
-| `AUTH_RETURN_URLS` | yes | Exact callback URLs a login may return to | `https://forge.example.com/auth/callback` |
+| `AUTH_RETURN_URLS` | yes | Exact callback URLs a login may return to: the website's, and `http://127.0.0.1:47616/auth/callback` for the launcher | `https://forge.example.com/auth/callback,http://127.0.0.1:47616/auth/callback` |
 | `ADMIN_GITHUB_IDS` | no | Comma-separated numeric GitHub IDs of admins | `1234567` |
 | `ADMIN_STATS_ROLES` | no | Roles that see `/admin/stats`: `admin`, `moderator` (default both) | `admin` |
 

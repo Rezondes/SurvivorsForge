@@ -41,22 +41,36 @@ pub fn callback_url(state: &AppState) -> String {
 #[derive(Deserialize)]
 pub struct StartQuery {
     return_to: String,
+    /// The client's own PKCE challenge (S256); then `exchange` needs its verifier.
+    code_challenge: Option<String>,
+}
+
+/// The challenge of `verifier` (RFC 7636, S256): base64url of its SHA-256, without padding.
+fn s256(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
 pub async fn start(State(state): State<AppState>, Query(query): Query<StartQuery>) -> ApiResult<Redirect> {
     if !state.config.auth_return_urls.contains(&query.return_to) {
         return Err(bad_request("invalid_return_to", "return_to is not an allowed client URL"));
     }
+    // An S256 challenge is always 43 base64url characters.
+    if let Some(challenge) = &query.code_challenge
+        && !(challenge.len() == 43 && challenge.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+    {
+        return Err(bad_request("invalid_challenge", "code_challenge is not an S256 challenge"));
+    }
     let oauth_state = random_token();
     let verifier = random_token();
-    sqlx::query("INSERT INTO oauth_states (state_hash, verifier, return_to, expires_at) VALUES ($1, $2, $3, $4)")
+    sqlx::query("INSERT INTO oauth_states (state_hash, verifier, return_to, expires_at, client_challenge) VALUES ($1, $2, $3, $4, $5)")
         .bind(hash(&oauth_state))
         .bind(&verifier)
         .bind(&query.return_to)
         .bind((state.clock)() + STATE_TTL)
+        .bind(&query.code_challenge)
         .execute(&state.pool)
         .await?;
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let challenge = s256(&verifier);
     let authorize = Url::parse_with_params(
         &format!("{}/login/oauth/authorize", state.config.github_oauth_url),
         &[
@@ -89,12 +103,12 @@ pub async fn callback(State(state): State<AppState>, Query(query): Query<Callbac
     let invalid = || bad_request("invalid_state", "The login link is invalid or expired, start again");
     let oauth_state = query.state.ok_or_else(invalid)?;
     // DELETE ... RETURNING makes every state single-use, even under concurrent callbacks.
-    let stored: Option<(String, String, DateTime<Utc>)> =
-        sqlx::query_as("DELETE FROM oauth_states WHERE state_hash = $1 RETURNING verifier, return_to, expires_at")
+    let stored: Option<(String, String, DateTime<Utc>, Option<String>)> =
+        sqlx::query_as("DELETE FROM oauth_states WHERE state_hash = $1 RETURNING verifier, return_to, expires_at, client_challenge")
             .bind(hash(&oauth_state))
             .fetch_optional(&state.pool)
             .await?;
-    let (verifier, return_to, _) = stored.filter(|(_, _, expires)| *expires > now).ok_or_else(invalid)?;
+    let (verifier, return_to, _, client_challenge) = stored.filter(|(_, _, expires, _)| *expires > now).ok_or_else(invalid)?;
     let Some(code) = query.code else { return back_to(&return_to, "error", "denied") };
 
     let (github_user, github_token) = state.github.oauth_user(&code, &verifier, &callback_url(&state)).await.map_err(|e| {
@@ -121,11 +135,12 @@ pub async fn callback(State(state): State<AppState>, Query(query): Query<Callbac
         return back_to(&return_to, "error", "banned");
     }
     let login_code = random_token();
-    sqlx::query("INSERT INTO login_codes (code_hash, user_id, return_to, expires_at) VALUES ($1, $2, $3, $4)")
+    sqlx::query("INSERT INTO login_codes (code_hash, user_id, return_to, expires_at, client_challenge) VALUES ($1, $2, $3, $4, $5)")
         .bind(hash(&login_code))
         .bind(user_id)
         .bind(&return_to)
         .bind(now + CODE_TTL)
+        .bind(&client_challenge)
         .execute(&state.pool)
         .await?;
     keep_github_token(hash(&login_code), github_token, now + CODE_TTL, now);
@@ -157,19 +172,26 @@ pub struct ExchangeBody {
     /// The website asks for the user's GitHub token, to post issues as them.
     #[serde(default)]
     github_token: bool,
+    /// Needed when the login started with a `code_challenge`.
+    code_verifier: Option<String>,
 }
 
 pub async fn exchange(State(state): State<AppState>, Json(body): Json<ExchangeBody>) -> ApiResult<Json<serde_json::Value>> {
     let now = (state.clock)();
     let code_hash = hash(&body.code);
     let github_token = take_github_token(&code_hash, now);
-    let stored: Option<(i64, String, DateTime<Utc>)> =
-        sqlx::query_as("DELETE FROM login_codes WHERE code_hash = $1 RETURNING user_id, return_to, expires_at")
+    // The code is spent either way: a wrong verifier does not get a second try.
+    let stored: Option<(i64, String, DateTime<Utc>, Option<String>)> =
+        sqlx::query_as("DELETE FROM login_codes WHERE code_hash = $1 RETURNING user_id, return_to, expires_at, client_challenge")
             .bind(&code_hash)
             .fetch_optional(&state.pool)
             .await?;
-    let (user_id, _, _) = stored
-        .filter(|(_, return_to, expires)| *expires > now && *return_to == body.return_to)
+    let verified = |challenge: &Option<String>| match challenge {
+        None => true,
+        Some(challenge) => body.code_verifier.as_deref().is_some_and(|v| s256(v) == *challenge),
+    };
+    let (user_id, _, _, _) = stored
+        .filter(|(_, return_to, expires, challenge)| *expires > now && *return_to == body.return_to && verified(challenge))
         .ok_or_else(|| bad_request("invalid_code", "The login code is invalid or expired"))?;
     let token = random_token();
     let expires_at = now + SESSION_TTL;
