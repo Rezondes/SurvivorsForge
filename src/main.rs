@@ -3691,7 +3691,8 @@ mod layout_tests {
             ui.set_detail_page(1);
             ui.set_detail_tab(3);
             let row = crate::CommentRow { id: 42, author: "kex".into(), body: "Great".into(), ..Default::default() };
-            ui.set_comments_rows(slint::ModelRc::new(slint::VecModel::from(vec![row])));
+            let mine = crate::CommentRow { id: 43, author: "octo".into(), body: "Mine".into(), own: true, ..Default::default() };
+            ui.set_comments_rows(slint::ModelRc::new(slint::VecModel::from(vec![row, mine])));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
             if find("Great").is_none() {
@@ -3704,6 +3705,8 @@ mod layout_tests {
 
             ui.set_account_login("octo".into());
             assert!(find("Your comment").is_none(), "the list shows comments only, no box");
+            assert!(find("Edit or delete your comments on the website.").is_none(), "no rule above the list: the link sits at one's own comments");
+            assert!(find("octo (you)").is_some() && find("kex (you)").is_none(), "one's own comment is marked");
             find("Write a comment").expect("logged in: a button to write").invoke_accessible_default_action();
             assert_eq!(composes.get(), 1);
             find("Reply").expect("a Reply link on each comment").invoke_accessible_default_action();

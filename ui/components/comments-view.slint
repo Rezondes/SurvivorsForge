@@ -51,9 +51,9 @@ export component CommentsView inherits VerticalLayout {
                 font-size: 26px;
                 color: Theme.gold-heading;
             }
-            Text {
-                text: root.logged-in ? "Edit or delete your comments on the website."
-                    : root.links-enabled ? "Log in with GitHub to write and reply." : "Log in in Desktop Mode to write and reply.";
+            // Logged in nothing to explain: editing is linked at one's own comments.
+            if !root.logged-in : Text {
+                text: root.links-enabled ? "Log in with GitHub to write and reply." : "Log in in Desktop Mode to write and reply.";
                 font-size: Theme.meta;
                 color: Theme.text-muted;
                 wrap: word-wrap;
@@ -108,7 +108,7 @@ export component CommentsView inherits VerticalLayout {
             Rectangle {
                 background: Theme.field;
                 border-width: 1px;
-                border-color: Theme.line;
+                border-color: row.own ? Theme.outline : Theme.line;
                 border-radius: Theme.radius;
                 VerticalLayout {
                     padding: 12px;
@@ -127,7 +127,7 @@ export component CommentsView inherits VerticalLayout {
                             initial: row.initial;
                         }
                         Text {
-                            text: row.author;
+                            text: row.own ? row.author + " (you)" : row.author;
                             font-size: Theme.body;
                             color: Theme.gold;
                             vertical-alignment: center;
@@ -155,10 +155,12 @@ export component CommentsView inherits VerticalLayout {
                         alignment: start;
                         spacing: 16px;
                         if !row.deleted : LinkButton {
+                            strong: true;
                             text: "Reply";
                             clicked => { root.reply(row.id); }
                         }
                         if row.own && !row.deleted && root.links-enabled : LinkButton {
+                            strong: true;
                             text: "Edit on the website";
                             clicked => { root.write(); }
                         }

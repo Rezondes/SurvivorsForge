@@ -183,6 +183,8 @@ export component RemoveButton inherits GlyphButton {
 export component LinkButton inherits Rectangle {
     in property <string> text;
     in property <bool> danger;
+    // Gold also at rest, for actions inside content (Reply) that muted text would hide.
+    in property <bool> strong;
     callback clicked;
 
     accessible-role: button;
@@ -198,7 +200,8 @@ export component LinkButton inherits Rectangle {
         font-size: Theme.touch ? Theme.body : Theme.meta;
         horizontal-alignment: center;
         vertical-alignment: center;
-        color: !touch.has-hover && !focus.has-focus ? Theme.text-muted : root.danger ? Theme.danger : Theme.gold;
+        color: touch.has-hover || focus.has-focus ? (root.danger ? Theme.danger : root.strong ? Theme.gold-bright : Theme.gold)
+            : root.strong ? Theme.gold : Theme.text-muted;
     }
 
     // Focused, the text is underlined: the link has no border to light up.
