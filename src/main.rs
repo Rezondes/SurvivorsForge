@@ -3614,6 +3614,30 @@ mod layout_tests {
         }
 
         #[test]
+        fn ctrl_f_goes_to_the_search_and_f5_checks_again() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let checks = Rc::new(Cell::new(0));
+            let c = checks.clone();
+            ui.on_check_updates(move || c.set(c.get() + 1));
+            ui.show().unwrap();
+            let search = ElementHandle::find_by_accessible_label(&ui, "Search addons").next();
+            let Some(search) = search else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            press(&ui, &slint::SharedString::from(Key::F5));
+            assert_eq!(checks.get(), 1, "F5 checks for updates");
+            let control: slint::SharedString = Key::Control.into();
+            ui.window().dispatch_event(WindowEvent::KeyPressed { text: control.clone() });
+            press(&ui, "f");
+            ui.window().dispatch_event(WindowEvent::KeyReleased { text: control });
+            press(&ui, "x");
+            assert_eq!(ui.get_search().as_str(), "x", "Ctrl+F put the cursor into the search");
+            assert_eq!(search.accessible_value().as_deref(), Some("x"));
+        }
+
+        #[test]
         fn the_addons_folder_opens_from_the_bottom_line() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

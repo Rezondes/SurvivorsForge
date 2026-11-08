@@ -639,6 +639,10 @@ export component AppWindow inherits Window {
     in-out property <string> search;
     callback search-changed(string);
 
+    // Ctrl+F asks the search field for the cursor.
+    property <int> search-focus;
+    // No dialog or picture is open over the pages, which would take these keys.
+    property <bool> keys-free: !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open && !root.comments-compose-open;
     // A search, category or safety filter hides some addons.
     property <bool> filtered: root.search != "" || root.category-index > 0 || root.safety-index > 0;
     function clear-filters() {
@@ -851,6 +855,15 @@ export component AppWindow inherits Window {
         height: parent.height;
         init => { self.focus(); }
         key-pressed(event) => {
+            // Desktop habits: F5 checks for updates, Ctrl+F goes to the search of a list.
+            if (event.text == Key.F5 && root.keys-free) {
+                root.check-updates();
+                return accept;
+            }
+            if (event.modifiers.control && (event.text == "f" || event.text == "F") && root.keys-free && root.page != 2 && !root.showing-detail) {
+                root.search-focus += 1;
+                return accept;
+            }
             // The shoulder buttons of a controller come as Page Up and Page Down.
             if ((event.text == Key.PageDown || event.text == Key.PageUp) && !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open) {
                 root.open-page(mod(root.page + (event.text == Key.PageDown ? 1 : 2), 3));
@@ -1063,6 +1076,7 @@ export component AppWindow inherits Window {
                             label: "Search addons";
                             clearable: true;
                             clear-label: "Clear search";
+                            focus-request: root.search-focus;
                             text <=> root.search;
                             edited(text) => { root.search-changed(text); }
                         }

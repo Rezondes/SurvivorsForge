@@ -19,6 +19,9 @@ export component Field inherits Rectangle {
     // The cursor left the field, by Tab or a click elsewhere.
     callback focus-lost();
     property <bool> show-clear: root.clearable && root.text != "" && root.enabled;
+    // Raised by one to put the cursor into the field from outside (Ctrl+F for the search).
+    in property <int> focus-request;
+    changed focus-request => { input.focus(); }
 
     public function focus-input() {
         input.focus();
