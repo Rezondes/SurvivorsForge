@@ -3602,6 +3602,29 @@ mod layout_tests {
         }
 
         #[test]
+        fn the_search_clears_with_its_button_and_with_escape() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let searched = Rc::new(std::cell::RefCell::new(None::<String>));
+            let s = searched.clone();
+            ui.on_search_changed(move |text| *s.borrow_mut() = Some(text.to_string()));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("Clear search").is_none(), "nothing to clear yet");
+            ui.set_search("lucky".into());
+            find("Clear search").expect("a typed search can be cleared").invoke_accessible_default_action();
+            assert_eq!((ui.get_search().as_str(), searched.borrow().as_deref()), ("", Some("")), "the button empties it");
+            ui.set_search("lucky".into());
+            *searched.borrow_mut() = None;
+            press(&ui, &slint::SharedString::from(Key::Escape));
+            assert_eq!((ui.get_search().as_str(), searched.borrow().as_deref()), ("", Some("")), "Escape empties it too");
+        }
+
+        #[test]
         fn a_version_opens_its_release_notes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

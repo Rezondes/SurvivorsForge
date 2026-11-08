@@ -875,6 +875,9 @@ export component AppWindow inherits Window {
                 }
             } else if (root.showing-detail) {
                 root.detail-page = -1;
+            } else if (root.page != 2 && root.search != "") {
+                root.search = "";
+                root.search-changed("");
             } else {
                 return reject;
             }
@@ -1056,6 +1059,8 @@ export component AppWindow inherits Window {
                             horizontal-stretch: 1;
                             placeholder: "Search name or author";
                             label: "Search addons";
+                            clearable: true;
+                            clear-label: "Clear search";
                             text <=> root.search;
                             edited(text) => { root.search-changed(text); }
                         }

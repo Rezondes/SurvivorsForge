@@ -11,10 +11,14 @@ export component Field inherits Rectangle {
     // Its value was refused: a red border, the reason stands under the field.
     in property <bool> invalid;
     in property <bool> enabled: true;
+    // An x at the right end empties the field (the search); it says so as `clear-label`.
+    in property <bool> clearable;
+    in property <string> clear-label: "Clear";
     callback accepted();
     callback edited(string);
     // The cursor left the field, by Tab or a click elsewhere.
     callback focus-lost();
+    property <bool> show-clear: root.clearable && root.text != "" && root.enabled;
 
     public function focus-input() {
         input.focus();
@@ -47,7 +51,7 @@ export component Field inherits Rectangle {
 
     input := TextInput {
         x: 12px;
-        width: parent.width - 24px;
+        width: parent.width - 24px - (root.show-clear ? root.height - 12px : 0px);
         height: parent.height;
         text <=> root.text;
         enabled: root.enabled;
@@ -65,6 +69,35 @@ export component Field inherits Rectangle {
                 root.focus-lost();
             }
         }
+    }
+
+    if root.show-clear : Rectangle {
+        x: parent.width - self.width;
+        width: parent.height;
+        height: parent.height;
+        accessible-role: button;
+        accessible-label: root.clear-label;
+        accessible-action-default => { root.clear(); }
+        // An x, drawn like the icons of the icon buttons.
+        Path {
+            width: 12px;
+            height: 12px;
+            viewbox-width: 16;
+            viewbox-height: 16;
+            commands: "M 3 3 L 13 13 M 13 3 L 3 13";
+            stroke: clear-touch.has-hover ? Theme.gold-bright : Theme.text-muted;
+            stroke-width: 1.5px;
+        }
+        clear-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clear(); }
+        }
+    }
+
+    function clear() {
+        root.text = "";
+        root.edited("");
+        input.focus();
     }
 }
 
