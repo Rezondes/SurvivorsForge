@@ -2,7 +2,7 @@
 
 Other launchers and tools may read the SurvivorsForge addon index and the addon details listed here. No account and no key are needed. The base URL is `https://forgeapi.rezondes.net`.
 
-Only the four endpoints on this page are public for third parties. Every other route of the API can change without notice.
+Only the seven endpoints on this page are public for third parties. Every other route of the API serves the official launcher and website: it can change or go away without notice.
 
 ## Conditions
 
@@ -18,13 +18,18 @@ Anyone may use this API on these conditions:
 | `GET /v1/addons/{slug}` | Details of one addon: description, images, icon, dependencies. |
 | `GET /v1/addons/{slug}/versions` | All versions of one addon, newest first. |
 | `GET /v1/addons/{slug}/versions/{tag}/findings` | The latest scan of one version with every finding. |
+| `GET /v1/addons` | Search the addons: text, category, trust level, game version, author; sorted and paged. |
+| `GET /v1/categories` | The categories in display order, with their subcategories. |
+| `GET /v1/game-versions` | The game versions the platform knows, oldest first. |
 
 `{slug}` is the `id` from the registry. Downloads are never served by SurvivorsForge: every `asset_url` points to the author's release on GitHub.
 
 ## How often
 
 - **`/v1/registry`:** fetch it when your launcher starts, then at most once every 5 minutes. Once an hour is plenty. Always send the `ETag` of your last copy as `If-None-Match`: an unchanged list answers `304 Not Modified` without a body. The answer carries `Cache-Control: public, max-age=300`. Download counts are refreshed about every 15 minutes, so the list (and its `ETag`) changes that often while people download addons.
-- **The other three:** fetch them when a user opens an addon or is about to install a version. Do not poll them.
+- **The three detail endpoints:** fetch them when a user opens an addon or is about to install a version. Do not poll them.
+- **`/v1/addons`:** when a user searches or browses, one page at a time (`per_page` up to 50). Send `If-None-Match` as with the registry. To show every addon, use `/v1/registry` instead of paging through the search.
+- **`/v1/categories` and `/v1/game-versions`:** they change rarely; fetch them once when your launcher starts.
 - **Limit:** 120 requests per minute and IP address, counted over all routes. Above it the API answers `429` with the error code `rate_limited`. Wait a minute before the next request, and back off the same way on `5xx` answers.
 - **User-Agent:** send one with your launcher's name, version and a URL, e.g. `MyLauncher/1.2 (+https://github.com/me/mylauncher)`. That lets us reach you before a change hits you. The platform counts requests to these routes per hour by the first word of the User-Agent (`MyLauncher/1.2`) and the country Cloudflare reports; it stores no IP address.
 
@@ -39,7 +44,7 @@ Anyone may use this API on these conditions:
 ## Stability
 
 - The registry carries `"schema": 1`. Within schema 1, fields are only added, never renamed, removed or given a new meaning. Ignore fields you do not know.
-- The three detail endpoints follow the same rule within `/v1`.
+- The other six endpoints follow the same rule within `/v1`.
 - A breaking change comes as a new schema number or a new `/v2` path. The old one keeps working for at least three months after the announcement in the release notes on GitHub.
 
 ## Code examples
@@ -238,6 +243,7 @@ Errors are JSON with a stable code and a readable message:
 |---|---|---|
 | `404` | `not_found` | Unknown or deleted addon, unknown tag. |
 | `422` | `unknown_game_version` | `?game=` names a game version that does not exist. |
+| `422` | `invalid_sort` | `/v1/addons?sort=` is not `relevance`, `downloads`, `updated` or `name`. |
 | `429` | `rate_limited` | More than 120 requests in a minute. |
 
 ## Values
@@ -372,3 +378,60 @@ Optional query: `?game=<game version>` fills `compatible` for every version. The
 | `scan.findings[].line` | `integer`, nullable | Line in that file. |
 | `scan.findings[].message` | `string` | What the rule found. |
 | `scan.findings[].snippet` | `string`, nullable | The code at that line. |
+
+## `GET /v1/addons`
+
+Every addon that is neither deleted nor blocked and matches the query. All parameters are optional:
+
+| Query | Meaning |
+|---|---|
+| `q` | Words to find in name, summary and description; prefixes match (`luck` finds `LuckyOdds`), and a name with a typo still matches. |
+| `category` | A category name; its subcategories count too. Repeat it for several (`?category=UI&category=Loot`). |
+| `trust` | Trust levels, comma-separated, e.g. `verified,scanned`. |
+| `game` | A game version name: only addons whose latest version runs on it, or whose range is unknown. |
+| `author` | GitHub login of the owner, or the author's name while nobody claimed the addon; any case. |
+| `sort` | `relevance` (the default with `q`), `downloads` (the default without), `updated` or `name`. |
+| `page` | Page number from `1`. |
+| `per_page` | Addons per page, `1` to `50`, default `20`. |
+
+The answer carries an `ETag`; send it as `If-None-Match` for `304 Not Modified`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `total` | `integer` | Addons that match, on all pages. |
+| `page` | `integer` | This page. |
+| `per_page` | `integer` | Addons per page. |
+| `addons` | `object[]` | The addons of this page. |
+| `addons[].slug` | `string` | The addon's `id`, as in the registry. |
+| `addons[].name` | `string` | Display name. |
+| `addons[].summary` | `string` | One-line summary. |
+| `addons[].category` | `string` | Category name. |
+| `addons[].trust` | `string`, nullable | Trust level of the version the registry offers; `null` without a version. |
+| `addons[].icon_url` | `string`, nullable | Square icon; `null` without one. |
+| `addons[].owner` | `object`, nullable | `login` and `avatar_url` (`string`) of the owner; `null` while nobody claimed the addon. |
+| `addons[].author` | `string`, nullable | GitHub login of the owner, or the author's name while nobody claimed the addon. |
+| `addons[].verified_author` | `boolean` | An admin verified at least one version of this addon. |
+| `addons[].downloads` | `integer`, nullable | Downloads of every version; `null` for `tag` addons. |
+| `addons[].updated_at` | `string` | When the addon or its newest version last changed. |
+
+## `GET /v1/categories`
+
+An array, each top-level category followed by its subcategories.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `[].name` | `string` | Category name, as `category` of an addon and in `/v1/addons?category=`. |
+| `[].parent` | `string`, nullable | The top-level category of a subcategory; `null` for a top-level one. |
+| `[].sort_key` | `integer` | Order within its level. |
+| `[].selectable` | `boolean` | `false` for a category that has subcategories: addons sit in those. |
+
+## `GET /v1/game-versions`
+
+An array, oldest first. Use `name` for `?game=` of the other endpoints.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `[].id` | `integer` | Internal id. |
+| `[].name` | `string` | Game version, e.g. `0.9.2`. |
+| `[].released_at` | `string`, nullable | Release day, `YYYY-MM-DD`; `null` when unknown. |
+| `[].sort_key` | `integer` | Order of the versions. |

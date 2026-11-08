@@ -58,7 +58,15 @@ pub fn launcher_build(user_agent: &str) -> Option<(String, &'static str)> {
 }
 
 /// The routes of the public API for other launchers (docs/public-api.md).
-pub const PUBLIC_ROUTES: [&str; 4] = ["/v1/registry", "/v1/addons/{slug}", "/v1/addons/{slug}/versions", "/v1/addons/{slug}/versions/{tag}/findings"];
+pub const PUBLIC_ROUTES: [&str; 7] = [
+    "/v1/registry",
+    "/v1/addons/{slug}",
+    "/v1/addons/{slug}/versions",
+    "/v1/addons/{slug}/versions/{tag}/findings",
+    "/v1/addons",
+    "/v1/categories",
+    "/v1/game-versions",
+];
 
 /// Who calls the public API: the first word of the User-Agent (`MyLauncher/1.2`), as its rules ask;
 /// `none` without one and `unknown` for an odd one, so no client fills the table with labels.
@@ -360,6 +368,20 @@ pub fn spawn_metrics_server(addr: std::net::SocketAddr) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_routes_are_the_documented_ones() {
+        let doc = include_str!("../../../docs/public-api.md");
+        let documented: Vec<&str> = doc.lines().filter_map(|l| l.strip_prefix("## `GET ")?.strip_suffix('`')).collect();
+        let mut routes = PUBLIC_ROUTES.to_vec();
+        routes.sort_unstable();
+        let mut documented_sorted = documented.clone();
+        documented_sorted.sort_unstable();
+        assert_eq!(routes, documented_sorted, "docs/public-api.md has a section per public route, and no other");
+        for catalog in ["/v1/addons", "/v1/categories", "/v1/game-versions"] {
+            assert!(PUBLIC_ROUTES.contains(&catalog), "{catalog} is public for other launchers");
+        }
+    }
 
     #[test]
     fn classifies_client() {
