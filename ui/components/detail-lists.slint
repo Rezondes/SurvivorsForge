@@ -86,16 +86,31 @@ component NewIssueForm inherits VerticalLayout {
             clicked => { root.cancel(); }
         }
     }
+    Text {
+        text: "Kind";
+        font-size: Theme.meta;
+        color: Theme.gold;
+    }
     Dropdown {
         label: "Kind of issue";
         model: ["Choose the kind", "Bug report", "Feature request", "Question"];
         current-index <=> root.kind;
     }
+    Text {
+        text: "Title";
+        font-size: Theme.meta;
+        color: Theme.gold;
+    }
     Field {
         text <=> root.title;
-        placeholder: "Title";
+        placeholder: "A short summary, e.g. Crash when opening the map";
         label: "Issue title";
         enabled: !root.sending;
+    }
+    Text {
+        text: "Description";
+        font-size: Theme.meta;
+        color: Theme.gold;
     }
     TextArea {
         text <=> root.body;

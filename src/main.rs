@@ -3745,6 +3745,9 @@ mod layout_tests {
 
             ui.set_issues_mode(1);
             assert!(find("Issue title").is_some() && find("Issue description").is_some(), "the form");
+            for label in ["Kind", "Title", "Description"] {
+                assert!(find(label).is_some(), "a visible label stays while typing: {label}");
+            }
             find("Create issue").unwrap().invoke_accessible_default_action();
             assert_eq!(submits.get(), 1);
             ui.set_issues_send_error("Give the issue a title".into());
