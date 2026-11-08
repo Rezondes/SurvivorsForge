@@ -40,6 +40,7 @@ Anyone may use this API on these conditions:
 3. **Follow removals.** An addon that disappears from `/v1/registry` was deleted or blocked. Stop offering it and do not keep installing it from an older copy of the list.
 4. **Link, do not rehost.** Download from `asset_url` and do not mirror the zips.
 5. **Do not pose as SurvivorsForge.** Saying that your launcher reads the SurvivorsForge index is fine; looking like the official launcher is not.
+6. **Name your client.** Trying the API by hand (curl, a browser, the playground) is fine. A tool that calls it regularly sends its own User-Agent, as under "How often", and meets the conditions above.
 
 ## Stability
 
