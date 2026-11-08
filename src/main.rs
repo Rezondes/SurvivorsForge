@@ -110,8 +110,9 @@ struct Core {
     login_error: String,
     /// Logged in to GitHub alone (device flow) without the platform: the GitHub login name.
     github_only: Option<String>,
-    /// The code to enter at github.com/login/device while a device login waits.
+    /// The code to enter at github.com/login/device while a device login waits, and that page.
     device_code: String,
+    device_url: String,
 }
 
 /// The Issues tab of the detail view beyond its list.
@@ -218,6 +219,7 @@ impl Core {
             login_error: String::new(),
             github_only: None,
             device_code: String::new(),
+            device_url: String::new(),
         };
         if let Some(config) = config {
             core.switch_config(config);
@@ -1990,7 +1992,11 @@ fn on_login_device(ui: &AppWindow, shared: &Shared) {
     let (weak, shared) = (ui.as_weak(), shared.clone());
     std::thread::spawn(move || {
         let result = device_login::start(&client, device_login::GITHUB_OAUTH, &client_id).and_then(|code| {
-            lock(&shared).device_code = code.user_code.clone();
+            {
+                let mut core = lock(&shared);
+                core.device_code = code.user_code.clone();
+                core.device_url = code.verification_uri.clone();
+            }
             let redraw = shared.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
             if open_browser {
@@ -2492,6 +2498,12 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_comments_cancel_reply, |ui, shared| on_comment_cancel_reply(&ui, shared));
     on!(on_login_cancel, |ui, shared| on_login_cancel(&ui, shared));
     on!(on_login_device, |ui, shared| on_login_device(&ui, shared));
+    on!(on_open_device_page, |_ui, shared| {
+        let url = lock(shared).device_url.clone();
+        if !url.is_empty() {
+            let _ = open::that(url);
+        }
+    });
     on!(on_logout, |ui, shared| on_logout(&ui, shared));
     on!(on_toast_dismiss, |ui, shared, id| {
         lock(shared).toasts.dismiss(id);
@@ -3788,6 +3800,11 @@ mod layout_tests {
             ui.set_account_busy(true);
             ui.set_account_device_code("WDJB-MJHT".into());
             assert!(find("Device code WDJB-MJHT").is_some(), "the code to enter");
+            let opened = Rc::new(Cell::new(0));
+            let o = opened.clone();
+            ui.on_open_device_page(move || o.set(o.get() + 1));
+            find("github.com/login/device").expect("the page is a link").invoke_accessible_default_action();
+            assert_eq!(opened.get(), 1, "the link opens the page again");
             let copy = find("Copy code").expect("a button copies the code");
             copy.invoke_accessible_default_action();
             assert!(find("Copied").is_some(), "the button says it worked");

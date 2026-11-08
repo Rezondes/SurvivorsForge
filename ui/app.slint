@@ -226,6 +226,7 @@ component SettingsView inherits VerticalLayout {
     property <string> copied-code;
     callback login();
     callback login-device();
+    callback open-device-page();
     callback login-cancel();
     callback logout();
     callback browse();
@@ -347,9 +348,21 @@ component SettingsView inherits VerticalLayout {
         if root.account-busy && root.account-device-code != "" : HorizontalLayout {
             spacing: 10px;
             Text {
-                text: "Enter this code at github.com/login/device:";
+                text: "Enter this code at";
                 font-size: Theme.body;
                 color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+            // A link opens the page again (say the first browser tab was closed); Game Mode opens
+            // no browser, so there it is the address to type on another device.
+            if !root.game-mode : LinkButton {
+                text: "github.com/login/device";
+                clicked => { root.open-device-page(); }
+            }
+            if root.game-mode : Text {
+                text: "github.com/login/device";
+                font-size: Theme.body;
+                color: Theme.text;
                 vertical-alignment: center;
             }
             // Read-only input: the code can be selected and copied like any text.
@@ -699,6 +712,7 @@ export component AppWindow inherits Window {
     in property <bool> device-login-offered;
     callback login();
     callback login-device();
+    callback open-device-page();
     callback login-cancel();
     callback logout();
     callback settings-browse();
@@ -1288,6 +1302,7 @@ export component AppWindow inherits Window {
                         device-login-offered: root.device-login-offered;
                         offline: root.offline;
                         login-device => { root.login-device(); }
+                        open-device-page => { root.open-device-page(); }
                         login => { root.login(); }
                         login-cancel => { root.login-cancel(); }
                         logout => { root.logout(); }
