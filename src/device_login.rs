@@ -18,10 +18,9 @@ use std::time::Duration;
 /// Where GitHub's OAuth endpoints live.
 pub const GITHUB_OAUTH: &str = "https://github.com";
 /// Client ID of the GitHub App "SurvivorsForge" (public, not a secret).
-// ponytail: empty until the App's client ID is filled in; the device login stays hidden until then.
-pub const OFFICIAL_CLIENT_ID: &str = "";
+pub const OFFICIAL_CLIENT_ID: &str = "Iv23lip74351hODJwCZL";
 /// Client ID of the GitHub App "SurvivorsForge Local", for debug builds against the local platform.
-pub const LOCAL_CLIENT_ID: &str = "";
+pub const LOCAL_CLIENT_ID: &str = "Iv23likO2x98mH8b9dki";
 
 /// The client ID to use: `SURVIVORSFORGE_GITHUB_CLIENT_ID`, else the one of this build; `None`
 /// when there is none, then the device login is not offered.
