@@ -3830,6 +3830,24 @@ mod layout_tests {
         }
 
         #[test]
+        fn game_versions_say_loading_before_they_say_failed() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_page(2);
+            ui.set_checking(true);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            let failed = "The platform does not answer, so its game versions are not loaded.";
+            assert!(find("Loading the game versions...").is_some() && find(failed).is_none(), "while the first check runs");
+            ui.set_checking(false);
+            assert!(find(failed).is_some() && find("Loading the game versions...").is_none(), "after a check without them");
+        }
+
+        #[test]
         fn settings_scroll_in_the_smallest_window() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

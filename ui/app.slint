@@ -190,6 +190,8 @@ component SettingsView inherits VerticalLayout {
     // "Not set" first, then the platform's game versions; empty without the platform.
     in property <[string]> game-versions;
     in-out property <int> game-index;
+    // The update check runs: the game versions may still come.
+    in property <bool> checking;
     in property <string> version;
     in property <bool> file-dialog;
     in property <bool> game-mode;
@@ -268,7 +270,7 @@ component SettingsView inherits VerticalLayout {
         }
         // The list comes from the platform: say so instead of dropping the row.
         if root.game-versions.length <= 1 : Text {
-            text: "The platform does not answer, so its game versions are not loaded.";
+            text: root.checking ? "Loading the game versions..." : "The platform does not answer, so its game versions are not loaded.";
             font-size: Theme.meta;
             color: Theme.text-muted;
             vertical-alignment: center;
@@ -1293,6 +1295,7 @@ export component AppWindow inherits Window {
                         SettingsView {
                             path <=> root.settings-path;
                             game-versions: root.settings-game-versions;
+                            checking: root.checking;
                             game-index <=> root.settings-game-index;
                             api-url <=> root.settings-api-url;
                             path-error: root.settings-path-error;
