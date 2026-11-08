@@ -139,13 +139,15 @@ pub fn wait_for_code(listener: TcpListener, timeout: Duration, cancel: &AtomicBo
     }
 }
 
-/// Trades the login code for the account.
+/// Trades the login code for the account, with the login name from `/v1/me`: shown at once, so
+/// the settings never fall back to "Log in" between the login and the next check.
 pub fn exchange(client: &Client, api: &str, code: &str, verifier: &str) -> Result<Account, LoginError> {
     let body = json!({ "code": code, "return_to": RETURN_TO, "code_verifier": verifier, "github_token": true });
     let text = client.post_json(&format!("{api}/v1/auth/exchange"), None, &[], &body).map_err(|e| LoginError::Network(e.to_string()))?;
     let answer: Value = serde_json::from_str(&text).map_err(|e| LoginError::Network(e.to_string()))?;
     let token = answer["token"].as_str().filter(|t| !t.is_empty()).ok_or(LoginError::Invalid)?;
-    let session = Session { token: token.to_string(), expires_at: answer["expires_at"].as_str().unwrap_or_default().to_string(), login: String::new() };
+    let login = client.get_text_as(&format!("{api}/v1/me"), token).ok().and_then(|t| crate::controller::parse_me(&t)).map(|me| me.login).unwrap_or_default();
+    let session = Session { token: token.to_string(), expires_at: answer["expires_at"].as_str().unwrap_or_default().to_string(), login };
     let github = serde_json::from_value::<GitHubToken>(answer["github_token"].clone()).ok();
     Ok(Account { platform: Some(session), github })
 }
@@ -202,13 +204,17 @@ mod tests {
     #[test]
     fn exchange_sends_verifier_and_reads_account() {
         let answer = r#"{"token":"bear","expires_at":"2026-12-01T00:00:00Z","github_token":{"access_token":"ghu_1","expires_at":"2026-11-08T20:00:00Z","refresh_token":"ghr_1","refresh_token_expires_at":null}}"#;
-        let (api, seen) = serve(vec![(200, vec![], answer.into())]);
+        let me = r#"{"id":1,"github_id":9,"login":"octo","avatar_url":"https://avatars.test/9","role":"user"}"#;
+        let (api, seen) = serve(vec![(200, vec![], answer.into()), (200, vec![], me.into())]);
         let account = exchange(&Client::new(), &api, "the-code", "the-verifier").unwrap();
         let request = seen.recv().unwrap();
         assert_eq!(request.line, "POST /v1/auth/exchange HTTP/1.1");
         let body: Value = serde_json::from_str(&request.body).unwrap();
         assert_eq!(body, json!({ "code": "the-code", "return_to": RETURN_TO, "code_verifier": "the-verifier", "github_token": true }));
-        assert_eq!(account.platform.unwrap().token, "bear");
+        let me = seen.recv().unwrap();
+        assert_eq!((me.line.as_str(), me.header("authorization")), ("GET /v1/me HTTP/1.1", Some("Bearer bear")));
+        let session = account.platform.unwrap();
+        assert_eq!((session.token.as_str(), session.login.as_str()), ("bear", "octo"), "the name comes with the login");
         let github = account.github.unwrap();
         assert_eq!((github.access_token.as_str(), github.refresh_token.as_deref()), ("ghu_1", Some("ghr_1")));
     }

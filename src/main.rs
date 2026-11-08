@@ -1947,6 +1947,10 @@ fn on_login(ui: &AppWindow, shared: &Shared) {
                 Ok(_) | Err(login::LoginError::Cancelled) => String::new(),
                 Err(e) => e.to_string(),
             };
+            // Logged in from this moment on: no "Log in" button in between.
+            if let Some(session) = result.as_ref().ok().and_then(|a| a.platform.as_ref()) {
+                core.me = Some(controller::Me { login: session.login.clone(), avatar_url: String::new() });
+            }
         }
         let _ = weak.upgrade_in_event_loop(move |ui| {
             if result.is_ok() {
