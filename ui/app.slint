@@ -763,6 +763,9 @@ export component AppWindow inherits Window {
     callback detail-scan();
     callback detail-auto-update();
     property <bool> showing-detail: root.detail-page == root.page;
+    // Room at the end of a list for the toasts over its bottom right, where the row buttons are:
+    // the last row scrolls up out from under them.
+    property <length> toast-room: root.toasts.length > 0 ? toast-stack.height + 8px : 0px;
 
     // Running work and how it ended, bottom right (crates/slint-toast).
     in property <[Toast]> toasts;
@@ -1283,6 +1286,7 @@ export component AppWindow inherits Window {
                                 clicked => { root.clear-filters(); }
                             }
                         }
+                        Rectangle { height: root.toast-room; }
                     }
 
                     // One zip with every picked addon, for the browser version of the game.
@@ -1354,6 +1358,7 @@ export component AppWindow inherits Window {
                                 clicked => { root.clear-filters(); }
                             }
                         }
+                        Rectangle { height: root.toast-room; }
                     }
 
                     // The page is longer than the smallest window: it scrolls.
@@ -1419,7 +1424,7 @@ export component AppWindow inherits Window {
         }
 
         // Above the pages and the bottom line, under the dialogs.
-        ToastStack {
+        toast-stack := ToastStack {
             x: parent.width - self.width - 24px;
             y: parent.height - self.height - 40px;
             width: 380px;
