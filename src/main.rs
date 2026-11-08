@@ -2452,6 +2452,18 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     });
     on!(on_row_details, |ui, shared, id| on_row_details(&ui, shared, id.to_string()));
     on!(on_detail_website, |ui, shared| on_detail_link(&ui, shared, "website"));
+    on!(on_open_addons_dir, |ui, shared| {
+        let dir = lock(shared).addons_dir().to_path_buf();
+        let (weak, shared) = (ui.as_weak(), shared.clone());
+        std::thread::spawn(move || {
+            if open::that(&dir).is_err() {
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    lock(&shared).notify(format!("Could not open the folder {}", dir.display()), Kind::Error);
+                    refresh(&ui, &shared);
+                });
+            }
+        });
+    });
     on!(on_detail_link, |ui, shared, page| on_detail_link(&ui, shared, &page));
     on!(on_comments_show, |ui, shared| on_comments_show(&ui, shared));
     on!(on_detail_tab_changed, |ui, shared, tab| match tab {
@@ -3599,6 +3611,26 @@ mod layout_tests {
             ui.set_offline(true);
             find("Try again").expect("offline: the line with its button").invoke_accessible_default_action();
             assert!(tried.get(), "Try again checks again");
+        }
+
+        #[test]
+        fn the_addons_folder_opens_from_the_bottom_line() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let opened = Rc::new(Cell::new(false));
+            let o = opened.clone();
+            ui.on_open_addons_dir(move || o.set(true));
+            ui.set_addons_dir("C:/Games/AzerothSurvivors/AddOns".into());
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            find("Open folder").expect("next to the path").invoke_accessible_default_action();
+            assert!(opened.get());
+            ui.set_game_mode(true);
+            assert!(find("Open folder").is_none(), "Game Mode has no file manager to open");
         }
 
         #[test]

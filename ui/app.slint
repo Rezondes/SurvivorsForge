@@ -650,6 +650,8 @@ export component AppWindow inherits Window {
         root.safety-changed(0);
     }
     in property <string> addons-dir;
+    // Shows the AddOns folder in the file manager.
+    callback open-addons-dir();
     in property <int> update-count;
     in property <bool> checking;
     callback check-updates();
@@ -1411,7 +1413,7 @@ export component AppWindow inherits Window {
             }
 
             HorizontalLayout {
-                height: 20px;
+                height: Theme.touch ? 44px : 22px;
                 spacing: 16px;
                 Text {
                     text: "AddOns: " + root.addons-dir;
@@ -1420,6 +1422,11 @@ export component AppWindow inherits Window {
                     color: Theme.text-muted;
                     overflow: elide;
                     horizontal-stretch: 1;
+                }
+                // Game Mode has no file manager to show it in.
+                if !root.game-mode && root.addons-dir != "" : LinkButton {
+                    text: "Open folder";
+                    clicked => { root.open-addons-dir(); }
                 }
                 Text {
                     text: "v" + root.app-version;
