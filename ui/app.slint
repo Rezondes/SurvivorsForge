@@ -220,6 +220,8 @@ component SettingsView inherits VerticalLayout {
     in property <string> account-device-code;
     // The platform cannot be reached, and this build can log in to GitHub alone.
     in property <bool> device-login-offered;
+    // The platform cannot be reached: its login cannot work.
+    in property <bool> offline;
     // The device code "Copy code" last copied; a new code can be copied again.
     property <string> copied-code;
     callback login();
@@ -334,8 +336,8 @@ component SettingsView inherits VerticalLayout {
         }
         if root.account-login == "" && !root.account-busy : ActionButton {
             text: "Log in with GitHub";
-            // Game Mode opens no browser.
-            enabled: !root.game-mode;
+            // Game Mode opens no browser; offline the browser would wait for a dead page.
+            enabled: !root.game-mode && !root.offline;
             clicked => { root.login(); }
         }
         if root.account-login == "" && !root.account-busy && root.account-github-only == "" && root.device-login-offered : ActionButton {
@@ -394,6 +396,8 @@ component SettingsView inherits VerticalLayout {
     FieldHint {
         text: root.device-login-offered && root.account-login == ""
             ? "The SurvivorsForge server cannot be reached. Logging in to GitHub only still gets updates past GitHub's limits for logged-out users; comments and issues need the server."
+            : root.offline && root.account-login == ""
+            ? "The SurvivorsForge server cannot be reached, so its login waits until it is back."
             : root.game-mode && root.account-login == ""
             ? "Log in from the desktop: Game Mode opens no browser."
             : "Optional. Lets you write comments and issues from the launcher, as on the website.";
@@ -1278,6 +1282,7 @@ export component AppWindow inherits Window {
                         account-github-only: root.account-github-only;
                         account-device-code: root.account-device-code;
                         device-login-offered: root.device-login-offered;
+                        offline: root.offline;
                         login-device => { root.login-device(); }
                         login => { root.login(); }
                         login-cancel => { root.login-cancel(); }

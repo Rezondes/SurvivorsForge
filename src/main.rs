@@ -3741,6 +3741,12 @@ mod layout_tests {
                 return;
             }
             assert!(find("Log in to GitHub only").is_none(), "online: only the platform login");
+            let logins = Rc::new(Cell::new(0));
+            let l = logins.clone();
+            ui.on_login(move || l.set(l.get() + 1));
+            ui.set_offline(true);
+            find("Log in with GitHub").expect("the platform login stays in sight").invoke_accessible_default_action();
+            assert_eq!(logins.get(), 0, "offline the platform login cannot work: no 5 minute wait for a dead page");
             ui.set_device_login_offered(true);
             find("Log in to GitHub only").expect("offline: the device login").invoke_accessible_default_action();
             assert_eq!(devices.get(), 1);
@@ -3761,6 +3767,9 @@ mod layout_tests {
             assert!(find("octo (GitHub only)").is_some() && find("Log out").is_some(), "logged in to GitHub alone");
             assert!(find("Log in to GitHub only").is_none());
             assert!(find("Log in with GitHub").is_some(), "the full login stays offered");
+            ui.set_offline(false);
+            find("Log in with GitHub").unwrap().invoke_accessible_default_action();
+            assert_eq!(logins.get(), 1, "back online it works again");
         }
 
         #[test]
