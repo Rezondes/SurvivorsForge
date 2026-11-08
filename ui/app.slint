@@ -227,6 +227,9 @@ component SettingsView inherits VerticalLayout {
     in property <bool> offline;
     // The device code "Copy code" last copied; a new code can be copied again.
     property <string> copied-code;
+    // The platform addresses are shown: opened by hand, or a refused one has to be fixed.
+    property <bool> advanced-open;
+    property <bool> show-advanced: root.advanced-open || root.api-error != "" || root.web-error != "";
     callback login();
     callback login-device();
     callback open-device-page();
@@ -280,32 +283,6 @@ component SettingsView inherits VerticalLayout {
             wrap: word-wrap;
         }
     }
-    SettingRow {
-        label: "Platform API";
-        Field {
-            text <=> root.api-url;
-            placeholder: root.api-default;
-            label: "Platform API address";
-            invalid: root.api-error != "";
-            accepted => { root.save(); }
-            focus-lost => { root.save(); }
-        }
-    }
-    if root.api-error != "" : FieldError { text: root.api-error; }
-    FieldHint { text: "Empty uses the built-in platform, as shown in grey."; }
-    SettingRow {
-        label: "Platform website";
-        Field {
-            text <=> root.web-url;
-            placeholder: root.web-default;
-            label: "Platform website address";
-            invalid: root.web-error != "";
-            accepted => { root.save(); }
-            focus-lost => { root.save(); }
-        }
-    }
-    if root.web-error != "" : FieldError { text: root.web-error; }
-    FieldHint { text: "Empty uses the built-in website."; }
     SettingRow {
         label: "GitHub account";
         if root.account-login != "" : HorizontalLayout {
@@ -582,6 +559,45 @@ component SettingsView inherits VerticalLayout {
             color: Theme.text;
             vertical-alignment: center;
         }
+    }
+    // Another platform than the built-in one: set once, if ever. Folded away at the end, open on
+    // its own while one of its fields was refused.
+    HorizontalLayout {
+        alignment: start;
+        LinkButton {
+            text: (root.show-advanced ? "Hide advanced settings" : "Show advanced settings")
+                + (!root.show-advanced && (root.api-url != "" || root.web-url != "") ? " (another platform is set)" : "");
+            clicked => { root.advanced-open = !root.show-advanced; }
+        }
+    }
+    if root.show-advanced : VerticalLayout {
+        spacing: 16px;
+        SettingRow {
+            label: "Platform API";
+            Field {
+                text <=> root.api-url;
+                placeholder: root.api-default;
+                label: "Platform API address";
+                invalid: root.api-error != "";
+                accepted => { root.save(); }
+                focus-lost => { root.save(); }
+            }
+        }
+        if root.api-error != "" : FieldError { text: root.api-error; }
+        FieldHint { text: "Empty uses the built-in platform, as shown in grey."; }
+        SettingRow {
+            label: "Platform website";
+            Field {
+                text <=> root.web-url;
+                placeholder: root.web-default;
+                label: "Platform website address";
+                invalid: root.web-error != "";
+                accepted => { root.save(); }
+                focus-lost => { root.save(); }
+            }
+        }
+        if root.web-error != "" : FieldError { text: root.web-error; }
+        FieldHint { text: "Empty uses the built-in website."; }
     }
 }
 

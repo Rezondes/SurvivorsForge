@@ -3748,6 +3748,26 @@ mod layout_tests {
         }
 
         #[test]
+        fn the_platform_addresses_wait_under_advanced() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_page(2);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("Platform API address").is_none(), "hidden at first: hardly anyone changes it");
+            find("Show advanced settings").expect("a way to them").invoke_accessible_default_action();
+            assert!(find("Platform API address").is_some() && find("Platform website address").is_some());
+            find("Hide advanced settings").expect("and back").invoke_accessible_default_action();
+            assert!(find("Platform API address").is_none());
+            ui.set_settings_api_url("http://localhost:3081".into());
+            assert!(find("Show advanced settings (another platform is set)").is_some(), "a changed address says so while hidden");
+        }
+
+        #[test]
         fn a_refused_setting_says_why_under_its_field() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
@@ -4115,10 +4135,13 @@ mod layout_tests {
             ui.window().set_size(slint::LogicalSize::new(980.0, 660.0));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
-            let Some(last) = find("Update all addons automatically") else {
+            let Some(advanced) = find("Show advanced settings") else {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             };
+            // Open, the platform addresses at the end make the page its longest.
+            advanced.invoke_accessible_default_action();
+            let last = find("Platform website address").expect("the last setting");
             let before = last.absolute_position().y;
             assert!(before + last.size().height > 660.0, "the page is longer than the smallest window");
             let position = slint::LogicalPosition::new(600.0, 400.0);
