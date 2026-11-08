@@ -390,6 +390,10 @@ configs:
       }
 
       {$$DOMAIN_API} {
+        # Only for the containers among themselves: Docker's health check, Caddy's own pack check
+        # and the website's visit counts reach the API directly, never through this address.
+        @internal path /healthz /v1/pack-files/* /v1/internal/*
+        respond @internal 404
         reverse_proxy api:8080 {
           header_up X-Forwarded-For {client_ip}
         }
