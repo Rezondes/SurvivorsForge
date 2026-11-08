@@ -106,6 +106,9 @@ export struct VersionLine {
 
 // One comment of an addon's discussion, in reading order; `depth` indents replies (0 to 3).
 export struct CommentRow {
+    id: int,
+    // Written by the logged-in user: edited and deleted on the website.
+    own: bool,
     author: string,
     avatar: image,
     initial: string,

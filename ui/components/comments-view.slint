@@ -3,8 +3,10 @@ import { CommentRow } from "types.slint";
 import { ActionButton, LinkButton } from "buttons.slint";
 import { ScrollPanel } from "layout.slint";
 import { AddonIcon, Placeholder } from "addon-parts.slint";
+import { TextArea } from "fields.slint";
 
-// The comments of an addon, read only: writing and replying need the website's GitHub login.
+// The comments of an addon. Logged in with GitHub, the user writes and replies here; editing and
+// deleting stay on the website.
 // While the platform answers, placeholders show (after 150 ms, `waiting` 1) and from 5 s a word
 // that the connection is slow (`waiting` 2); before 150 ms nothing shows (`waiting` 3).
 export component CommentsView inherits VerticalLayout {
@@ -18,8 +20,20 @@ export component CommentsView inherits VerticalLayout {
     in property <bool> links-enabled: true;
     // A tab of the detail view: its header names the addon, so no back link and title here.
     in property <bool> embedded;
+    // Logged in on the platform: the box to write shows instead of "Log in to write".
+    in property <bool> logged-in;
+    in-out property <string> draft;
+    // The author of the comment being answered; empty for a new comment.
+    in property <string> reply-to;
+    in property <bool> sending;
+    in property <string> send-error;
     callback back();
+    // Opens the comments on the website (to edit or delete one's own).
     callback write();
+    callback login();
+    callback send();
+    callback reply(int);
+    callback cancel-reply();
     callback older();
     callback retry();
 
@@ -44,7 +58,8 @@ export component CommentsView inherits VerticalLayout {
                 color: Theme.gold-heading;
             }
             Text {
-                text: root.links-enabled ? "Write and reply on the website, with your GitHub login." : "Write and reply on the website in Desktop Mode.";
+                text: root.logged-in ? "Edit or delete your comments on the website."
+                    : root.links-enabled ? "Log in with GitHub to write and reply." : "Log in in Desktop Mode to write and reply.";
                 font-size: Theme.meta;
                 color: Theme.text-muted;
                 wrap: word-wrap;
@@ -52,10 +67,49 @@ export component CommentsView inherits VerticalLayout {
         }
         VerticalLayout {
             alignment: center;
-            if !root.off : ActionButton {
-                text: "Write a comment";
+            if !root.off && !root.logged-in : ActionButton {
+                text: "Log in to write";
                 enabled: root.links-enabled;
-                clicked => { root.write(); }
+                clicked => { root.login(); }
+            }
+        }
+    }
+
+    if !root.off && root.logged-in : VerticalLayout {
+        spacing: 8px;
+        if root.reply-to != "" : HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Text {
+                text: "Replying to " + root.reply-to;
+                font-size: Theme.meta;
+                color: Theme.gold;
+                vertical-alignment: center;
+            }
+            LinkButton {
+                text: "Cancel reply";
+                clicked => { root.cancel-reply(); }
+            }
+        }
+        TextArea {
+            text <=> root.draft;
+            placeholder: root.reply-to != "" ? "Your reply" : "Write a comment";
+            label: root.reply-to != "" ? "Your reply" : "Write a comment";
+            enabled: !root.sending;
+        }
+        if root.send-error != "" : Text {
+            text: "Error: " + root.send-error;
+            font-size: Theme.meta;
+            color: Theme.danger;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            alignment: end;
+            ActionButton {
+                text: root.sending ? "Sending" : root.reply-to != "" ? "Send reply" : "Send";
+                primary: true;
+                enabled: !root.sending && root.draft != "";
+                clicked => { root.send(); }
             }
         }
     }
@@ -135,6 +189,18 @@ export component CommentsView inherits VerticalLayout {
                             font-size: Theme.body;
                             color: Theme.text;
                             wrap: word-wrap;
+                        }
+                    }
+                    if !root.off && root.logged-in && (!row.deleted || row.own) : HorizontalLayout {
+                        alignment: start;
+                        spacing: 16px;
+                        if !row.deleted : LinkButton {
+                            text: "Reply";
+                            clicked => { root.reply(row.id); }
+                        }
+                        if row.own && !row.deleted && root.links-enabled : LinkButton {
+                            text: "Edit on the website";
+                            clicked => { root.write(); }
                         }
                     }
                 }

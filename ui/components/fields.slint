@@ -68,6 +68,55 @@ export component Field inherits Rectangle {
     }
 }
 
+// Multi-line text input in the look of `Field`, for comments and issues; grows with its text.
+export component TextArea inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> label;
+    in property <bool> enabled: true;
+
+    public function focus-input() {
+        input.focus();
+    }
+
+    height: max(96px, input.preferred-height + 20px);
+    border-radius: Theme.radius;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? Theme.outline-active : hover.has-hover ? Theme.outline-hover : Theme.outline;
+    background: Theme.field;
+
+    hover := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: MouseCursor.text;
+        clicked => { input.focus(); }
+    }
+
+    if root.text == "" : Text {
+        x: 12px;
+        y: 10px;
+        width: parent.width - 24px;
+        text: root.placeholder;
+        font-size: Theme.body;
+        color: Theme.text-muted;
+    }
+
+    input := TextInput {
+        x: 12px;
+        y: 10px;
+        width: parent.width - 24px;
+        text <=> root.text;
+        enabled: root.enabled;
+        accessible-label: root.label != "" ? root.label : root.placeholder;
+        single-line: false;
+        wrap: word-wrap;
+        font-size: Theme.body;
+        color: root.enabled ? Theme.text : Theme.text-muted;
+        selection-background-color: #8A6C3A;
+        selection-foreground-color: Theme.gold-bright;
+    }
+}
+
 // Square tick box in the gold outline style; the tick is a filled square, no glyph needed.
 // The text beside a tick box: a click on it ticks the box too, a bigger target than the box.
 export component TickLabel inherits Rectangle {

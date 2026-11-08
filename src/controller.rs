@@ -698,6 +698,19 @@ pub fn parse_me(json: &str) -> Option<Me> {
     Some(Me { login, avatar_url: v["avatar_url"].as_str().unwrap_or_default().to_string() })
 }
 
+/// The body of `POST /v1/addons/{slug}/comments`; an empty text is refused before any request.
+pub fn comment_body(text: &str, parent: Option<i64>) -> Result<serde_json::Value, &'static str> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Write something first");
+    }
+    let mut body = serde_json::json!({ "body": text });
+    if let Some(parent) = parent {
+        body["parent_id"] = parent.into();
+    }
+    Ok(body)
+}
+
 pub fn comments_page(json: &str) -> Option<(Vec<Comment>, Option<i64>)> {
     let list: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
     let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
@@ -1522,6 +1535,20 @@ mod tests {
 
     fn comment(id: i64, parent: Option<i64>) -> Comment {
         Comment { id, parent_id: parent, author: format!("u{id}"), body: format!("text {id}"), ..Comment::default() }
+    }
+
+    #[test]
+    fn comment_body_with_and_without_parent() {
+        assert_eq!(comment_body("  Nice addon 
+", None), Ok(serde_json::json!({ "body": "Nice addon" })));
+        assert_eq!(comment_body("Thanks", Some(7)), Ok(serde_json::json!({ "body": "Thanks", "parent_id": 7 })));
+    }
+
+    #[test]
+    fn empty_comment_is_refused() {
+        assert_eq!(comment_body("", None), Err("Write something first"));
+        assert_eq!(comment_body(" 
+	 ", Some(3)), Err("Write something first"));
     }
 
     #[test]

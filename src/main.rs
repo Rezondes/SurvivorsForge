@@ -121,6 +121,11 @@ struct Comments {
     off: bool,
     /// Counts the requests: an answer for an older one (another addon, a closed page) is dropped.
     request: u64,
+    /// The comment being answered (id, author); `None` for a new comment.
+    reply_to: Option<(i64, String)>,
+    sending: bool,
+    /// Why the last comment was not sent; the text stays in the box.
+    send_error: String,
 }
 
 type Pixels = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
@@ -756,6 +761,9 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         ui.set_comments_failed(c.failed);
         ui.set_comments_off(c.off);
         ui.set_comments_more(c.older.is_some());
+        ui.set_comments_reply_to(c.reply_to.as_ref().map(|(_, who)| who.as_str()).unwrap_or_default().into());
+        ui.set_comments_sending(c.sending);
+        ui.set_comments_send_error(c.send_error.as_str().into());
     }
     ui.set_update_count(controller::update_all_ids(&core.statuses, &core.config.held).len() as i32);
     ui.set_checking(core.checking);
@@ -2347,6 +2355,9 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     });
     on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
     on!(on_login, |ui, shared| on_login(&ui, shared));
+    on!(on_comments_send, |ui, shared| on_comment_send(&ui, shared));
+    on!(on_comments_reply, |ui, shared, id| on_comment_reply(&ui, shared, id));
+    on!(on_comments_cancel_reply, |ui, shared| on_comment_cancel_reply(&ui, shared));
     on!(on_login_cancel, |ui, shared| on_login_cancel(&ui, shared));
     on!(on_logout, |ui, shared| on_logout(&ui, shared));
     on!(on_toast_dismiss, |ui, shared, id| {
@@ -2546,7 +2557,10 @@ fn on_version_install(ui: &AppWindow, shared: &Shared, tag: String) {
 
 fn comment_row(core: &Core, c: controller::Comment) -> CommentRow {
     let avatar = (!c.avatar_url.is_empty()).then_some(c.avatar_url.as_str());
+    let own = core.me.as_ref().is_some_and(|me| me.login.eq_ignore_ascii_case(&c.author));
     CommentRow {
+        id: c.id as i32,
+        own,
         avatar: picture(core, avatar),
         initial: c.author.chars().next().map(|ch| ch.to_uppercase().to_string()).unwrap_or_default().into(),
         author: c.author.into(),
@@ -2640,7 +2654,19 @@ fn on_comments_show(ui: &AppWindow, shared: &Shared) {
         core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).map(|a| a.id.clone())
     };
     let Some(slug) = slug else { return };
-    lock(shared).comments = Some(Comments { slug, loaded: Vec::new(), older: None, asked: None, failed: false, off: false, request: 0 });
+    lock(shared).comments = Some(Comments {
+        slug,
+        loaded: Vec::new(),
+        older: None,
+        asked: None,
+        failed: false,
+        off: false,
+        request: 0,
+        reply_to: None,
+        sending: false,
+        send_error: String::new(),
+    });
+    ui.set_comments_draft(SharedString::new());
     load_comments(ui, shared, false);
 }
 
@@ -2706,6 +2732,104 @@ fn load_comments(ui: &AppWindow, shared: &Shared, older: bool) {
         let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
         load_pictures(&weak, &shared, &client, avatars, ICON_EDGE);
     });
+}
+
+/// The bearer token of the login on the current platform, if any.
+fn bearer(core: &Core) -> Option<String> {
+    Account::load(&Keyring, &core.api_url()).and_then(|a| a.platform).map(|s| s.token)
+}
+
+/// The platform no longer knows the login (`401`): forget it, the user logs in again.
+fn forget_login(core: &mut Core) {
+    let _ = Account::delete(&Keyring, &core.api_url());
+    core.me = None;
+}
+
+/// Sends the comment in the box (a reply when one is picked) on a thread; the list reloads with it.
+fn on_comment_send(ui: &AppWindow, shared: &Shared) {
+    let draft = ui.get_comments_draft().to_string();
+    let job = {
+        let mut core = lock(shared);
+        let token = bearer(&core);
+        let (api, client) = (core.api_url(), core.client());
+        let Some(c) = core.comments.as_mut() else { return };
+        if c.sending {
+            return;
+        }
+        let body = match controller::comment_body(&draft, c.reply_to.as_ref().map(|(id, _)| *id)) {
+            Ok(body) => body,
+            Err(why) => {
+                c.send_error = why.into();
+                drop(core);
+                return refresh(ui, shared);
+            }
+        };
+        let Some(token) = token else {
+            forget_login(&mut core);
+            drop(core);
+            return refresh(ui, shared);
+        };
+        c.sending = true;
+        c.send_error.clear();
+        (format!("{api}/v1/addons/{}/comments", c.slug), body, token, client, c.slug.clone())
+    };
+    refresh(ui, shared);
+    let (url, body, token, client, slug) = job;
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let result = client.post_json(&url, Some(&token), &[], &body);
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            let sent = {
+                let mut core = lock(&shared);
+                let logged_out = matches!(result, Err(Error::Api { status: 401, .. }));
+                if logged_out {
+                    forget_login(&mut core);
+                }
+                // Another addon's page meanwhile: its box is not this one.
+                let Some(c) = core.comments.as_mut().filter(|c| c.slug == slug) else { return };
+                c.sending = false;
+                match &result {
+                    Ok(_) => {
+                        c.reply_to = None;
+                        true
+                    }
+                    Err(_) if logged_out => {
+                        c.send_error = "Your login ran out. Log in again to write.".into();
+                        false
+                    }
+                    Err(e) => {
+                        c.send_error = e.to_string();
+                        false
+                    }
+                }
+            };
+            if sent {
+                ui.set_comments_draft(SharedString::new());
+                load_comments(&ui, &shared, false);
+            } else {
+                refresh(&ui, &shared);
+            }
+        });
+    });
+}
+
+/// Picks the comment `id` to answer; the box says to whom.
+fn on_comment_reply(ui: &AppWindow, shared: &Shared, id: i32) {
+    {
+        let mut core = lock(shared);
+        let Some(c) = core.comments.as_mut() else { return };
+        let Some(author) = c.loaded.iter().find(|m| m.id == i64::from(id)).map(|m| m.author.clone()) else { return };
+        c.reply_to = Some((i64::from(id), author));
+        c.send_error.clear();
+    }
+    refresh(ui, shared);
+}
+
+fn on_comment_cancel_reply(ui: &AppWindow, shared: &Shared) {
+    if let Some(c) = lock(shared).comments.as_mut() {
+        c.reply_to = None;
+    }
+    refresh(ui, shared);
 }
 
 /// Shows the addon of a website link in Browse, in front of the other windows.
@@ -3225,6 +3349,46 @@ mod layout_tests {
             assert!(find("octo").is_some(), "the login name");
             find("Log out").expect("logged in: a logout button").invoke_accessible_default_action();
             assert_eq!(logouts.get(), 1);
+        }
+
+        #[test]
+        fn comments_are_written_and_answered_when_logged_in() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let (logins, sends, replies) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+            let (l, s, r) = (logins.clone(), sends.clone(), replies.clone());
+            ui.on_login(move || l.set(l.get() + 1));
+            ui.on_comments_send(move || s.set(s.get() + 1));
+            ui.on_comments_reply(move |id| r.set(id));
+            ui.set_page(1);
+            ui.set_detail_page(1);
+            ui.set_detail_tab(3);
+            let row = crate::CommentRow { id: 42, author: "kex".into(), body: "Great".into(), ..Default::default() };
+            ui.set_comments_rows(slint::ModelRc::new(slint::VecModel::from(vec![row])));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Great").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("Write a comment").is_none() && find("Reply").is_none(), "logged out: no box, no Reply");
+            find("Log in to write").expect("logged out: a way to log in").invoke_accessible_default_action();
+            assert_eq!(logins.get(), 1);
+
+            ui.set_account_login("octo".into());
+            assert!(find("Log in to write").is_none());
+            assert!(find("Write a comment").is_some(), "logged in: the box");
+            find("Reply").expect("a Reply link on each comment").invoke_accessible_default_action();
+            assert_eq!(replies.get(), 42);
+            ui.set_comments_reply_to("kex".into());
+            assert!(find("Replying to kex").is_some(), "the box says to whom");
+
+            ui.set_comments_draft("Thanks!".into());
+            find("Send reply").expect("a send button for the reply").invoke_accessible_default_action();
+            assert_eq!(sends.get(), 1);
+            ui.set_comments_send_error("At most 20 comments an hour, try again later".into());
+            assert!(find("Error: At most 20 comments an hour, try again later").is_some(), "why it was not sent");
+            assert_eq!(ui.get_comments_draft(), "Thanks!", "the text stays");
         }
 
         #[test]

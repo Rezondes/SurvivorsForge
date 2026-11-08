@@ -568,6 +568,13 @@ export component AppWindow inherits Window {
     in property <bool> comments-off;
     in property <bool> comments-more;
     in property <bool> comments-loading-more;
+    in-out property <string> comments-draft;
+    in property <string> comments-reply-to;
+    in property <bool> comments-sending;
+    in property <string> comments-send-error;
+    callback comments-send();
+    callback comments-reply(int);
+    callback comments-cancel-reply();
     callback comments-show();
     callback comments-older();
     callback comments-retry();
@@ -985,6 +992,15 @@ export component AppWindow inherits Window {
                         more: root.comments-more;
                         loading-more: root.comments-loading-more;
                         links-enabled: !root.game-mode;
+                        logged-in: root.account-login != "";
+                        draft <=> root.comments-draft;
+                        reply-to: root.comments-reply-to;
+                        sending: root.comments-sending;
+                        send-error: root.comments-send-error;
+                        login => { root.login(); }
+                        send => { root.comments-send(); }
+                        reply(id) => { root.comments-reply(id); }
+                        cancel-reply => { root.comments-cancel-reply(); }
                         write => { root.detail-link("comments"); }
                         older => { root.comments-older(); }
                         retry => { root.comments-retry(); }
