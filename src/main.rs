@@ -3618,6 +3618,28 @@ mod layout_tests {
         }
 
         #[test]
+        fn a_long_failure_stays_in_its_row() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let failure = "Failed: Network error: https://github.com/migwynkriid13/SurvivorsDragonUi/releases/download/build-cb544e7127f49220afa1951053c6e1a32740cb3a/SurvivorsDragonUi.zip: Network Error: Error encountered in the status line: A connection attempt failed because the connected party did not properly respond after a period of time (os error 10060)";
+            let rows = vec![
+                crate::AddonRow { id: "a".into(), name: "SurvivorsDragonUi".into(), status: failure.into(), status_kind: 3, ..Default::default() },
+                crate::AddonRow { id: "b".into(), name: "ASTinyPlates".into(), status: "Up to date".into(), status_kind: 1, ..Default::default() },
+            ];
+            ui.set_installed_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            ui.set_installed_tiles(false);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            let Some(status) = find(failure) else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let next = find("ASTinyPlates").expect("the next row");
+            let bottom = status.absolute_position().y + status.size().height;
+            assert!(bottom <= next.absolute_position().y - 8.0, "the failure ends inside its row: {bottom} vs next row at {}", next.absolute_position().y);
+        }
+
+        #[test]
         fn a_toast_shows_bottom_right_and_closes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

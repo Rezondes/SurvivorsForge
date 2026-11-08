@@ -3,6 +3,7 @@ import { AddonRow } from "types.slint";
 import { ActionButton, GlyphButton, RemoveButton } from "buttons.slint";
 import { PickBox } from "fields.slint";
 import { AddonIcon, Pill, ProgressBar } from "addon-parts.slint";
+import { TipArea } from "tooltip.slint";
 
 export component AddonRowView inherits Rectangle {
     in property <AddonRow> addon;
@@ -102,16 +103,29 @@ export component AddonRowView inherits Rectangle {
             alignment: center;
             spacing: 4px;
             width: 150px;
-            Text {
-                text: root.addon.status;
-                font-size: Theme.meta;
-                horizontal-alignment: right;
-                wrap: word-wrap;
-                color: root.addon.busy ? Theme.text-muted
-                    : root.addon.status-kind == 1 ? Theme.ok
-                    : root.addon.status-kind == 2 ? Theme.warn
-                    : root.addon.status-kind == 3 ? Theme.danger
-                    : Theme.text-muted;
+            // At most two lines: a long failure would run into the next row. The whole text is
+            // the tooltip, and the toast of the failure says it too.
+            Rectangle {
+                height: min(status.preferred-height, Theme.meta * 2.6);
+                status := Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.addon.status;
+                    font-size: Theme.meta;
+                    horizontal-alignment: right;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    color: root.addon.busy ? Theme.text-muted
+                        : root.addon.status-kind == 1 ? Theme.ok
+                        : root.addon.status-kind == 2 ? Theme.warn
+                        : root.addon.status-kind == 3 ? Theme.danger
+                        : Theme.text-muted;
+                }
+                if status.preferred-height > self.height : TipArea {
+                    width: parent.width;
+                    height: parent.height;
+                    tip: root.addon.status;
+                }
             }
             if root.addon.busy && root.addon.progress >= 0 : ProgressBar {
                 value: root.addon.progress;
