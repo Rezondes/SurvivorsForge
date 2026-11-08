@@ -3711,6 +3711,10 @@ mod layout_tests {
             let mut detail = ui.get_detail();
             detail.issues_ready = true;
             ui.set_detail(detail);
+            assert!(find("Log in in Desktop Mode to write.").is_none());
+            ui.set_game_mode(true);
+            assert!(find("Log in in Desktop Mode to write.").is_some(), "Game Mode: why the login is off");
+            ui.set_game_mode(false);
             find("Log in to write").expect("logged out: a way to log in").invoke_accessible_default_action();
             assert_eq!(logins.get(), 1);
             ui.set_account_login("octo".into());

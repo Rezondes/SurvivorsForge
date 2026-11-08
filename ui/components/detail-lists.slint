@@ -272,10 +272,17 @@ export component IssuesView inherits VerticalLayout {
             }
             if root.writable && !root.logged-in && !root.issue-locked : HorizontalLayout {
                 alignment: start;
+                spacing: 10px;
                 ActionButton {
                     text: "Log in to write";
                     enabled: root.links-enabled;
                     clicked => { root.login(); }
+                }
+                if !root.links-enabled : Text {
+                    text: "Log in in Desktop Mode to write.";
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
                 }
             }
         }
@@ -297,6 +304,13 @@ export component IssuesView inherits VerticalLayout {
         if root.writable && root.logged-in : ActionButton {
             text: "New issue";
             clicked => { root.new-issue(); }
+        }
+        // Game Mode opens no browser: say so next to the greyed button.
+        if root.writable && !root.logged-in && !root.links-enabled : Text {
+            text: "Log in in Desktop Mode to write.";
+            font-size: Theme.meta;
+            color: Theme.text-muted;
+            vertical-alignment: center;
         }
         if root.writable && !root.logged-in : ActionButton {
             text: "Log in to write";
