@@ -1438,7 +1438,7 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
         } else if failed.is_empty() {
             Ok(format!("Updated {total} addons{skipped_note}"))
         } else {
-            Err(Error::Io(format!("{} of {total} updates failed. {}", failed.len(), failed.join(" | "))))
+            Err(Error::UpdatesFailed { failed: failed.len(), total, details: failed.join(" | ") })
         }
     });
 }

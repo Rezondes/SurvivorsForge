@@ -57,6 +57,8 @@ pub enum Error {
     Offline,
     /// An error answer of the platform API: its HTTP status, stable `error` code and message.
     Api { status: u16, code: String, message: String },
+    /// Some updates of "Update all" failed; `details` names each with its own error.
+    UpdatesFailed { failed: usize, total: usize, details: String },
 }
 
 impl fmt::Display for Error {
@@ -85,6 +87,7 @@ impl fmt::Display for Error {
             ),
             Error::ForbiddenHost(url) => write!(f, "Downloads are only allowed from GitHub, not from {url}"),
             Error::Api { message, .. } => write!(f, "{message}"),
+            Error::UpdatesFailed { failed, total, details } => write!(f, "{failed} of {total} updates failed. {details}"),
             Error::Offline => write!(f, "The SurvivorsForge server cannot be reached. Addon packs need it; addons themselves install from GitHub"),
             Error::InvalidRepo(input) => write!(f, "\"{input}\" is not a GitHub repo (expected owner/repo or a GitHub URL)"),
         }
@@ -145,6 +148,12 @@ pub fn unique_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_updates_name_their_own_errors_not_a_file_error() {
+        let e = Error::UpdatesFailed { failed: 1, total: 1, details: "Lucky: Network error: timed out".into() };
+        assert_eq!(e.to_string(), "1 of 1 updates failed. Lucky: Network error: timed out");
+    }
 
     #[test]
     fn app_name_is_survivorsforge() {

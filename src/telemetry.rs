@@ -67,6 +67,7 @@ pub fn error_code(error: &Error) -> &'static str {
         Error::ForbiddenHost(_) => "forbidden_host",
         Error::Offline => "offline",
         Error::Api { .. } => "api_error",
+        Error::UpdatesFailed { .. } => "updates_failed",
     }
 }
 
