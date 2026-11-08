@@ -3672,6 +3672,28 @@ mod layout_tests {
         }
 
         #[test]
+        fn a_long_failure_on_a_tile_shows_whole_on_hover() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let failure = "Failed: Network error: the connected party did not properly respond after a period of time (os error 10060)";
+            let rows = vec![crate::AddonRow { id: "a".into(), name: "SurvivorsDragonUi".into(), status: failure.into(), status_kind: 3, ..Default::default() }];
+            ui.set_installed_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            ui.set_installed_tiles(true);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).collect::<Vec<_>>();
+            let Some(status) = find(failure).into_iter().next() else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let (at, size) = (status.absolute_position(), status.size());
+            let middle = slint::LogicalPosition::new(at.x + size.width / 2.0, at.y + size.height / 2.0);
+            ui.window().dispatch_event(WindowEvent::PointerMoved { position: middle });
+            i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(600));
+            let texts = find(failure).into_iter().filter(|e| e.accessible_role() == Some(AccessibleRole::Text)).count();
+            assert!(texts > 1, "the shortened status has the whole text as its tooltip");
+        }
+
+        #[test]
         fn a_toast_shows_bottom_right_and_closes() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

@@ -254,18 +254,28 @@ export component AddonTileView inherits Rectangle {
                 alignment: center;
                 Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
             }
-            Text {
+            // One line: a long failure is cut short, and its whole text is the tooltip, as in a row.
+            Rectangle {
                 horizontal-stretch: 1;
-                text: root.addon.status;
-                font-size: Theme.meta;
-                vertical-alignment: center;
-                horizontal-alignment: right;
-                overflow: elide;
-                color: root.addon.busy ? Theme.text-muted
-                    : root.addon.status-kind == 1 ? Theme.ok
-                    : root.addon.status-kind == 2 ? Theme.warn
-                    : root.addon.status-kind == 3 ? Theme.danger
-                    : Theme.text-muted;
+                tile-status := Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.addon.status;
+                    font-size: Theme.meta;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                    color: root.addon.busy ? Theme.text-muted
+                        : root.addon.status-kind == 1 ? Theme.ok
+                        : root.addon.status-kind == 2 ? Theme.warn
+                        : root.addon.status-kind == 3 ? Theme.danger
+                        : Theme.text-muted;
+                }
+                if tile-status.preferred-width > self.width : TipArea {
+                    width: parent.width;
+                    height: parent.height;
+                    tip: root.addon.status;
+                }
             }
         }
         if root.addon.busy && root.addon.progress >= 0 : ProgressBar {
