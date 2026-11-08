@@ -12,7 +12,7 @@ use survivorsforge::account::{Account, Keyring};
 use survivorsforge::deep_link;
 use survivorsforge::login;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
-use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, TokenGitHub, WebGitHub};
+use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, RoutedGitHub, TokenGitHub, WebGitHub};
 use survivorsforge::install::{self, Request};
 use survivorsforge::local_scan;
 use survivorsforge::registry::{self, Origin, Registry, SourceSpec};
@@ -239,15 +239,12 @@ impl Core {
 
     /// A platform client; it carries the installation ID when the user allows it.
     fn client(&self) -> Client {
-        Client::new().with_install_id(telemetry::install_header(&self.config)).with_github_token(self.offline_github_token())
+        Client::new().with_install_id(telemetry::install_header(&self.config)).with_github_token(self.github_token())
     }
 
-    /// The user's GitHub token while the platform cannot be reached and it still runs; then
-    /// GitHub's REST API serves releases and zips as them (`TokenGitHub`).
-    fn offline_github_token(&self) -> Option<String> {
-        if !self.offline {
-            return None;
-        }
+    /// The user's GitHub token while it still runs: release zips of `TokenGitHub` come through
+    /// GitHub's REST API as them.
+    fn github_token(&self) -> Option<String> {
         survivorsforge::account::valid_github_token(&Keyring, &self.api_url(), chrono::Utc::now())
     }
 
@@ -266,11 +263,20 @@ impl Core {
     /// Release and tag metadata, through the platform.
     /// GitHub through the SurvivorsForge server, or straight from github.com while it is unreachable.
     fn github(&self) -> Box<dyn GitHub + Send> {
-        match (self.offline, self.offline_github_token()) {
-            (false, _) => Box::new(ApiGitHub::new(self.client(), &self.api_url())),
-            (true, Some(token)) => Box::new(TokenGitHub::new(self.client(), token)),
-            (true, None) => Box::new(WebGitHub::new(self.client())),
+        // Repos the platform knows go to it while it answers; any other repo, and all while it is
+        // away, straight to GitHub: with the user's token when there is one (`github::github_for`).
+        let token = survivorsforge::account::valid_github_token(&Keyring, &self.api_url(), chrono::Utc::now());
+        let client = self.client();
+        let direct: Box<dyn GitHub + Send> = match token {
+            Some(token) => Box::new(TokenGitHub::new(client.clone(), token)),
+            None => Box::new(WebGitHub::new(client.clone())),
+        };
+        if self.offline {
+            return direct;
         }
+        let mut known: HashSet<String> = self.registry.addons.iter().map(|a| a.repo.to_ascii_lowercase()).collect();
+        known.insert(APP_REPO.to_ascii_lowercase());
+        Box::new(RoutedGitHub { platform: Some(ApiGitHub::new(client, &self.api_url())), direct, known })
     }
 
     fn rescan(&mut self) {

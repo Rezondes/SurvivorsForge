@@ -376,6 +376,41 @@ impl GitHub for ApiGitHub {
     }
 }
 
+/// The platform serves only repos it knows (`known`, lowercased: the registry's and the
+/// launcher's own); any other repo comes straight from GitHub (`direct`).
+pub struct RoutedGitHub {
+    pub platform: Option<ApiGitHub>,
+    pub direct: Box<dyn GitHub + Send>,
+    pub known: std::collections::HashSet<String>,
+}
+
+impl RoutedGitHub {
+    fn pick(&self, repo: &str) -> &dyn GitHub {
+        match &self.platform {
+            Some(api) if self.known.contains(&repo.to_ascii_lowercase()) => api,
+            _ => self.direct.as_ref(),
+        }
+    }
+}
+
+impl GitHub for RoutedGitHub {
+    fn latest_release(&self, repo: &str) -> Result<Option<Release>> {
+        self.pick(repo).latest_release(repo)
+    }
+    fn release(&self, repo: &str, tag: &str) -> Result<Release> {
+        self.pick(repo).release(repo, tag)
+    }
+    fn tags(&self, repo: &str) -> Result<Vec<Tag>> {
+        self.pick(repo).tags(repo)
+    }
+    fn default_branch(&self, repo: &str) -> Result<String> {
+        self.pick(repo).default_branch(repo)
+    }
+    fn commit_sha(&self, repo: &str, git_ref: &str) -> Result<String> {
+        self.pick(repo).commit_sha(repo, git_ref)
+    }
+}
+
 /// Release and tag metadata from GitHub's REST API with the user's token, for when the
 /// SurvivorsForge server cannot be reached: 5000 requests an hour, and unaffected when GitHub
 /// slows down requests without a login. A token GitHub refuses (`401`) falls back to `WebGitHub`.
@@ -556,6 +591,17 @@ impl GitHub for WebGitHub {
 #[cfg(test)]
 mod tests {
     use crate::test_server::serve;
+
+    #[test]
+    fn routed_github_sends_own_repos_past_the_platform() {
+        // The platform at a closed port: any request to it fails.
+        let platform = ApiGitHub::new(Client::new(), "http://127.0.0.1:1");
+        let (web, _seen) = serve(vec![(200, vec![], r#"{"default_branch":"dev"}"#.into())]);
+        let direct = TokenGitHub::with_api(Client::new(), "t".into(), &web);
+        let routed = RoutedGitHub { platform: Some(platform), direct: Box::new(direct), known: ["kex0/azsspellmeter".to_string()].into() };
+        assert_eq!(routed.default_branch("me/Own").unwrap(), "dev", "an own repo goes straight to GitHub");
+        assert!(routed.default_branch("kex0/AZSSpellMeter").is_err(), "a registry repo asks the platform");
+    }
 
     #[test]
     fn token_github_reads_release_json() {
