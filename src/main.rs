@@ -3827,6 +3827,27 @@ mod layout_tests {
         }
 
         #[test]
+        fn settings_scroll_in_the_smallest_window() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(980.0, 660.0));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            let Some(last) = find("Update all addons automatically") else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let before = last.absolute_position().y;
+            assert!(before + last.size().height > 660.0, "the page is longer than the smallest window");
+            let position = slint::LogicalPosition::new(600.0, 400.0);
+            ui.window().dispatch_event(WindowEvent::PointerMoved { position });
+            ui.window().dispatch_event(WindowEvent::PointerScrolled { position, delta_x: 0.0, delta_y: -600.0 });
+            let after = last.absolute_position().y;
+            assert!(after + last.size().height <= 660.0, "the wheel brings the last setting into view: {before} -> {after}");
+        }
+
+        #[test]
         fn settings_save_on_their_own_but_not_on_every_key() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

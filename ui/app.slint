@@ -1277,40 +1277,43 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    if root.page == 2 : SettingsView {
+                    // The page is longer than the smallest window: it scrolls.
+                    if root.page == 2 : ScrollPanel {
                         vertical-stretch: 1;
-                        path <=> root.settings-path;
-                        game-versions: root.settings-game-versions;
-                        game-index <=> root.settings-game-index;
-                        api-url <=> root.settings-api-url;
-                        path-error: root.settings-path-error;
-                        api-error: root.settings-api-error;
-                        web-error: root.settings-web-error;
-                        web-url <=> root.settings-web-url;
-                        api-default: root.settings-api-default;
-                        web-default: root.settings-web-default;
-                        telemetry <=> root.settings-telemetry;
-                        send-install-id <=> root.settings-send-install-id;
-                        auto-update <=> root.settings-auto-update;
-                        account-login: root.account-login;
-                        account-initial: root.account-initial;
-                        account-avatar: root.account-avatar;
-                        account-busy: root.account-busy;
-                        account-error: root.account-error;
-                        account-github-only: root.account-github-only;
-                        account-device-code: root.account-device-code;
-                        device-login-offered: root.device-login-offered;
-                        offline: root.offline;
-                        login-device => { root.login-device(); }
-                        open-device-page => { root.open-device-page(); }
-                        login => { root.login(); }
-                        login-cancel => { root.login-cancel(); }
-                        logout => { root.logout(); }
-                        version: root.app-version;
-                        file-dialog: root.file-dialog;
-                        game-mode: root.game-mode;
-                        browse => { root.settings-browse(); }
-                        save => { root.settings-save(); }
+                        SettingsView {
+                            path <=> root.settings-path;
+                            game-versions: root.settings-game-versions;
+                            game-index <=> root.settings-game-index;
+                            api-url <=> root.settings-api-url;
+                            path-error: root.settings-path-error;
+                            api-error: root.settings-api-error;
+                            web-error: root.settings-web-error;
+                            web-url <=> root.settings-web-url;
+                            api-default: root.settings-api-default;
+                            web-default: root.settings-web-default;
+                            telemetry <=> root.settings-telemetry;
+                            send-install-id <=> root.settings-send-install-id;
+                            auto-update <=> root.settings-auto-update;
+                            account-login: root.account-login;
+                            account-initial: root.account-initial;
+                            account-avatar: root.account-avatar;
+                            account-busy: root.account-busy;
+                            account-error: root.account-error;
+                            account-github-only: root.account-github-only;
+                            account-device-code: root.account-device-code;
+                            device-login-offered: root.device-login-offered;
+                            offline: root.offline;
+                            login-device => { root.login-device(); }
+                            open-device-page => { root.open-device-page(); }
+                            login => { root.login(); }
+                            login-cancel => { root.login-cancel(); }
+                            logout => { root.logout(); }
+                            version: root.app-version;
+                            file-dialog: root.file-dialog;
+                            game-mode: root.game-mode;
+                            browse => { root.settings-browse(); }
+                            save => { root.settings-save(); }
+                        }
                     }
                 }
             }
