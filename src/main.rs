@@ -1585,21 +1585,29 @@ fn on_detail_scan(ui: &AppWindow, shared: &Shared) {
 }
 
 fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
-    let (name, folders) = {
+    let (name, folders, needed_by) = {
         let core = lock(shared);
         if let Some(folder) = id.strip_prefix(UNMANAGED_PREFIX) {
             let name = core.scan.iter().find(|s| s.folder == folder).map(|s| s.toc.title.clone());
-            (name.unwrap_or_else(|| folder.to_string()), vec![folder.to_string()])
+            (name.unwrap_or_else(|| folder.to_string()), vec![folder.to_string()], Vec::new())
         } else if let Some(entry) = core.state.get(&id) {
-            (entry.name.clone(), entry.folders.clone())
+            let registry_id = match &entry.source {
+                survivorsforge::state::Source::Verified { registry_id } => registry_id.as_str(),
+                _ => entry.id.as_str(),
+            };
+            let needed_by = controller::dependents(registry_id, &core.registry, &core.state);
+            (entry.name.clone(), entry.folders.clone(), needed_by)
         } else {
             return;
         }
     };
-    let text = format!(
+    let mut text = format!(
         "These folders are moved to the recycle bin: {}.\n\nYour addon settings (SavedVariables in the WTF folder) stay untouched.",
         folders.join(", ")
     );
+    if !needed_by.is_empty() {
+        text.push_str(&format!("\n\n{} need it and stop working without it.", needed_by.join(", ")));
+    }
     let (weak, shared) = (ui.as_weak(), shared.clone());
     ask(ui, &format!("Remove {name}?"), &text, "Remove", true, move || {
         lock(&shared).busy.insert(id.clone());

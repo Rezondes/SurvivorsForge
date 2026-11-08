@@ -287,6 +287,17 @@ pub fn dependency_plan(id: &str, registry: &Registry, state: &State) -> Dependen
     plan
 }
 
+/// Names of the installed platform addons that need `registry_id` to work: removing it breaks them.
+pub fn dependents(registry_id: &str, registry: &Registry, state: &State) -> Vec<String> {
+    registry
+        .addons
+        .iter()
+        .filter(|a| a.id != registry_id && a.dependencies.iter().any(|d| d.required && d.id == registry_id))
+        .filter(|a| is_installed(&a.id, registry, state))
+        .map(|a| a.name.clone())
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrowseRow {
     pub id: String,
@@ -1484,6 +1495,25 @@ mod tests {
         let mut unavailable = dependency_plan("ui", &registry, &State::default()).unavailable;
         unavailable.sort();
         assert_eq!(unavailable, ["core", "media"]);
+    }
+
+    #[test]
+    fn removing_names_the_installed_addons_that_need_it() {
+        let registry = dep_registry();
+        let mut state = State::default();
+        for id in ["media", "lib", "extras"] {
+            state.upsert(crate::state::Entry {
+                id: id.into(),
+                name: id.to_uppercase(),
+                source: Source::Verified { registry_id: id.into() },
+                folders: vec![id.to_uppercase()],
+                version: "v1".into(),
+                installed_at: 0,
+            });
+        }
+        assert_eq!(dependents("lib", &registry, &state), ["MEDIA"], "ui needs lib too but is not installed");
+        assert!(dependents("extras", &registry, &state).is_empty(), "ui needs extras only optionally");
+        assert!(dependents("media", &registry, &state).is_empty());
     }
 
     #[test]
