@@ -3803,6 +3803,8 @@ mod layout_tests {
             ui.set_account_busy(true);
             ui.set_account_device_code("WDJB-MJHT".into());
             assert!(find("Device code WDJB-MJHT").is_some(), "the code to enter");
+            let (hint, code) = (find("Enter this code at").unwrap(), find("Device code WDJB-MJHT").unwrap());
+            assert!(code.absolute_position().y >= hint.absolute_position().y + hint.size().height, "the code stands on its own line, under the instruction");
             let opened = Rc::new(Cell::new(0));
             let o = opened.clone();
             ui.on_open_device_page(move || o.set(o.get() + 1));

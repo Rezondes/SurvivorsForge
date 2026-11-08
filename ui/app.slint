@@ -345,50 +345,59 @@ component SettingsView inherits VerticalLayout {
             text: "Log in to GitHub only";
             clicked => { root.login-device(); }
         }
-        if root.account-busy && root.account-device-code != "" : HorizontalLayout {
-            spacing: 10px;
-            Text {
-                text: "Enter this code at";
-                font-size: Theme.body;
-                color: Theme.text-muted;
-                vertical-alignment: center;
-            }
-            // A link opens the page again (say the first browser tab was closed); Game Mode opens
-            // no browser, so there it is the address to type on another device.
-            if !root.game-mode : LinkButton {
-                text: "github.com/login/device";
-                clicked => { root.open-device-page(); }
-            }
-            if root.game-mode : Text {
-                text: "github.com/login/device";
-                font-size: Theme.body;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
-            // Read-only input: the code can be selected and copied like any text.
-            device-code := TextInput {
-                text: root.account-device-code;
-                read-only: true;
-                single-line: true;
-                font-size: 22px;
-                color: Theme.gold-bright;
-                selection-background-color: #8A6C3A;
-                selection-foreground-color: Theme.gold-bright;
-                vertical-alignment: center;
-                accessible-label: "Device code " + root.account-device-code;
-            }
-            ActionButton {
-                text: root.copied-code == root.account-device-code ? "Copied" : "Copy code";
-                clicked => {
-                    device-code.select-all();
-                    device-code.copy();
-                    device-code.clear-selection();
-                    root.copied-code = root.account-device-code;
+        // Two lines: where to go, then the code with its buttons; one line is too wide next to the label.
+        if root.account-busy && root.account-device-code != "" : VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 6px;
+                Text {
+                    text: "Enter this code at";
+                    font-size: Theme.body;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+                // A link opens the page again (say the first browser tab was closed); Game Mode opens
+                // no browser, so there it is the address to type on another device.
+                if !root.game-mode : LinkButton {
+                    text: "github.com/login/device";
+                    clicked => { root.open-device-page(); }
+                }
+                if root.game-mode : Text {
+                    text: "github.com/login/device";
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    vertical-alignment: center;
                 }
             }
-            ActionButton {
-                text: "Cancel";
-                clicked => { root.login-cancel(); }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                // Read-only input: the code can be selected and copied like any text.
+                device-code := TextInput {
+                    text: root.account-device-code;
+                    read-only: true;
+                    single-line: true;
+                    font-size: 22px;
+                    color: Theme.gold-bright;
+                    selection-background-color: #8A6C3A;
+                    selection-foreground-color: Theme.gold-bright;
+                    vertical-alignment: center;
+                    accessible-label: "Device code " + root.account-device-code;
+                }
+                ActionButton {
+                    text: root.copied-code == root.account-device-code ? "Copied" : "Copy code";
+                    clicked => {
+                        device-code.select-all();
+                        device-code.copy();
+                        device-code.clear-selection();
+                        root.copied-code = root.account-device-code;
+                    }
+                }
+                ActionButton {
+                    text: "Cancel";
+                    clicked => { root.login-cancel(); }
+                }
             }
         }
         if root.account-busy && root.account-device-code == "" : HorizontalLayout {
