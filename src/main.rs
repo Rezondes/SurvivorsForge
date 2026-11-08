@@ -3822,9 +3822,10 @@ mod layout_tests {
             ui.set_account_github_only("octo".into());
             assert!(find("octo (GitHub only)").is_some() && find("Log out").is_some(), "logged in to GitHub alone");
             assert!(find("Log in to GitHub only").is_none());
-            assert!(find("Log in with GitHub").is_some(), "the full login stays offered");
+            assert!(find("Log in with GitHub").is_none(), "not the same words as the login already done");
+            assert!(find("Log in to SurvivorsForge too").is_some(), "the full login stays offered");
             ui.set_offline(false);
-            find("Log in with GitHub").unwrap().invoke_accessible_default_action();
+            find("Log in to SurvivorsForge too").unwrap().invoke_accessible_default_action();
             assert_eq!(logins.get(), 1, "back online it works again");
         }
 

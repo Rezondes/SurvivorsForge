@@ -336,7 +336,8 @@ component SettingsView inherits VerticalLayout {
             }
         }
         if root.account-login == "" && !root.account-busy : ActionButton {
-            text: "Log in with GitHub";
+            // Logged in to GitHub alone already: this is the platform login on top.
+            text: root.account-github-only != "" ? "Log in to SurvivorsForge too" : "Log in with GitHub";
             // Game Mode opens no browser; offline the browser would wait for a dead page.
             enabled: !root.game-mode && !root.offline;
             clicked => { root.login(); }
