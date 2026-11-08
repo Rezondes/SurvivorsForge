@@ -7,6 +7,7 @@ pub mod game_update;
 pub mod github;
 pub mod install;
 pub mod local_scan;
+pub mod login;
 pub mod pictures;
 pub mod registry;
 pub mod repo_detect;
@@ -14,6 +15,8 @@ pub mod scan;
 pub mod self_update;
 pub mod state;
 pub mod telemetry;
+#[cfg(test)]
+mod test_server;
 pub mod updates;
 
 pub use forge_core::{archive, toc};
@@ -51,6 +54,8 @@ pub enum Error {
     ForbiddenHost(String),
     /// The platform cannot be reached, so addon packs cannot be made; addons still install from GitHub.
     Offline,
+    /// An error answer of the platform API: its HTTP status, stable `error` code and message.
+    Api { status: u16, code: String, message: String },
 }
 
 impl fmt::Display for Error {
@@ -78,6 +83,7 @@ impl fmt::Display for Error {
                 &actual[..actual.len().min(12)]
             ),
             Error::ForbiddenHost(url) => write!(f, "Downloads are only allowed from GitHub, not from {url}"),
+            Error::Api { message, .. } => write!(f, "{message}"),
             Error::Offline => write!(f, "The SurvivorsForge server cannot be reached. Addon packs need it; addons themselves install from GitHub"),
             Error::InvalidRepo(input) => write!(f, "\"{input}\" is not a GitHub repo (expected owner/repo or a GitHub URL)"),
         }

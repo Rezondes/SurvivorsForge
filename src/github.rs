@@ -58,6 +58,14 @@ pub fn map_error(status: u16) -> Error {
     }
 }
 
+/// The platform's error answer `{"error": code, "message": text}`; a body without them keeps the status.
+pub fn api_error(status: u16, body: &str) -> Error {
+    let json: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+    let field = |k: &str| json[k].as_str().unwrap_or_default().to_string();
+    let message = Some(field("message")).filter(|m| !m.is_empty()).unwrap_or_else(|| format!("The server answered with error {status}"));
+    Error::Api { status, code: field("error"), message }
+}
+
 pub fn source_zip_url(repo: &str, git_ref: &str) -> String {
     format!("https://codeload.github.com/{repo}/zip/{git_ref}")
 }
@@ -155,6 +163,37 @@ impl Client {
             request = request.set(crate::telemetry::INSTALL_HEADER, id);
         }
         Self::call(request)?.into_string().map_err(|e| Error::Network(e.to_string()))
+    }
+
+    /// A platform GET as the logged-in user (`bearer`).
+    pub fn get_text_as(&self, url: &str, bearer: &str) -> Result<String> {
+        self.platform_call(self.agent.get(url), bearer, &[], None)
+    }
+
+    /// A platform POST of JSON, as `bearer` when given, with `headers` on top (`x-github-token`).
+    pub fn post_json(&self, url: &str, bearer: Option<&str>, headers: &[(&str, &str)], body: &serde_json::Value) -> Result<String> {
+        self.platform_call(self.agent.post(url), bearer.unwrap_or_default(), headers, Some(body))
+    }
+
+    fn platform_call(&self, mut request: ureq::Request, bearer: &str, headers: &[(&str, &str)], body: Option<&serde_json::Value>) -> Result<String> {
+        if !bearer.is_empty() {
+            request = request.set("Authorization", &format!("Bearer {bearer}"));
+        }
+        if let Some(id) = &self.install_id {
+            request = request.set(crate::telemetry::INSTALL_HEADER, id);
+        }
+        for (name, value) in headers {
+            request = request.set(name, value);
+        }
+        let answer = match body {
+            Some(body) => request.set("Content-Type", "application/json").send_string(&body.to_string()),
+            None => request.call(),
+        };
+        match answer {
+            Ok(resp) => resp.into_string().map_err(|e| Error::Network(e.to_string())),
+            Err(ureq::Error::Status(status, resp)) => Err(api_error(status, &resp.into_string().unwrap_or_default())),
+            Err(e) => Err(Error::Network(e.to_string())),
+        }
     }
 
     /// An image of the platform (icon, screenshot), at most `max` bytes; without the installation ID.

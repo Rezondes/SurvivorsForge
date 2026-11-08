@@ -66,6 +66,7 @@ pub fn error_code(error: &Error) -> &'static str {
         Error::HashMismatch { .. } => "hash_mismatch",
         Error::ForbiddenHost(_) => "forbidden_host",
         Error::Offline => "offline",
+        Error::Api { .. } => "api_error",
     }
 }
 
