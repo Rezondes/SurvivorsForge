@@ -127,6 +127,8 @@ struct IssueView {
     sending: bool,
     /// Why the last issue or reply was not sent; the text stays.
     send_error: String,
+    /// The login or the GitHub token ran out: the error offers to log in again.
+    needs_login: bool,
 }
 
 /// The comments of one addon loaded so far, and how the next page is coming.
@@ -147,6 +149,8 @@ struct Comments {
     sending: bool,
     /// Why the last comment was not sent; the text stays in the box.
     send_error: String,
+    /// The login ran out: the error offers to log in again.
+    needs_login: bool,
 }
 
 type Pixels = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
@@ -780,6 +784,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_issues_mode(view.mode);
     ui.set_issues_sending(view.sending);
     ui.set_issues_send_error(view.send_error.as_str().into());
+    ui.set_issues_needs_login(view.needs_login);
     ui.set_issue_number(view.number as i32);
     ui.set_issue_loading(view.loading);
     ui.set_issue_failed(view.failed);
@@ -826,6 +831,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         ui.set_comments_reply_to(c.reply_to.as_ref().map(|(_, who)| who.as_str()).unwrap_or_default().into());
         ui.set_comments_sending(c.sending);
         ui.set_comments_send_error(c.send_error.as_str().into());
+        ui.set_comments_needs_login(c.needs_login);
     }
     ui.set_update_count(controller::update_all_ids(&core.statuses, &core.config.held).len() as i32);
     ui.set_checking(core.checking);
@@ -2795,6 +2801,7 @@ fn on_comments_show(ui: &AppWindow, shared: &Shared) {
         reply_to: None,
         sending: false,
         send_error: String::new(),
+        needs_login: false,
     });
     ui.set_comments_draft(SharedString::new());
     load_comments(ui, shared, false);
@@ -2901,6 +2908,7 @@ fn on_comment_send(ui: &AppWindow, shared: &Shared) {
         };
         c.sending = true;
         c.send_error.clear();
+        c.needs_login = false;
         (format!("{api}/v1/addons/{}/comments", c.slug), body, token, client, c.slug.clone())
     };
     refresh(ui, shared);
@@ -2925,6 +2933,7 @@ fn on_comment_send(ui: &AppWindow, shared: &Shared) {
                     }
                     Err(_) if logged_out => {
                         c.send_error = "Your login ran out. Log in again to write.".into();
+                        c.needs_login = true;
                         false
                     }
                     Err(e) => {
@@ -3007,6 +3016,7 @@ fn post_as_github_user(ui: &AppWindow, shared: &Shared, path: String, body: serd
         };
         core.issue_view.sending = true;
         core.issue_view.send_error.clear();
+        core.issue_view.needs_login = false;
         (core.api_url(), core.client(), token, core.issue_view.slug.clone())
     };
     refresh(ui, shared);
@@ -3027,6 +3037,7 @@ fn post_as_github_user(ui: &AppWindow, shared: &Shared, path: String, body: serd
                     return;
                 }
                 core.issue_view.sending = false;
+                core.issue_view.needs_login = matches!(&result, Err(Error::Api { status: 401, .. })) || matches!(&result, Err(Error::Api { code, .. }) if code == "github_reauth");
                 match result {
                     Ok(answer) => Some(answer),
                     Err(Error::Api { status: 401, .. }) => {
@@ -3712,6 +3723,12 @@ mod layout_tests {
             assert_eq!(submits.get(), 1);
             ui.set_issues_send_error("Give the issue a title".into());
             assert!(find("Error: Give the issue a title").is_some());
+            assert!(find("Log in again").is_none(), "a plain error offers no login");
+            ui.set_issues_send_error("Log in again to post on GitHub".into());
+            ui.set_issues_needs_login(true);
+            find("Log in again").expect("the GitHub login ran out: a way back next to the error").invoke_accessible_default_action();
+            assert_eq!(logins.get(), 2);
+            ui.set_issues_needs_login(false);
 
             ui.set_issues_mode(2);
             ui.set_issues_send_error("".into());

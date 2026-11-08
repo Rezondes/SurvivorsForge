@@ -27,6 +27,8 @@ export component CommentsView inherits VerticalLayout {
     in property <string> reply-to;
     in property <bool> sending;
     in property <string> send-error;
+    // The error says the login ran out: a way to log in again next to it.
+    in property <bool> needs-login;
     callback back();
     // Opens the comments on the website (to edit or delete one's own).
     callback write();
@@ -105,6 +107,12 @@ export component CommentsView inherits VerticalLayout {
         }
         HorizontalLayout {
             alignment: end;
+            spacing: 10px;
+            if root.needs-login : ActionButton {
+                text: "Log in again";
+                enabled: root.links-enabled;
+                clicked => { root.login(); }
+            }
             ActionButton {
                 text: root.sending ? "Sending" : root.reply-to != "" ? "Send reply" : "Send";
                 primary: true;

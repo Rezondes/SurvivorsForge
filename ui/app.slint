@@ -630,6 +630,7 @@ export component AppWindow inherits Window {
     in-out property <string> issues-new-body;
     in property <bool> issues-sending;
     in property <string> issues-send-error;
+    in property <bool> issues-needs-login;
     in property <int> issue-number;
     in property <string> issue-title;
     in property <string> issue-meta;
@@ -659,6 +660,7 @@ export component AppWindow inherits Window {
     in property <string> comments-reply-to;
     in property <bool> comments-sending;
     in property <string> comments-send-error;
+    in property <bool> comments-needs-login;
     callback comments-send();
     callback comments-reply(int);
     callback comments-cancel-reply();
@@ -1075,6 +1077,7 @@ export component AppWindow inherits Window {
                         new-body <=> root.issues-new-body;
                         sending: root.issues-sending;
                         send-error: root.issues-send-error;
+                        needs-login: root.issues-needs-login;
                         issue-number: root.issue-number;
                         issue-title: root.issue-title;
                         issue-meta: root.issue-meta;
@@ -1112,6 +1115,7 @@ export component AppWindow inherits Window {
                         reply-to: root.comments-reply-to;
                         sending: root.comments-sending;
                         send-error: root.comments-send-error;
+                        needs-login: root.comments-needs-login;
                         login => { root.login(); }
                         send => { root.comments-send(); }
                         reply(id) => { root.comments-reply(id); }

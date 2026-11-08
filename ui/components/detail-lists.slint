@@ -64,8 +64,12 @@ component NewIssueForm inherits VerticalLayout {
     in-out property <string> body;
     in property <bool> sending;
     in property <string> error;
+    // The error says the GitHub login ran out: a way to log in again next to it.
+    in property <bool> needs-login;
+    in property <bool> links-enabled: true;
     callback cancel();
     callback submit();
+    callback login();
 
     spacing: 10px;
     HorizontalLayout {
@@ -107,6 +111,12 @@ component NewIssueForm inherits VerticalLayout {
     }
     HorizontalLayout {
         alignment: end;
+        spacing: 10px;
+        if root.needs-login : ActionButton {
+            text: "Log in again";
+            enabled: root.links-enabled;
+            clicked => { root.login(); }
+        }
         ActionButton {
             text: root.sending ? "Sending" : "Create issue";
             primary: true;
@@ -133,6 +143,7 @@ export component IssuesView inherits VerticalLayout {
     in-out property <string> new-body;
     in property <bool> sending;
     in property <string> send-error;
+    in property <bool> needs-login;
     // The issue shown (`mode` 2).
     in property <int> issue-number;
     in property <string> issue-title;
@@ -165,8 +176,11 @@ export component IssuesView inherits VerticalLayout {
         body <=> root.new-body;
         sending: root.sending;
         error: root.send-error;
+        needs-login: root.needs-login;
+        links-enabled: root.links-enabled;
         cancel => { root.back(); }
         submit => { root.submit(); }
+        login => { root.login(); }
     }
 
     if root.mode == 2 : HorizontalLayout {
@@ -236,6 +250,12 @@ export component IssuesView inherits VerticalLayout {
                 }
                 HorizontalLayout {
                     alignment: end;
+                    spacing: 10px;
+                    if root.needs-login : ActionButton {
+                        text: "Log in again";
+                        enabled: root.links-enabled;
+                        clicked => { root.login(); }
+                    }
                     ActionButton {
                         text: root.sending ? "Sending" : "Send reply";
                         primary: true;
