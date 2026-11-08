@@ -220,6 +220,8 @@ component SettingsView inherits VerticalLayout {
     in property <string> account-device-code;
     // The platform cannot be reached, and this build can log in to GitHub alone.
     in property <bool> device-login-offered;
+    // The device code "Copy code" last copied; a new code can be copied again.
+    property <string> copied-code;
     callback login();
     callback login-device();
     callback login-cancel();
@@ -348,13 +350,26 @@ component SettingsView inherits VerticalLayout {
                 color: Theme.text-muted;
                 vertical-alignment: center;
             }
-            Text {
+            // Read-only input: the code can be selected and copied like any text.
+            device-code := TextInput {
                 text: root.account-device-code;
+                read-only: true;
+                single-line: true;
                 font-size: 22px;
                 color: Theme.gold-bright;
+                selection-background-color: #8A6C3A;
+                selection-foreground-color: Theme.gold-bright;
                 vertical-alignment: center;
-                accessible-role: text;
                 accessible-label: "Device code " + root.account-device-code;
+            }
+            ActionButton {
+                text: root.copied-code == root.account-device-code ? "Copied" : "Copy code";
+                clicked => {
+                    device-code.select-all();
+                    device-code.copy();
+                    device-code.clear-selection();
+                    root.copied-code = root.account-device-code;
+                }
             }
             ActionButton {
                 text: "Cancel";

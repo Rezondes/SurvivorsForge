@@ -3744,6 +3744,11 @@ mod layout_tests {
             ui.set_account_busy(true);
             ui.set_account_device_code("WDJB-MJHT".into());
             assert!(find("Device code WDJB-MJHT").is_some(), "the code to enter");
+            let copy = find("Copy code").expect("a button copies the code");
+            copy.invoke_accessible_default_action();
+            assert!(find("Copied").is_some(), "the button says it worked");
+            ui.set_account_device_code("ABCD-EFGH".into());
+            assert!(find("Copy code").is_some(), "a new code can be copied again");
             assert!(find("Waiting for the browser...").is_none());
 
             ui.set_account_busy(false);
