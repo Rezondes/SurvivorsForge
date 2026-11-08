@@ -234,6 +234,12 @@ export component IssuesView inherits VerticalLayout {
                     Prose { text: reply.body; }
                 }
             }
+            if root.writable && root.issue-locked : Text {
+                text: "This issue is locked. Only the repo's team can reply.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
+            }
             if root.writable && root.logged-in && !root.issue-locked : VerticalLayout {
                 spacing: 8px;
                 TextArea {
@@ -264,7 +270,7 @@ export component IssuesView inherits VerticalLayout {
                     }
                 }
             }
-            if root.writable && !root.logged-in : HorizontalLayout {
+            if root.writable && !root.logged-in && !root.issue-locked : HorizontalLayout {
                 alignment: start;
                 ActionButton {
                     text: "Log in to write";

@@ -3741,6 +3741,9 @@ mod layout_tests {
             ui.set_issue_reply_draft("Fixed?".into());
             find("Send reply").unwrap().invoke_accessible_default_action();
             assert_eq!(replies.get(), 1);
+            ui.set_issue_locked(true);
+            assert!(find("Send reply").is_none(), "no reply box on a locked issue");
+            assert!(find("This issue is locked. Only the repo's team can reply.").is_some(), "and it says why");
         }
 
         #[test]
