@@ -659,6 +659,8 @@ export component AppWindow inherits Window {
     in property <string> game-missing;
     // The game started from here still runs.
     in property <bool> game-running;
+    // An addon is installed, updated or removed: the game would load its folder half written.
+    in property <bool> addons-busy;
     callback launch-game();
     // "Update to v0.133.0" when the game's server has a newer game; empty when up to date.
     in property <string> game-update;
@@ -924,12 +926,13 @@ export component AppWindow inherits Window {
                     alignment: center;
                     spacing: 4px;
                     ActionButton {
-                        text: root.game-running ? "Game running" : root.game-updating ? (root.game-step != "" ? root.game-step : "Updating the game...") : root.game-update != "" ? root.game-update : "Launch game";
+                        text: root.game-running ? "Game running" : root.game-updating ? (root.game-step != "" ? root.game-step : "Updating the game...") : root.game-update != "" ? root.game-update : root.addons-busy ? "Installing addons..." : "Launch game";
                         primary: true;
                         large: true;
                         busy: root.game-updating;
                         // Off at once on the click, before the game's window shows up.
-                        enabled: (root.game-missing == "" || root.game-update != "") && !root.game-running && !root.game-updating;
+                        enabled: (root.game-missing == "" || root.game-update != "") && !root.game-running && !root.game-updating
+                            && !(root.addons-busy && root.game-update == "");
                         clicked => {
                             if root.game-update != "" {
                                 root.update-game();
@@ -946,7 +949,7 @@ export component AppWindow inherits Window {
                             width: parent.width;
                             value: root.game-progress;
                         }
-                        if !root.game-updating && root.game-update != "" && root.game-missing == "" && !root.game-running : LinkButton {
+                        if !root.game-updating && root.game-update != "" && root.game-missing == "" && !root.game-running && !root.addons-busy : LinkButton {
                             width: parent.width;
                             height: parent.height;
                             text: "Start without updating";

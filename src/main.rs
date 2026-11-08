@@ -847,6 +847,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     };
     ui.set_game_missing(game_missing.into());
     ui.set_game_running(core.game_running);
+    ui.set_addons_busy(!core.busy.is_empty());
     ui.set_game_updating(core.game_updating);
     let (label, hint) = match &core.game_plan {
         Some(plan) if core.game_updating => (String::new(), if plan.exe.is_some() { format!("Updating to v{}", plan.version) } else { "Updating the game data".into() }),
@@ -1241,7 +1242,7 @@ fn start_install(ui: &AppWindow, shared: &Shared, id: String, deps: Vec<String>,
 fn on_launch_game(ui: &AppWindow, shared: &Shared) {
     let (addons, data_dir) = {
         let mut core = lock(shared);
-        if core.game_running || core.game_updating {
+        if core.game_running || core.game_updating || !core.busy.is_empty() {
             return;
         }
         core.game_running = true;
@@ -3595,6 +3596,24 @@ mod layout_tests {
             ui.set_offline(true);
             find("Try again").expect("offline: the line with its button").invoke_accessible_default_action();
             assert!(tried.get(), "Try again checks again");
+        }
+
+        #[test]
+        fn the_game_waits_while_addons_are_installed() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert_eq!(find("Launch game").expect("the start button").accessible_enabled(), Some(true));
+            ui.set_addons_busy(true);
+            assert!(find("Launch game").is_none(), "it says what it waits for");
+            assert_eq!(find("Installing addons...").expect("the waiting button").accessible_enabled(), Some(false));
+            ui.set_game_update("Update to v0.133.0".into());
+            assert_eq!(find("Update to v0.133.0").expect("the game update").accessible_enabled(), Some(true), "the game's own update does not touch the addons");
         }
 
         #[test]
