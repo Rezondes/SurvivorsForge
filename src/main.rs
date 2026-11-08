@@ -55,6 +55,8 @@ struct Core {
     self_update: Option<Available>,
     /// The platform's game versions, oldest first; empty without the platform.
     game_versions: Vec<controller::GameVersion>,
+    /// The last check got no answer for them; an empty list is an answer.
+    game_versions_failed: bool,
     /// The last check could not reach the platform: installs and updates wait.
     offline: bool,
     /// The platform's categories; empty offline.
@@ -190,6 +192,7 @@ impl Core {
             settings_saved: None,
             self_update: None,
             game_versions: Vec::new(),
+            game_versions_failed: false,
             offline: false,
             categories: Vec::new(),
             category: None,
@@ -848,6 +851,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     };
     ui.set_game_missing(game_missing.into());
     ui.set_game_running(core.game_running);
+    ui.set_settings_game_versions_failed(core.game_versions_failed);
     ui.set_addons_busy(!core.busy.is_empty());
     ui.set_game_updating(core.game_updating);
     let (label, hint) = match &core.game_plan {
@@ -1504,11 +1508,12 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         } else {
             github.latest_release(APP_REPO).ok().flatten().and_then(|release| self_update::available(APP_VERSION, &release))
         };
-        let game_versions = if offline { Vec::new() } else { fetch_game_versions(&client, &api) };
+        let game_versions = if offline { None } else { fetch_game_versions(&client, &api) };
         let categories = if offline { Vec::new() } else { client.get_text(&format!("{api}/v1/categories")).map(|t| controller::parse_categories(&t)).unwrap_or_default() };
         show_progress(shared, true, |core| {
             core.self_update = self_update;
-            core.game_versions = game_versions;
+            core.game_versions_failed = game_versions.is_none();
+            core.game_versions = game_versions.unwrap_or_default();
             core.categories = categories;
         });
 
@@ -2185,12 +2190,15 @@ fn on_pack_save(ui: &AppWindow, shared: &Shared) {
 }
 
 /// The platform's game versions, oldest first. Empty when there is no platform or it fails.
-fn fetch_game_versions(client: &Client, api: &str) -> Vec<controller::GameVersion> {
-    let Ok(text) = client.get_text(&format!("{api}/v1/game-versions")) else { return Vec::new() };
-    let list: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
-    list.iter()
-        .filter_map(|g| Some(controller::GameVersion { name: g["name"].as_str()?.to_string(), sort_key: g["sort_key"].as_i64()? as i32 }))
-        .collect()
+/// The platform's game versions; `None` when it did not answer with a list.
+fn fetch_game_versions(client: &Client, api: &str) -> Option<Vec<controller::GameVersion>> {
+    let text = client.get_text(&format!("{api}/v1/game-versions")).ok()?;
+    let list: Vec<serde_json::Value> = serde_json::from_str(&text).ok()?;
+    Some(
+        list.iter()
+            .filter_map(|g| Some(controller::GameVersion { name: g["name"].as_str()?.to_string(), sort_key: g["sort_key"].as_i64()? as i32 }))
+            .collect(),
+    )
 }
 
 fn on_self_update(ui: &AppWindow, shared: &Shared) {
@@ -4069,7 +4077,10 @@ mod layout_tests {
             let failed = "The platform does not answer, so its game versions are not loaded.";
             assert!(find("Loading the game versions...").is_some() && find(failed).is_none(), "while the first check runs");
             ui.set_checking(false);
+            ui.set_settings_game_versions_failed(true);
             assert!(find(failed).is_some() && find("Loading the game versions...").is_none(), "after a check without them");
+            ui.set_settings_game_versions_failed(false);
+            assert!(find(failed).is_none() && find("The platform lists no game versions yet.").is_some(), "the platform answered with an empty list");
         }
 
         #[test]

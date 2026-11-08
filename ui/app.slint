@@ -192,6 +192,7 @@ component SettingsView inherits VerticalLayout {
     in-out property <int> game-index;
     // The update check runs: the game versions may still come.
     in property <bool> checking;
+    in property <bool> game-versions-failed;
     in property <string> version;
     in property <bool> file-dialog;
     in property <bool> game-mode;
@@ -270,7 +271,9 @@ component SettingsView inherits VerticalLayout {
         }
         // The list comes from the platform: say so instead of dropping the row.
         if root.game-versions.length <= 1 : Text {
-            text: root.checking ? "Loading the game versions..." : "The platform does not answer, so its game versions are not loaded.";
+            text: root.checking ? "Loading the game versions..."
+                : root.game-versions-failed ? "The platform does not answer, so its game versions are not loaded."
+                : "The platform lists no game versions yet.";
             font-size: Theme.meta;
             color: Theme.text-muted;
             vertical-alignment: center;
@@ -780,6 +783,8 @@ export component AppWindow inherits Window {
     // Settings
     in-out property <string> settings-path;
     in property <[string]> settings-game-versions;
+    // The last check got no answer to the game versions (an empty list is an answer).
+    in property <bool> settings-game-versions-failed;
     in-out property <int> settings-game-index;
     in-out property <string> settings-api-url;
     in property <string> settings-path-error;
@@ -1391,6 +1396,7 @@ export component AppWindow inherits Window {
                             path <=> root.settings-path;
                             game-versions: root.settings-game-versions;
                             checking: root.checking;
+                            game-versions-failed: root.settings-game-versions-failed;
                             game-index <=> root.settings-game-index;
                             api-url <=> root.settings-api-url;
                             path-error: root.settings-path-error;
