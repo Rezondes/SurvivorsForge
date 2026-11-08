@@ -214,7 +214,14 @@ component SettingsView inherits VerticalLayout {
     // The browser is open for the login; Cancel stops waiting.
     in property <bool> account-busy;
     in property <string> account-error;
+    // Logged in to GitHub alone (device flow), without the platform: the GitHub login name.
+    in property <string> account-github-only;
+    // The code to enter at github.com/login/device while a device login waits.
+    in property <string> account-device-code;
+    // The platform cannot be reached, and this build can log in to GitHub alone.
+    in property <bool> device-login-offered;
     callback login();
+    callback login-device();
     callback login-cancel();
     callback logout();
     callback browse();
@@ -310,13 +317,51 @@ component SettingsView inherits VerticalLayout {
                 clicked => { root.logout(); }
             }
         }
+        if root.account-login == "" && !root.account-busy && root.account-github-only != "" : HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: root.account-github-only + " (GitHub only)";
+                font-size: Theme.body;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            ActionButton {
+                text: "Log out";
+                clicked => { root.logout(); }
+            }
+        }
         if root.account-login == "" && !root.account-busy : ActionButton {
             text: "Log in with GitHub";
             // Game Mode opens no browser.
             enabled: !root.game-mode;
             clicked => { root.login(); }
         }
-        if root.account-busy : HorizontalLayout {
+        if root.account-login == "" && !root.account-busy && root.account-github-only == "" && root.device-login-offered : ActionButton {
+            text: "Log in to GitHub only";
+            clicked => { root.login-device(); }
+        }
+        if root.account-busy && root.account-device-code != "" : HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: "Enter this code at github.com/login/device:";
+                font-size: Theme.body;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.account-device-code;
+                font-size: 22px;
+                color: Theme.gold-bright;
+                vertical-alignment: center;
+                accessible-role: text;
+                accessible-label: "Device code " + root.account-device-code;
+            }
+            ActionButton {
+                text: "Cancel";
+                clicked => { root.login-cancel(); }
+            }
+        }
+        if root.account-busy && root.account-device-code == "" : HorizontalLayout {
             spacing: 10px;
             Text {
                 text: "Waiting for the browser...";
@@ -332,7 +377,9 @@ component SettingsView inherits VerticalLayout {
     }
     if root.account-error != "" : FieldError { text: root.account-error; }
     FieldHint {
-        text: root.game-mode && root.account-login == ""
+        text: root.device-login-offered && root.account-login == ""
+            ? "The SurvivorsForge server cannot be reached. Logging in to GitHub only still gets updates past GitHub's limits for logged-out users; comments and issues need the server."
+            : root.game-mode && root.account-login == ""
             ? "Log in from the desktop: Game Mode opens no browser."
             : "Optional. Lets you write comments and issues from the launcher, as on the website.";
     }
@@ -626,7 +673,11 @@ export component AppWindow inherits Window {
     in property <image> account-avatar;
     in property <bool> account-busy;
     in property <string> account-error;
+    in property <string> account-github-only;
+    in property <string> account-device-code;
+    in property <bool> device-login-offered;
     callback login();
+    callback login-device();
     callback login-cancel();
     callback logout();
     callback settings-browse();
@@ -1209,6 +1260,10 @@ export component AppWindow inherits Window {
                         account-avatar: root.account-avatar;
                         account-busy: root.account-busy;
                         account-error: root.account-error;
+                        account-github-only: root.account-github-only;
+                        account-device-code: root.account-device-code;
+                        device-login-offered: root.device-login-offered;
+                        login-device => { root.login-device(); }
                         login => { root.login(); }
                         login-cancel => { root.login-cancel(); }
                         logout => { root.logout(); }

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use survivorsforge::config::{self, Config};
 use survivorsforge::controller::{self, Badge, Row, RowState, UNMANAGED_PREFIX};
-use survivorsforge::account::{Account, Keyring};
+use survivorsforge::account::{Account, Keyring, TokenSource};
 use survivorsforge::deep_link;
 use survivorsforge::login;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
@@ -108,6 +108,10 @@ struct Core {
     login_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     /// Why the last login failed; empty after a good one.
     login_error: String,
+    /// Logged in to GitHub alone (device flow) without the platform: the GitHub login name.
+    github_only: Option<String>,
+    /// The code to enter at github.com/login/device while a device login waits.
+    device_code: String,
 }
 
 /// The Issues tab of the detail view beyond its list.
@@ -208,6 +212,8 @@ impl Core {
             me: None,
             login_cancel: None,
             login_error: String::new(),
+            github_only: None,
+            device_code: String::new(),
         };
         if let Some(config) = config {
             core.switch_config(config);
@@ -753,6 +759,9 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_account_avatar(picture(&core, (!me.avatar_url.is_empty()).then_some(me.avatar_url.as_str())));
     ui.set_account_busy(core.login_cancel.is_some());
     ui.set_account_error(core.login_error.as_str().into());
+    ui.set_account_github_only(core.github_only.clone().unwrap_or_default().into());
+    ui.set_account_device_code(core.device_code.as_str().into());
+    ui.set_device_login_offered(core.offline && survivorsforge::device_login::client_id().is_some());
     match detail(&core, &rows) {
         Some(detail) => ui.set_detail(detail),
         // Removed meanwhile: back to the list.
@@ -1862,8 +1871,15 @@ fn load_account(ui: &AppWindow, shared: &Shared) {
     let (api, client) = {
         let mut core = lock(shared);
         let api = core.api_url();
-        let session = Account::load(&Keyring, &api).and_then(|a| a.platform);
+        let account = Account::load(&Keyring, &api).unwrap_or_default();
+        core.github_only = account.github.filter(|g| account.platform.is_none() && g.source == TokenSource::Device).map(|g| g.login);
+        let session = account.platform;
         core.me = session.as_ref().map(|s| controller::Me { login: s.login.clone(), avatar_url: String::new() });
+        // A GitHub token runs 8 hours: renew it now while someone (platform or GitHub) can.
+        let (renew_api, renew_client) = (api.clone(), core.client());
+        std::thread::spawn(move || {
+            let _ = survivorsforge::account::github_access(&renew_client, &Keyring, &renew_api, chrono::Utc::now());
+        });
         let Some(session) = session else {
             drop(core);
             return refresh(ui, shared);
@@ -1942,6 +1958,53 @@ fn on_login(ui: &AppWindow, shared: &Shared) {
     });
 }
 
+/// Logs in to GitHub alone (device flow) on a thread, for while the platform cannot be reached:
+/// the settings show the code to enter at github.com/login/device.
+fn on_login_device(ui: &AppWindow, shared: &Shared) {
+    use survivorsforge::device_login;
+    let Some(client_id) = device_login::client_id() else { return };
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (api, client) = {
+        let mut core = lock(shared);
+        if core.login_cancel.is_some() {
+            return;
+        }
+        core.login_cancel = Some(cancel.clone());
+        core.login_error.clear();
+        core.device_code.clear();
+        (core.api_url(), core.client())
+    };
+    // Game Mode opens no browser: the code goes in on another device.
+    let open_browser = !ui.get_game_mode();
+    refresh(ui, shared);
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let result = device_login::start(&client, device_login::GITHUB_OAUTH, &client_id).and_then(|code| {
+            lock(&shared).device_code = code.user_code.clone();
+            let redraw = shared.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &redraw));
+            if open_browser {
+                let _ = open::that(&code.verification_uri);
+            }
+            let mut token = device_login::wait(&client, device_login::GITHUB_OAUTH, &client_id, &code, &cancel, std::thread::sleep)?;
+            token.login = device_login::login_name(&client, survivorsforge::github::GITHUB_API, &token.access_token).unwrap_or_default();
+            device_login::save(&Keyring, &api, token.clone())?;
+            Ok(token.login)
+        });
+        {
+            let mut core = lock(&shared);
+            core.login_cancel = None;
+            core.device_code.clear();
+            match result {
+                Ok(login) => core.github_only = Some(if login.is_empty() { "GitHub".into() } else { login }),
+                Err(login::LoginError::Cancelled) => {}
+                Err(e) => core.login_error = e.to_string(),
+            }
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+    });
+}
+
 fn on_login_cancel(ui: &AppWindow, shared: &Shared) {
     if let Some(cancel) = lock(shared).login_cancel.as_ref() {
         cancel.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1954,6 +2017,7 @@ fn on_logout(ui: &AppWindow, shared: &Shared) {
     let (api, client) = {
         let mut core = lock(shared);
         core.me = None;
+        core.github_only = None;
         core.login_error.clear();
         (core.api_url(), core.client())
     };
@@ -2417,6 +2481,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_comments_reply, |ui, shared, id| on_comment_reply(&ui, shared, id));
     on!(on_comments_cancel_reply, |ui, shared| on_comment_cancel_reply(&ui, shared));
     on!(on_login_cancel, |ui, shared| on_login_cancel(&ui, shared));
+    on!(on_login_device, |ui, shared| on_login_device(&ui, shared));
     on!(on_logout, |ui, shared| on_logout(&ui, shared));
     on!(on_toast_dismiss, |ui, shared, id| {
         lock(shared).toasts.dismiss(id);
@@ -3655,6 +3720,38 @@ mod layout_tests {
             ui.set_issue_reply_draft("Fixed?".into());
             find("Send reply").unwrap().invoke_accessible_default_action();
             assert_eq!(replies.get(), 1);
+        }
+
+        #[test]
+        fn offline_the_user_logs_in_to_github_alone_with_a_code() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let devices = Rc::new(Cell::new(0));
+            let d = devices.clone();
+            ui.on_login_device(move || d.set(d.get() + 1));
+            ui.set_page(2);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("Log in to GitHub only").is_none(), "online: only the platform login");
+            ui.set_device_login_offered(true);
+            find("Log in to GitHub only").expect("offline: the device login").invoke_accessible_default_action();
+            assert_eq!(devices.get(), 1);
+
+            ui.set_account_busy(true);
+            ui.set_account_device_code("WDJB-MJHT".into());
+            assert!(find("Device code WDJB-MJHT").is_some(), "the code to enter");
+            assert!(find("Waiting for the browser...").is_none());
+
+            ui.set_account_busy(false);
+            ui.set_account_device_code("".into());
+            ui.set_account_github_only("octo".into());
+            assert!(find("octo (GitHub only)").is_some() && find("Log out").is_some(), "logged in to GitHub alone");
+            assert!(find("Log in to GitHub only").is_none());
+            assert!(find("Log in with GitHub").is_some(), "the full login stays offered");
         }
 
         #[test]

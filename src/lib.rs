@@ -2,6 +2,7 @@ pub mod account;
 pub mod config;
 pub mod controller;
 pub mod deep_link;
+pub mod device_login;
 pub mod gamepad;
 pub mod game_update;
 pub mod github;

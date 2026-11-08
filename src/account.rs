@@ -27,6 +27,17 @@ pub struct Session {
     pub login: String,
 }
 
+/// How the GitHub token was got, and so who renews it.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenSource {
+    /// With the platform login: the platform renews it.
+    #[default]
+    Login,
+    /// GitHub's device flow without the platform (`device_login`): GitHub renews it.
+    Device,
+}
+
 /// The user's GitHub token, as the API's `github_token` (`UserToken`) gives it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GitHubToken {
@@ -38,6 +49,11 @@ pub struct GitHubToken {
     pub refresh_token: Option<String>,
     #[serde(default)]
     pub refresh_token_expires_at: Option<String>,
+    #[serde(default)]
+    pub source: TokenSource,
+    /// GitHub login name, kept for a device flow login, which has no platform session to name it.
+    #[serde(default)]
+    pub login: String,
 }
 
 /// What the keyring holds for one platform API.
@@ -149,10 +165,15 @@ fn parse_time(s: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Utc))
 }
 
-/// The user's GitHub token, renewed through the platform when it runs out within five minutes (as
-/// the website does). While the platform cannot be reached a token that still runs is used; one
-/// the platform refuses to renew is forgotten.
+/// The user's GitHub token, renewed when it runs out within five minutes: through the platform (as
+/// the website does), or with GitHub itself for a device flow token. While nothing can renew it a
+/// token that still runs is used; one the platform refuses to renew is forgotten.
 pub fn github_access(client: &Client, store: &dyn SecretStore, api: &str, now: DateTime<Utc>) -> Result<String, AccessError> {
+    github_access_at(client, store, api, crate::device_login::GITHUB_OAUTH, now)
+}
+
+/// `github_access` with GitHub's OAuth endpoints at `oauth`, for tests.
+pub fn github_access_at(client: &Client, store: &dyn SecretStore, api: &str, oauth: &str, now: DateTime<Utc>) -> Result<String, AccessError> {
     let mut account = Account::load(store, api).ok_or(AccessError::NeedsLogin)?;
     let github = account.github.clone().ok_or(AccessError::NeedsLogin)?;
     let expires = github.expires_at.as_deref().and_then(parse_time);
@@ -160,6 +181,14 @@ pub fn github_access(client: &Client, store: &dyn SecretStore, api: &str, now: D
         return Ok(github.access_token);
     }
     let still_valid = || if expires.is_some_and(|e| e > now) { Ok(github.access_token.clone()) } else { Err(AccessError::NeedsLogin) };
+    if github.source == TokenSource::Device {
+        let renewed = github.refresh_token.as_deref().zip(crate::device_login::client_id()).and_then(|(refresh, id)| crate::device_login::renew(client, oauth, &id, refresh, now));
+        let Some(mut renewed) = renewed else { return still_valid() };
+        renewed.login = github.login.clone();
+        account.github = Some(renewed.clone());
+        let _ = account.save(store, api);
+        return Ok(renewed.access_token);
+    }
     let (Some(session), Some(refresh)) = (&account.platform, &github.refresh_token) else { return still_valid() };
     let body = json!({ "refresh_token": refresh });
     match client.post_json(&format!("{api}/v1/auth/github/refresh"), Some(&session.token), &[], &body) {
@@ -202,6 +231,8 @@ mod tests {
                 expires_at: Some("2026-11-08T20:00:00Z".into()),
                 refresh_token: Some("ghr_y".into()),
                 refresh_token_expires_at: None,
+                source: TokenSource::Login,
+                login: String::new(),
             }),
         }
     }
@@ -294,6 +325,29 @@ mod tests {
         assert_eq!(valid_github_token(&store, "https://api.test", at("2026-11-08T19:59:00Z")), Some("ghu_x".into()));
         assert_eq!(valid_github_token(&store, "https://api.test", at("2026-11-08T20:00:01Z")), None, "expired");
         assert_eq!(valid_github_token(&MemoryStore::default(), "https://api.test", at("2026-11-08T19:00:00Z")), None);
+    }
+
+    #[test]
+    fn device_token_is_renewed_at_github() {
+        // SAFETY: tests that read the client ID run in this process only through this test.
+        unsafe { std::env::set_var("SURVIVORSFORGE_GITHUB_CLIENT_ID", "Iv1.device") };
+        let renewed = r#"{"access_token":"ghu_new","expires_in":28800,"refresh_token":"ghr_new","refresh_token_expires_in":15897600}"#;
+        let (oauth, seen) = serve(vec![(200, vec![], renewed.into())]);
+        let store = MemoryStore::default();
+        let mut device = account();
+        device.platform = None;
+        let github = device.github.as_mut().unwrap();
+        github.source = TokenSource::Device;
+        github.login = "octo".into();
+        device.save(&store, "http://127.0.0.1:1").unwrap();
+        let token = github_access_at(&Client::new(), &store, "http://127.0.0.1:1", &oauth, at("2026-11-08T19:57:00Z"));
+        assert_eq!(token, Ok("ghu_new".into()));
+        let request = seen.recv().unwrap();
+        assert_eq!(request.line, "POST /login/oauth/access_token HTTP/1.1", "GitHub renews it, not the platform");
+        let body: serde_json::Value = serde_json::from_str(&request.body).unwrap();
+        assert_eq!(body, serde_json::json!({ "client_id": "Iv1.device", "grant_type": "refresh_token", "refresh_token": "ghr_y" }), "no client secret");
+        let saved = Account::load(&store, "http://127.0.0.1:1").unwrap().github.unwrap();
+        assert_eq!((saved.access_token.as_str(), saved.source, saved.login.as_str()), ("ghu_new", TokenSource::Device, "octo"));
     }
 
     #[test]
