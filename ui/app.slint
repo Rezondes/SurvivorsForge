@@ -1229,6 +1229,8 @@ export component AppWindow inherits Window {
                         busy: root.detail.row.busy;
                         retry => { root.detail-retry(4); }
                         install(tag) => { root.version-install(tag); }
+                        links-enabled: !root.game-mode;
+                        notes(tag) => { root.detail-link("release/" + tag); }
                     }
 
                     // Stays while the server is away, unlike the toast that said so.

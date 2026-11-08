@@ -2744,6 +2744,8 @@ fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
         if page == "bug" {
             let issues_on = core.platform.info.get(&entry.id).is_some_and(|i| i.issues_on);
             controller::bug_report(&core.web_url(), &entry.id, &entry.repo, issues_on, core.platform.issues_ready.get(&entry.id).copied()).1
+        } else if let Some(tag) = page.strip_prefix("release/") {
+            controller::release_page(&entry.repo, tag)
         } else {
             let Some(url) = controller::addon_link(&core.web_url(), &entry.id, page) else { return };
             url
@@ -3596,6 +3598,29 @@ mod layout_tests {
             ui.set_offline(true);
             find("Try again").expect("offline: the line with its button").invoke_accessible_default_action();
             assert!(tried.get(), "Try again checks again");
+        }
+
+        #[test]
+        fn a_version_opens_its_release_notes() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let opened = Rc::new(std::cell::RefCell::new(String::new()));
+            let o = opened.clone();
+            ui.on_detail_link(move |page| *o.borrow_mut() = page.to_string());
+            let version = crate::VersionLine { tag: "v1.2".into(), name: "Lucky 1.2".into(), can_install: true, ..Default::default() };
+            ui.set_versions_rows(slint::ModelRc::new(slint::VecModel::from(vec![version])));
+            ui.set_detail_page(0);
+            ui.set_detail_tab(4);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("< Back to the list").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            find("Release notes of Lucky 1.2").expect("each version links its notes").invoke_accessible_default_action();
+            assert_eq!(*opened.borrow(), "release/v1.2");
+            ui.set_game_mode(true);
+            assert!(find("Release notes of Lucky 1.2").is_none(), "Game Mode opens no browser");
         }
 
         #[test]

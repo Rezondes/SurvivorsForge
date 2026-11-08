@@ -588,6 +588,15 @@ pub fn addon_link(web: &str, slug: &str, page: &str) -> Option<String> {
     Some(format!("{web}/addons/{slug}{path}"))
 }
 
+/// The GitHub page of release `tag` of `repo` ("owner/name"), where its release notes are.
+pub fn release_page(repo: &str, tag: &str) -> String {
+    let tag: String = tag
+        .bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect();
+    format!("https://github.com/{repo}/releases/tag/{tag}")
+}
+
 /// An open issue on the detail view's Issues tab.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IssueLine {
@@ -1500,6 +1509,12 @@ mod tests {
         let mut unavailable = dependency_plan("ui", &registry, &State::default()).unavailable;
         unavailable.sort();
         assert_eq!(unavailable, ["core", "media"]);
+    }
+
+    #[test]
+    fn a_version_links_to_its_release_notes_on_github() {
+        assert_eq!(release_page("bob/lucky", "v1.2"), "https://github.com/bob/lucky/releases/tag/v1.2");
+        assert_eq!(release_page("bob/lucky", "build/1 #2"), "https://github.com/bob/lucky/releases/tag/build%2F1%20%232");
     }
 
     #[test]

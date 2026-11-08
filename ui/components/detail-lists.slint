@@ -418,6 +418,9 @@ export component VersionsView inherits VerticalLayout {
     in property <bool> busy;
     callback retry();
     callback install(string);
+    // The release notes of a version, on GitHub; not in Game Mode, where no browser opens.
+    callback notes(string);
+    in property <bool> links-enabled: true;
 
     spacing: 12px;
 
@@ -461,6 +464,14 @@ export component VersionsView inherits VerticalLayout {
                         text: version.date + "   " + (version.downloads == 1 ? "1 download" : version.downloads + " downloads");
                         font-size: Theme.meta;
                         color: Theme.text-muted;
+                    }
+                }
+                if root.links-enabled : VerticalLayout {
+                    alignment: center;
+                    LinkButton {
+                        text: "Release notes";
+                        accessible-label: "Release notes of " + version.name;
+                        clicked => { root.notes(version.tag); }
                     }
                 }
                 VerticalLayout {
