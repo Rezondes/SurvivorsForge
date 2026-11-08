@@ -273,6 +273,30 @@ async fn playground_shows_the_answer_and_reaches_only_public_endpoints() {
 }
 
 #[tokio::test]
+async fn playground_tries_the_catalog_endpoints() {
+    let mut web = TestWeb::new().await;
+    Mock::given(method("GET")).and(path("/v1/categories")).respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "name": "UI" }]))).mount(&web.api).await;
+    Mock::given(method("GET")).and(path("/v1/game-versions")).respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "name": "0.9.2" }]))).mount(&web.api).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/addons"))
+        .and(wiremock::matchers::query_param("q", "lucky odds"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "total": 1, "addons": [] })))
+        .mount(&web.api)
+        .await;
+    for (query, shown) in [("endpoint=categories", "GET /v1/categories"), ("endpoint=game-versions", "GET /v1/game-versions"), ("endpoint=search&q=lucky+odds", "GET /v1/addons?q=lucky%20odds")] {
+        let page = web.get(&format!("/docs/api-docs/playground?{query}")).await;
+        assert!(page.body.contains(shown), "{query}: {}", page.body);
+        assert!(page.body.contains(r#"<span class="badge ok">200</span>"#), "{query}: {}", page.body);
+    }
+    let all = web.get("/docs/api-docs/playground?endpoint=search").await;
+    assert!(all.body.contains("GET /v1/addons</code>"), "no words: every addon, first page: {}", all.body);
+    let form = web.get("/docs/api-docs/playground").await;
+    for option in ["GET /v1/addons", "GET /v1/categories", "GET /v1/game-versions"] {
+        assert!(form.body.contains(&format!(">{option}</option>")), "{option} is offered");
+    }
+}
+
+#[tokio::test]
 async fn docs_page_explains_each_document_before_it_is_opened() {
     let mut web = TestWeb::new().await;
     let page = web.get("/docs").await;

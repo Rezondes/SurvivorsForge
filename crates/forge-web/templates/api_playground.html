@@ -11,7 +11,14 @@
       <option value="addon" {% if endpoint == "addon" %}selected{% endif %}>GET /v1/addons/{slug}</option>
       <option value="versions" {% if endpoint == "versions" %}selected{% endif %}>GET /v1/addons/{slug}/versions</option>
       <option value="findings" {% if endpoint == "findings" %}selected{% endif %}>GET /v1/addons/{slug}/versions/{tag}/findings</option>
+      <option value="search" {% if endpoint == "search" %}selected{% endif %}>GET /v1/addons</option>
+      <option value="categories" {% if endpoint == "categories" %}selected{% endif %}>GET /v1/categories</option>
+      <option value="game-versions" {% if endpoint == "game-versions" %}selected{% endif %}>GET /v1/game-versions</option>
     </select>
+    <div class="pg-q">
+      <label for="q">Search words</label>
+      <input id="q" name="q" value="{{ q }}" placeholder="lucky odds" autocomplete="off" spellcheck="false" maxlength="100">
+    </div>
     <div class="pg-slug">
       <label for="slug">Addon id (slug)</label>
       <input id="slug" name="slug" value="{{ slug }}" placeholder="aetherhud" autocomplete="off" spellcheck="false">

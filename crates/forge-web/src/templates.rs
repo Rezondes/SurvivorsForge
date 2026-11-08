@@ -1162,10 +1162,13 @@ pub struct TocEntry {
 pub struct ApiPlaygroundPage {
     pub user: Option<Visitor>,
     pub csrf: String,
-    /// The form as sent: `registry`, `addon`, `versions` or `findings`.
+    /// The form as sent: `registry`, `addon`, `versions`, `findings`, `search`, `categories` or
+    /// `game-versions`.
     pub endpoint: String,
     pub slug: String,
     pub tag: String,
+    /// The search words of `search`.
+    pub q: String,
     /// The API path that was asked, empty before the first request.
     pub path: String,
     pub api_url: String,

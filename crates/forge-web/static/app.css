@@ -451,7 +451,14 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .6); }
 .playground:has(option[value="registry"]:checked) .pg-slug,
 .playground:has(option[value="registry"]:checked) .pg-tag,
 .playground:has(option[value="addon"]:checked) .pg-tag,
-.playground:has(option[value="versions"]:checked) .pg-tag { display: none; }
+.playground:has(option[value="versions"]:checked) .pg-tag,
+.playground:has(option[value="search"]:checked) .pg-slug,
+.playground:has(option[value="search"]:checked) .pg-tag,
+.playground:has(option[value="categories"]:checked) .pg-slug,
+.playground:has(option[value="categories"]:checked) .pg-tag,
+.playground:has(option[value="game-versions"]:checked) .pg-slug,
+.playground:has(option[value="game-versions"]:checked) .pg-tag,
+.playground:not(:has(option[value="search"]:checked)) .pg-q { display: none; }
 /* API docs: side navigation and highlighted code. */
 .docs-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
 .toc { position: sticky; top: 0; max-height: calc(100vh - 120px); overflow-x: hidden; overflow-y: auto; font-size: var(--meta); }

@@ -397,10 +397,13 @@ struct PlaygroundQuery {
     slug: String,
     #[serde(default)]
     tag: String,
+    /// Search words of `/v1/addons`.
+    #[serde(default)]
+    q: String,
 }
 
 /// The API path for a playground form, or what is wrong with it. Slugs and tags are checked so
-/// that the form reaches nothing but the four public endpoints.
+/// that the form reaches nothing but the seven public endpoints.
 fn playground_path(q: &PlaygroundQuery) -> Result<String, &'static str> {
     let plain = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.+".contains(c));
     let (slug, tag) = (q.slug.trim(), q.tag.trim());
@@ -413,6 +416,17 @@ fn playground_path(q: &PlaygroundQuery) -> Result<String, &'static str> {
             slug_ok()?;
             if plain(tag) { Ok(format!("/v1/addons/{slug}/versions/{tag}/findings")) } else { Err("Enter a version tag, e.g. v2.3.0") }
         }
+        "search" => {
+            let words = q.q.trim();
+            if words.chars().count() > 100 {
+                return Err("Search with at most 100 characters");
+            }
+            // Percent-encoded: the words never turn into other query parameters.
+            let encoded: String = words.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+            Ok(if words.is_empty() { "/v1/addons".into() } else { format!("/v1/addons?q={encoded}") })
+        }
+        "categories" => Ok("/v1/categories".into()),
+        "game-versions" => Ok("/v1/game-versions".into()),
         _ => Err("Pick an endpoint"),
     }
 }
@@ -452,7 +466,7 @@ async fn api_playground(
     }
     let endpoint = if q.endpoint.is_empty() { "registry".into() } else { q.endpoint };
     let api_url = format!("{}{path}", state.config.public_api_url);
-    Ok(render(&ApiPlaygroundPage { user, csrf: csrf.0, endpoint, slug: q.slug, tag: q.tag, path, api_url, error, result, status }))
+    Ok(render(&ApiPlaygroundPage { user, csrf: csrf.0, endpoint, slug: q.slug, tag: q.tag, q: q.q, path, api_url, error, result, status }))
 }
 
 #[derive(Deserialize)]
