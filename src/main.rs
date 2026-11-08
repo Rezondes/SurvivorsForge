@@ -3849,6 +3849,30 @@ mod layout_tests {
         }
 
         #[test]
+        fn the_statistics_say_what_goes_out_point_by_point() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_page(2);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            for line in [
+                "Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.",
+                "Never sent: your name or file contents. No IP address is stored.",
+                "The installation ID is a random number that counts active launchers. The platform forgets it after 90 days.",
+            ] {
+                assert!(find(line).is_some(), "a line of its own: {line}");
+            }
+            // Wrapped lines take their room: the second point starts below the whole first one.
+            let first = find("Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.").unwrap();
+            let second = find("Never sent: your name or file contents. No IP address is stored.").unwrap();
+            assert!(second.absolute_position().y >= first.absolute_position().y + first.size().height - 0.5, "no overlap");
+        }
+
+        #[test]
         fn settings_scroll_in_the_smallest_window() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

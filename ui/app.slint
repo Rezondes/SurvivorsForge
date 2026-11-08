@@ -472,12 +472,72 @@ component SettingsView inherits VerticalLayout {
                     }
                 }
             }
-            // What the two boxes send, in the words of telemetry.rs and /stats.
-            Text {
-                text: "After an install, update or rollback of a verified addon: which addon and version, whether it worked (a fixed code if not), the launcher version and the operating system. No name, no IP address stored, no file contents. The installation ID is a random number that counts active launchers; the platform forgets it after 90 days.";
-                font-size: Theme.meta;
-                color: Theme.text-muted;
-                wrap: word-wrap;
+            // What the two boxes send, in the words of telemetry.rs and /stats: one point a line.
+            VerticalLayout {
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "•";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        accessible-role: none;
+                    }
+                    // A Rectangle around the wrapping text: the layout would measure it as one line.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: point1.preferred-height;
+                        point1 := Text {
+                            width: parent.width;
+                            text: "Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.";
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "•";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        accessible-role: none;
+                    }
+                    // A Rectangle around the wrapping text: the layout would measure it as one line.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: point2.preferred-height;
+                        point2 := Text {
+                            width: parent.width;
+                            text: "Never sent: your name or file contents. No IP address is stored.";
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "•";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        accessible-role: none;
+                    }
+                    // A Rectangle around the wrapping text: the layout would measure it as one line.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: point3.preferred-height;
+                        point3 := Text {
+                            width: parent.width;
+                            text: "The installation ID is a random number that counts active launchers. The platform forgets it after 90 days.";
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
             }
         }
     }
