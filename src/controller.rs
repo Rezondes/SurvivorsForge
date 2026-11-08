@@ -287,6 +287,11 @@ pub fn dependency_plan(id: &str, registry: &Registry, state: &State) -> Dependen
     plan
 }
 
+/// `message` of a finished change to the addon folders; a running game keeps the files it loaded.
+pub fn note_running_game(message: String, game_running: bool) -> String {
+    if game_running { format!("{message}. It takes effect the next time the game starts.") } else { message }
+}
+
 /// Names of the installed platform addons that need `registry_id` to work: removing it breaks them.
 pub fn dependents(registry_id: &str, registry: &Registry, state: &State) -> Vec<String> {
     registry
@@ -1495,6 +1500,12 @@ mod tests {
         let mut unavailable = dependency_plan("ui", &registry, &State::default()).unavailable;
         unavailable.sort();
         assert_eq!(unavailable, ["core", "media"]);
+    }
+
+    #[test]
+    fn a_running_game_gets_the_change_on_its_next_start() {
+        assert_eq!(note_running_game("Installed Foo v1".into(), false), "Installed Foo v1");
+        assert_eq!(note_running_game("Installed Foo v1".into(), true), "Installed Foo v1. It takes effect the next time the game starts.");
     }
 
     #[test]

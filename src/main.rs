@@ -888,6 +888,11 @@ fn run_bg(
                 core.busy.remove(id);
             }
             match result {
+                // A job for one addon changed its folders.
+                Ok(message) if busy_id.is_some() => {
+                    let message = controller::note_running_game(message, core.game_running);
+                    core.notify(message, Kind::Success)
+                }
                 Ok(message) => core.notify(message, Kind::Success),
                 Err(e) => core.notify(e.to_string(), Kind::Error),
             }
@@ -1436,7 +1441,7 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
         if failed.is_empty() && total == 0 && !skipped.is_empty() {
             Ok(format!("Nothing updated. Needs your confirmation, update one by one: {}", skipped.join(", ")))
         } else if failed.is_empty() {
-            Ok(format!("Updated {total} addons{skipped_note}"))
+            Ok(controller::note_running_game(format!("Updated {total} addons{skipped_note}"), lock(shared).game_running))
         } else {
             Err(Error::UpdatesFailed { failed: failed.len(), total, details: failed.join(" | ") })
         }
