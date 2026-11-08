@@ -3673,13 +3673,19 @@ mod layout_tests {
             slint::platform::update_timers_and_animations();
             press(&ui, "x");
             assert_eq!(ui.get_comments_draft(), "x", "Reply puts the cursor into the box");
+            let ctrl = slint::SharedString::from(Key::Control);
+            ui.window().dispatch_event(WindowEvent::KeyPressed { text: ctrl.clone() });
+            press(&ui, &slint::SharedString::from(Key::Return));
+            ui.window().dispatch_event(WindowEvent::KeyReleased { text: ctrl });
+            assert_eq!(sends.get(), 1, "Ctrl+Enter sends from the box");
+            assert_eq!(ui.get_comments_draft(), "x", "and adds no new line");
             ui.set_comments_draft("".into());
             ui.set_comments_reply_to("kex".into());
             assert!(find("Replying to kex").is_some(), "the box says to whom");
 
             ui.set_comments_draft("Thanks!".into());
             find("Send reply").expect("a send button for the reply").invoke_accessible_default_action();
-            assert_eq!(sends.get(), 1);
+            assert_eq!(sends.get(), 2);
             ui.set_comments_send_error("At most 20 comments an hour, try again later".into());
             assert!(find("Error: At most 20 comments an hour, try again later").is_some(), "why it was not sent");
             assert_eq!(ui.get_comments_draft(), "Thanks!", "the text stays");

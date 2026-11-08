@@ -77,6 +77,8 @@ export component TextArea inherits Rectangle {
     // Each change puts the cursor into the field (a Reply link elsewhere asks for it).
     in property <int> focus-asks;
     changed focus-asks => { input.focus(); }
+    // Ctrl+Enter (Cmd+Enter on macOS): send what was written.
+    callback submitted();
 
     public function focus-input() {
         input.focus();
@@ -104,19 +106,33 @@ export component TextArea inherits Rectangle {
         color: Theme.text-muted;
     }
 
-    input := TextInput {
-        x: 12px;
-        y: 10px;
-        width: parent.width - 24px;
-        text <=> root.text;
-        enabled: root.enabled;
-        accessible-label: root.label != "" ? root.label : root.placeholder;
-        single-line: false;
-        wrap: word-wrap;
-        font-size: Theme.body;
-        color: root.enabled ? Theme.text : Theme.text-muted;
-        selection-background-color: #8A6C3A;
-        selection-foreground-color: Theme.gold-bright;
+    // Sees Ctrl+Enter before the input would make a new line of it.
+    FocusScope {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        capture-key-pressed(event) => {
+            if (event.text == Key.Return && (event.modifiers.control || event.modifiers.meta)) {
+                root.submitted();
+                return accept;
+            }
+            reject
+        }
+        input := TextInput {
+            x: 12px;
+            y: 10px;
+            width: parent.width - 24px;
+            text <=> root.text;
+            enabled: root.enabled;
+            accessible-label: root.label != "" ? root.label : root.placeholder;
+            single-line: false;
+            wrap: word-wrap;
+            font-size: Theme.body;
+            color: root.enabled ? Theme.text : Theme.text-muted;
+            selection-background-color: #8A6C3A;
+            selection-foreground-color: Theme.gold-bright;
+        }
     }
 }
 

@@ -100,6 +100,7 @@ component NewIssueForm inherits VerticalLayout {
     TextArea {
         text <=> root.body;
         placeholder: "What happens, and what did you expect?";
+        submitted => { if (!root.sending) { root.submit(); } }
         label: "Issue description";
         enabled: !root.sending;
     }
@@ -244,6 +245,7 @@ export component IssuesView inherits VerticalLayout {
                 spacing: 8px;
                 TextArea {
                     text <=> root.reply-draft;
+                    submitted => { if (!root.sending) { root.send-reply(); } }
                     placeholder: "Your reply";
                     label: "Your reply";
                     enabled: !root.sending;

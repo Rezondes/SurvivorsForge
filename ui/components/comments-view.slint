@@ -97,6 +97,7 @@ export component CommentsView inherits VerticalLayout {
         }
         TextArea {
             focus-asks: root.reply-asks;
+            submitted => { if (!root.sending) { root.send(); } }
             text <=> root.draft;
             placeholder: root.reply-to != "" ? "Your reply" : "Write a comment";
             label: root.reply-to != "" ? "Your reply" : "Write a comment";
