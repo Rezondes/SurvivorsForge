@@ -109,6 +109,16 @@ pub fn next_hop(current: &str, location: &str) -> Result<String> {
     if download_allowed(&next) { Ok(next) } else { Err(Error::ForbiddenHost(next)) }
 }
 
+/// `call`, once more when it failed on the way (a timeout, a dropped connection) before any
+/// answer: GitHub's download servers sometimes do not answer one request. An answer of the server
+/// (404, 429) is not retried.
+pub fn retry_network<T>(mut call: impl FnMut() -> Result<T>) -> Result<T> {
+    match call() {
+        Err(Error::Network(_)) => call(),
+        other => other,
+    }
+}
+
 /// Redirects one download may take: GitHub sends one or two.
 const MAX_REDIRECTS: usize = 5;
 
@@ -155,11 +165,13 @@ impl Client {
 
     /// One hop of a download, with the headers `download_headers` allows for it.
     fn download_hop(&self, url: &str) -> Result<ureq::Response> {
-        let mut request = self.downloads.get(url);
-        for (name, value) in download_headers(url, self.github_token.as_deref()) {
-            request = request.set(name, &value);
-        }
-        Self::call(request)
+        retry_network(|| {
+            let mut request = self.downloads.get(url);
+            for (name, value) in download_headers(url, self.github_token.as_deref()) {
+                request = request.set(name, &value);
+            }
+            Self::call(request)
+        })
     }
 
     /// The same client, sending `install_id` to the platform (`telemetry::install_header`).
@@ -591,6 +603,33 @@ impl GitHub for WebGitHub {
 #[cfg(test)]
 mod tests {
     use crate::test_server::serve;
+
+    #[test]
+    fn a_network_failure_is_tried_once_more() {
+        let calls = std::cell::Cell::new(0);
+        let flaky = || {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 { Err(Error::Network("timed out (os error 10060)".into())) } else { Ok(7) }
+        };
+        assert_eq!(retry_network(flaky), Ok(7));
+        assert_eq!(calls.get(), 2);
+
+        calls.set(0);
+        let down = || {
+            calls.set(calls.get() + 1);
+            Err::<(), _>(Error::Network("timed out".into()))
+        };
+        assert!(retry_network(down).is_err());
+        assert_eq!(calls.get(), 2, "once more, not forever");
+
+        calls.set(0);
+        let refused = || {
+            calls.set(calls.get() + 1);
+            Err::<(), _>(Error::NotFound)
+        };
+        assert_eq!(retry_network(refused), Err(Error::NotFound));
+        assert_eq!(calls.get(), 1, "an answer of the server is not retried");
+    }
 
     #[test]
     fn routed_github_sends_own_repos_past_the_platform() {
