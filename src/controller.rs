@@ -287,6 +287,15 @@ pub fn dependency_plan(id: &str, registry: &Registry, state: &State) -> Dependen
     plan
 }
 
+/// Installed puts the addons with an update on top, each part in the order it had; one kept at an
+/// older version on purpose stays with the rest.
+pub fn updates_first<R: std::borrow::Borrow<Row>>(rows: &mut [R], held: &[String]) {
+    rows.sort_by_key(|r| {
+        let r = r.borrow();
+        !(matches!(r.state, RowState::UpdateAvailable(_)) && !held.contains(&r.id))
+    });
+}
+
 /// `message` of a finished change to the addon folders; a running game keeps the files it loaded.
 pub fn note_running_game(message: String, game_running: bool) -> String {
     if game_running { format!("{message}. It takes effect the next time the game starts.") } else { message }
@@ -1509,6 +1518,32 @@ mod tests {
         let mut unavailable = dependency_plan("ui", &registry, &State::default()).unavailable;
         unavailable.sort();
         assert_eq!(unavailable, ["core", "media"]);
+    }
+
+    #[test]
+    fn installed_lists_the_updates_first_in_the_chosen_order() {
+        let row = |id: &str, state: RowState| Row {
+            id: id.into(),
+            name: id.into(),
+            author: String::new(),
+            version: String::new(),
+            badge: Badge::Unmanaged,
+            state,
+            description: String::new(),
+            repo: None,
+            out_of_date: false,
+            folders: Vec::new(),
+        };
+        let mut rows = [
+            row("a", RowState::UpToDate),
+            row("b", RowState::UpdateAvailable("v2".into())),
+            row("c", RowState::UpToDate),
+            row("d", RowState::UpdateAvailable("v3".into())),
+            row("kept", RowState::UpdateAvailable("v4".into())),
+        ];
+        updates_first(&mut rows, &["kept".to_string()]);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["b", "d", "a", "c", "kept"], "updates on top, the rest keeps its order, a kept one waits");
     }
 
     #[test]

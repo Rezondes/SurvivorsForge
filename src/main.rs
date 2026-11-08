@@ -739,6 +739,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     };
     let mut installed: Vec<&Row> = rows.iter().filter(|r| shown(&r.id, &r.name, &r.author, registry_entry(&core, &r.id).map(|a| a.category.as_str()))).collect();
     installed.sort_by(|a, b| list_order(&core, (&a.id, &a.name), (&b.id, &b.name)));
+    controller::updates_first(&mut installed, &core.config.held);
     // Game Mode opens no browser, so the rows offer no GitHub button there (as the detail view).
     let links = !ui.get_game_mode();
     let linked = |row: AddonRow| AddonRow { can_open: row.can_open && links, ..row };
