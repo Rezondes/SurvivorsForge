@@ -1,6 +1,7 @@
 //! What the launcher needs from GitHub: release and tag metadata comes from forge-api
-//! (`ApiGitHub`), or from github.com itself while the API cannot be reached (`WebGitHub`). The zip
-//! files are always downloaded from GitHub directly.
+//! (`ApiGitHub`), or from GitHub itself while the API cannot be reached: its REST API with the
+//! user's token when logged in (`TokenGitHub`), else its web pages (`WebGitHub`). The zip files are
+//! always downloaded from GitHub directly.
 
 pub use forge_core::github_web::*;
 
@@ -70,9 +71,24 @@ pub fn source_zip_url(repo: &str, git_ref: &str) -> String {
     format!("https://codeload.github.com/{repo}/zip/{git_ref}")
 }
 
-/// The only hosts zips are downloaded from: GitHub's release and archive downloads.
+/// The only hosts zips are downloaded from: GitHub's release and archive downloads, and its REST
+/// API for release assets (`TokenGitHub`).
 pub const DOWNLOAD_HOSTS: &[&str] =
-    &["github.com", "codeload.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
+    &["github.com", "codeload.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "api.github.com"];
+
+/// GitHub's REST API.
+pub const GITHUB_API: &str = "https://api.github.com";
+
+/// The headers one hop of a download sends: the user's GitHub token only to GitHub's REST API,
+/// never to a host it redirects to.
+pub fn download_headers(url: &str, github_token: Option<&str>) -> Vec<(&'static str, String)> {
+    match github_token {
+        Some(token) if url.starts_with(&format!("{GITHUB_API}/")) => {
+            vec![("Authorization", format!("Bearer {token}")), ("Accept", "application/octet-stream".into())]
+        }
+        _ => Vec::new(),
+    }
+}
 
 /// `url` is https on one of `DOWNLOAD_HOSTS`.
 pub fn download_allowed(url: &str) -> bool {
@@ -104,6 +120,8 @@ pub struct Client {
     install_id: Option<String>,
     /// Follows no redirect itself, so every hop of a download is checked.
     downloads: ureq::Agent,
+    /// The user's GitHub token, for release assets from GitHub's REST API (`download_headers`).
+    github_token: Option<String>,
 }
 
 impl Default for Client {
@@ -126,7 +144,22 @@ impl Client {
                 .timeout_read(Duration::from_secs(60))
                 .user_agent(&user_agent())
         };
-        Client { agent: builder().build(), install_id: None, downloads: builder().redirects(0).build() }
+        Client { agent: builder().build(), install_id: None, downloads: builder().redirects(0).build(), github_token: None }
+    }
+
+    /// The same client, downloading release assets from GitHub's REST API as the user.
+    pub fn with_github_token(mut self, token: Option<String>) -> Client {
+        self.github_token = token;
+        self
+    }
+
+    /// One hop of a download, with the headers `download_headers` allows for it.
+    fn download_hop(&self, url: &str) -> Result<ureq::Response> {
+        let mut request = self.downloads.get(url);
+        for (name, value) in download_headers(url, self.github_token.as_deref()) {
+            request = request.set(name, &value);
+        }
+        Self::call(request)
     }
 
     /// The same client, sending `install_id` to the platform (`telemetry::install_header`).
@@ -234,14 +267,14 @@ impl Client {
             return Err(Error::ForbiddenHost(url.to_string()));
         }
         let mut current = url.to_string();
-        let mut resp = Self::call(self.downloads.get(&current))?;
+        let mut resp = self.download_hop(&current)?;
         for _ in 0..MAX_REDIRECTS {
             if !(300..400).contains(&resp.status()) {
                 break;
             }
             let location = resp.header("location").ok_or_else(|| Error::Network(format!("redirect without a target from {current}")))?;
             current = next_hop(&current, location)?;
-            resp = Self::call(self.downloads.get(&current))?;
+            resp = self.download_hop(&current)?;
         }
         if (300..400).contains(&resp.status()) {
             return Err(Error::Network(format!("too many redirects from {url}")));
@@ -343,6 +376,117 @@ impl GitHub for ApiGitHub {
     }
 }
 
+/// Release and tag metadata from GitHub's REST API with the user's token, for when the
+/// SurvivorsForge server cannot be reached: 5000 requests an hour, and unaffected when GitHub
+/// slows down requests without a login. A token GitHub refuses (`401`) falls back to `WebGitHub`.
+pub struct TokenGitHub {
+    client: Client,
+    token: String,
+    api: String,
+    web: WebGitHub,
+}
+
+impl TokenGitHub {
+    pub fn new(client: Client, token: String) -> TokenGitHub {
+        TokenGitHub::with_api(client, token, GITHUB_API)
+    }
+
+    /// Against another address, for tests.
+    pub fn with_api(client: Client, token: String, api: &str) -> TokenGitHub {
+        TokenGitHub { web: WebGitHub::new(client.clone()), client, token, api: api.trim_end_matches('/').to_string() }
+    }
+
+    /// GETs `path` of the REST API; `Ok(None)` for `404`.
+    fn get(&self, path: &str) -> Result<Option<serde_json::Value>> {
+        let request = self
+            .client
+            .agent
+            .get(&format!("{}{path}", self.api))
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .set("Accept", "application/vnd.github+json")
+            .set("X-GitHub-Api-Version", "2022-11-28");
+        match request.call() {
+            Ok(resp) => {
+                let text = resp.into_string().map_err(|e| Error::Network(e.to_string()))?;
+                serde_json::from_str(&text).map(Some).map_err(|e| Error::Parse(e.to_string()))
+            }
+            Err(ureq::Error::Status(404, _)) => Ok(None),
+            Err(ureq::Error::Status(401, _)) => Err(Error::Http(401)),
+            Err(ureq::Error::Status(403 | 429, _)) => Err(Error::RateLimited),
+            Err(ureq::Error::Status(code, _)) => Err(Error::Http(code)),
+            Err(e) => Err(Error::Network(e.to_string())),
+        }
+    }
+
+    /// `rest`, or the same from the web pages once GitHub refuses the token.
+    fn or_web<T>(&self, rest: Result<T>, web: impl FnOnce(&WebGitHub) -> Result<T>) -> Result<T> {
+        match rest {
+            Err(Error::Http(401)) => web(&self.web),
+            other => other,
+        }
+    }
+}
+
+/// A release of the REST API: its assets as the REST address, which `download_headers` sends
+/// the token to.
+fn rest_release(v: &serde_json::Value, tag: &str) -> Release {
+    let assets = v["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| Some(Asset { name: a["name"].as_str()?.to_string(), url: a["url"].as_str()?.to_string() }))
+        .collect();
+    Release { tag: v["tag_name"].as_str().unwrap_or(tag).to_string(), assets }
+}
+
+impl GitHub for TokenGitHub {
+    fn latest_release(&self, repo: &str) -> Result<Option<Release>> {
+        let repo = normalize_repo(repo)?;
+        let rest = self.get(&format!("/repos/{repo}/releases/latest")).map(|v| v.map(|v| rest_release(&v, "")));
+        self.or_web(rest, |web| web.latest_release(&repo))
+    }
+
+    fn release(&self, repo: &str, tag: &str) -> Result<Release> {
+        let repo = normalize_repo(repo)?;
+        let rest = self
+            .get(&format!("/repos/{repo}/releases/tags/{}", encode_segment(tag)))
+            .map(|v| v.map_or_else(|| Release { tag: tag.to_string(), assets: Vec::new() }, |v| rest_release(&v, tag)));
+        self.or_web(rest, |web| web.release(&repo, tag))
+    }
+
+    fn tags(&self, repo: &str) -> Result<Vec<Tag>> {
+        let repo = normalize_repo(repo)?;
+        let rest = self.get(&format!("/repos/{repo}/tags?per_page=100")).and_then(|v| {
+            let v = v.ok_or(Error::NotFound)?;
+            let refs: Vec<(String, String)> = v
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|t| Some((t["commit"]["sha"].as_str()?.to_string(), format!("refs/tags/{}", t["name"].as_str()?))))
+                .collect();
+            // The same order as the web pages give: newest version first.
+            Ok(tags_from_refs(&refs))
+        });
+        self.or_web(rest, |web| web.tags(&repo))
+    }
+
+    fn default_branch(&self, repo: &str) -> Result<String> {
+        let repo = normalize_repo(repo)?;
+        let rest = self.get(&format!("/repos/{repo}")).and_then(|v| {
+            v.and_then(|v| v["default_branch"].as_str().map(str::to_string)).ok_or(Error::NotFound)
+        });
+        self.or_web(rest, |web| web.default_branch(&repo))
+    }
+
+    fn commit_sha(&self, repo: &str, git_ref: &str) -> Result<String> {
+        let repo = normalize_repo(repo)?;
+        let rest = self.get(&format!("/repos/{repo}/branches/{}", encode_segment(git_ref))).and_then(|v| {
+            v.and_then(|v| v["commit"]["sha"].as_str().map(str::to_string)).ok_or_else(|| Error::Parse(format!("branch {git_ref} not found")))
+        });
+        self.or_web(rest, |web| web.commit_sha(&repo, git_ref))
+    }
+}
+
 /// Release and tag metadata straight from github.com, for when the SurvivorsForge server cannot be
 /// reached: the same pages and parsers the server reads (not the REST API, so no hourly limit).
 pub struct WebGitHub {
@@ -411,6 +555,45 @@ impl GitHub for WebGitHub {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_server::serve;
+
+    #[test]
+    fn token_github_reads_release_json() {
+        let release = r#"{"tag_name":"v2.0","assets":[{"name":"Lucky-v2.0.zip","url":"https://api.github.com/repos/o/r/releases/assets/7","browser_download_url":"https://github.com/o/r/releases/download/v2.0/Lucky-v2.0.zip"}]}"#;
+        let tags = r#"[{"name":"v1.9","commit":{"sha":"aaa"}},{"name":"v2.0","commit":{"sha":"bbb"}}]"#;
+        let (api, _seen) = serve(vec![(200, vec![], release.into()), (200, vec![], tags.into()), (404, vec![], "{}".into())]);
+        let gh = TokenGitHub::with_api(Client::new(), "ghu_t".into(), &api);
+        let latest = gh.latest_release("o/r").unwrap().unwrap();
+        assert_eq!(latest.tag, "v2.0");
+        assert_eq!(latest.assets, vec![Asset { name: "Lucky-v2.0.zip".into(), url: "https://api.github.com/repos/o/r/releases/assets/7".into() }]);
+        let tags = gh.tags("o/r").unwrap();
+        assert_eq!(tags.iter().map(|t| (t.name.as_str(), t.sha.as_str())).collect::<Vec<_>>(), [("v2.0", "bbb"), ("v1.9", "aaa")], "newest first");
+        assert_eq!(gh.latest_release("o/r"), Ok(None), "404: no release");
+    }
+
+    #[test]
+    fn token_github_sends_auth_headers() {
+        let (api, seen) = serve(vec![(200, vec![], r#"{"default_branch":"main"}"#.into())]);
+        let gh = TokenGitHub::with_api(Client::new(), "ghu_t".into(), &api);
+        assert_eq!(gh.default_branch("o/r").unwrap(), "main");
+        let request = seen.recv().unwrap();
+        assert_eq!(request.line, "GET /repos/o/r HTTP/1.1");
+        assert_eq!(request.header("authorization"), Some("Bearer ghu_t"));
+        assert_eq!(request.header("accept"), Some("application/vnd.github+json"));
+        assert!(request.header("user-agent").is_some_and(|ua| ua.starts_with("SurvivorsForge/")));
+    }
+
+    #[test]
+    fn token_not_sent_after_redirect_to_other_host() {
+        let asset = "https://api.github.com/repos/o/r/releases/assets/7";
+        assert_eq!(download_headers(asset, Some("ghu_t")), vec![("Authorization", "Bearer ghu_t".to_string()), ("Accept", "application/octet-stream".to_string())]);
+        assert!(download_headers("https://release-assets.githubusercontent.com/x?sig=1", Some("ghu_t")).is_empty(), "the redirect target gets no token");
+        assert!(download_headers("https://github.com/o/r/releases/download/v1/a.zip", Some("ghu_t")).is_empty());
+        assert!(download_headers("https://api.github.com.evil.test/x", Some("ghu_t")).is_empty());
+        assert!(download_headers(asset, None).is_empty());
+        assert!(download_allowed(asset));
+    }
+
     use super::*;
 
     #[test]

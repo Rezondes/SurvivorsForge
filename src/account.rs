@@ -179,6 +179,14 @@ pub fn github_access(client: &Client, store: &dyn SecretStore, api: &str, now: D
     }
 }
 
+/// The GitHub token while it still runs, without asking anyone: for when the platform cannot be
+/// reached and nothing could renew it anyway.
+pub fn valid_github_token(store: &dyn SecretStore, api: &str, now: DateTime<Utc>) -> Option<String> {
+    let github = Account::load(store, api)?.github?;
+    let expires = github.expires_at.as_deref().and_then(parse_time);
+    expires.is_none_or(|e| e > now).then_some(github.access_token)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +286,14 @@ mod tests {
         assert_eq!(github_access(&Client::new(), &store, api, at("2026-11-08T19:58:00Z")), Ok("ghu_x".into()), "two minutes left");
         assert_eq!(github_access(&Client::new(), &store, api, at("2026-11-08T20:01:00Z")), Err(AccessError::NeedsLogin), "expired");
         assert_eq!(Account::load(&store, api), Some(account()), "unchanged");
+    }
+
+    #[test]
+    fn valid_token_without_asking() {
+        let store = stored("https://api.test");
+        assert_eq!(valid_github_token(&store, "https://api.test", at("2026-11-08T19:59:00Z")), Some("ghu_x".into()));
+        assert_eq!(valid_github_token(&store, "https://api.test", at("2026-11-08T20:00:01Z")), None, "expired");
+        assert_eq!(valid_github_token(&MemoryStore::default(), "https://api.test", at("2026-11-08T19:00:00Z")), None);
     }
 
     #[test]

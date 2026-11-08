@@ -12,7 +12,7 @@ use survivorsforge::account::{Account, Keyring};
 use survivorsforge::deep_link;
 use survivorsforge::login;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
-use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, WebGitHub};
+use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, TokenGitHub, WebGitHub};
 use survivorsforge::install::{self, Request};
 use survivorsforge::local_scan;
 use survivorsforge::registry::{self, Origin, Registry, SourceSpec};
@@ -239,7 +239,16 @@ impl Core {
 
     /// A platform client; it carries the installation ID when the user allows it.
     fn client(&self) -> Client {
-        Client::new().with_install_id(telemetry::install_header(&self.config))
+        Client::new().with_install_id(telemetry::install_header(&self.config)).with_github_token(self.offline_github_token())
+    }
+
+    /// The user's GitHub token while the platform cannot be reached and it still runs; then
+    /// GitHub's REST API serves releases and zips as them (`TokenGitHub`).
+    fn offline_github_token(&self) -> Option<String> {
+        if !self.offline {
+            return None;
+        }
+        survivorsforge::account::valid_github_token(&Keyring, &self.api_url(), chrono::Utc::now())
     }
 
     fn save_platform(&self) {
@@ -257,7 +266,11 @@ impl Core {
     /// Release and tag metadata, through the platform.
     /// GitHub through the SurvivorsForge server, or straight from github.com while it is unreachable.
     fn github(&self) -> Box<dyn GitHub + Send> {
-        if self.offline { Box::new(WebGitHub::new(self.client())) } else { Box::new(ApiGitHub::new(self.client(), &self.api_url())) }
+        match (self.offline, self.offline_github_token()) {
+            (false, _) => Box::new(ApiGitHub::new(self.client(), &self.api_url())),
+            (true, Some(token)) => Box::new(TokenGitHub::new(self.client(), token)),
+            (true, None) => Box::new(WebGitHub::new(self.client())),
+        }
     }
 
     fn rescan(&mut self) {
