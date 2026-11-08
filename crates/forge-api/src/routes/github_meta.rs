@@ -36,6 +36,21 @@ fn repo_name(owner: &str, repo: &str) -> ApiResult<String> {
     Ok(format!("{owner}/{repo}"))
 }
 
+/// The proxy serves the repos of addons in the registry and the launcher's own (its self-update);
+/// any other repo gets `404` without asking GitHub, so it is no open proxy to github.com.
+async fn served(state: &AppState, repo: &str) -> ApiResult<()> {
+    if repo.eq_ignore_ascii_case(&state.config.launcher_repo) {
+        return Ok(());
+    }
+    let listed: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM addons WHERE lower(repo_full_name) = lower($1) AND deleted_at IS NULL AND blocked_at IS NULL)",
+    )
+    .bind(repo)
+    .fetch_one(&state.pool)
+    .await?;
+    if listed { Ok(()) } else { Err(ApiError::new(StatusCode::NOT_FOUND, "not_found", "No addon of the registry has this repo")) }
+}
+
 fn unavailable(detail: impl std::fmt::Display) -> ApiError {
     tracing::warn!(%detail, "github.com request failed");
     ApiError::new(StatusCode::BAD_GATEWAY, "github_unavailable", "GitHub cannot be reached right now")
@@ -79,6 +94,7 @@ async fn release_of(state: &AppState, repo: &str, tag: &str) -> ApiResult<Releas
 /// `GET /v1/github/{owner}/{repo}/releases/latest`: the newest full release, `null` when there is none.
 pub async fn latest_release(State(state): State<AppState>, Path((owner, repo)): Path<(String, String)>) -> ApiResult<Json<Option<Release>>> {
     let repo = repo_name(&owner, &repo)?;
+    served(&state, &repo).await?;
     let tag = match fetch(&state, &format!("/{repo}/releases/latest")).await? {
         Err(location) => location.as_deref().and_then(parse_latest_location),
         Ok(_) => None,
@@ -92,6 +108,7 @@ pub async fn latest_release(State(state): State<AppState>, Path((owner, repo)): 
 /// `GET /v1/github/{owner}/{repo}/releases/{tag}`: the assets of `tag`, also of a pre-release.
 pub async fn release(State(state): State<AppState>, Path((owner, repo, tag)): Path<(String, String, String)>) -> ApiResult<Json<Release>> {
     let repo = repo_name(&owner, &repo)?;
+    served(&state, &repo).await?;
     if tag.is_empty() || tag.len() > 255 {
         return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_tag", "Not a tag name"));
     }
@@ -101,6 +118,7 @@ pub async fn release(State(state): State<AppState>, Path((owner, repo, tag)): Pa
 /// `GET /v1/github/{owner}/{repo}/refs`: default branch, branch heads and tags (newest first).
 pub async fn refs(State(state): State<AppState>, Path((owner, repo)): Path<(String, String)>) -> ApiResult<Json<Value>> {
     let repo = repo_name(&owner, &repo)?;
+    served(&state, &repo).await?;
     let body = fetch(&state, &format!("/{repo}.git/info/refs?service=git-upload-pack")).await?.map_err(|_| unavailable("redirect"))?;
     let refs = parse_refs(&body);
     let branches: serde_json::Map<String, Value> = refs

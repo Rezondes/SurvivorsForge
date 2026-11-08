@@ -17,6 +17,12 @@ async fn app_with_github(pool: PgPool) -> (TestApp, MockServer) {
         c.github_web_url = uri;
         c.cache_seconds = 60;
     });
+    // The proxy serves only repos of the registry: these are addons.
+    for (n, repo) in ["morderous/survivor-ui", "o/r", "threenox/BordoUI", "nope/missing", "down/repo"].iter().enumerate() {
+        let slug = format!("addon{n}");
+        app.publish(100 + n as i64, &format!("owner{n}"), &slug).await;
+        sqlx::query("UPDATE addons SET repo_full_name = $1 WHERE slug = $2").bind(repo).bind(&slug).execute(&app.pool).await.unwrap();
+    }
     (app, github)
 }
 
@@ -69,6 +75,46 @@ async fn refs_give_head_branches_and_sorted_tags(pool: PgPool) {
     let head = refs["head"].as_str().unwrap();
     assert_eq!(refs["branches"][head].as_str().unwrap().len(), 40);
     assert!(refs["tags"][0]["name"].as_str().unwrap().starts_with('v'));
+}
+
+#[sqlx::test]
+async fn proxy_serves_the_launcher_repo(pool: PgPool) {
+    let (app, github) = app_with_github(pool).await;
+    Mock::given(path("/Rezondes/SurvivorsForge/releases/latest"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", format!("{}/Rezondes/SurvivorsForge/releases", github.uri()).as_str()))
+        .expect(1)
+        .mount(&github)
+        .await;
+    let reply = app.get("/v1/github/Rezondes/SurvivorsForge/releases/latest", None).await;
+    assert_eq!(reply.status, StatusCode::OK, "the launcher's self-update: {}", reply.body);
+}
+
+#[sqlx::test]
+async fn proxy_refuses_other_repos_without_calling_github(pool: PgPool) {
+    let (app, github) = app_with_github(pool).await;
+    Mock::given(method("GET")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&github).await;
+    for route in ["/v1/github/someone/else/releases/latest", "/v1/github/someone/else/releases/v1", "/v1/github/someone/else/refs"] {
+        let reply = app.get(route, None).await;
+        assert_eq!((reply.status, reply.error()), (StatusCode::NOT_FOUND, "not_found".to_string()), "{route}");
+    }
+}
+
+#[sqlx::test]
+async fn proxy_refuses_blocked_and_deleted_addons(pool: PgPool) {
+    let (app, github) = app_with_github(pool).await;
+    Mock::given(method("GET")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&github).await;
+    sqlx::query("UPDATE addons SET blocked_at = now() WHERE repo_full_name = 'o/r'").execute(&app.pool).await.unwrap();
+    sqlx::query("UPDATE addons SET deleted_at = now() WHERE repo_full_name = 'down/repo'").execute(&app.pool).await.unwrap();
+    assert_eq!(app.get("/v1/github/o/r/refs", None).await.status, StatusCode::NOT_FOUND, "blocked");
+    assert_eq!(app.get("/v1/github/down/repo/refs", None).await.status, StatusCode::NOT_FOUND, "deleted");
+}
+
+#[sqlx::test]
+async fn proxy_repo_match_ignores_case(pool: PgPool) {
+    let (app, github) = app_with_github(pool).await;
+    Mock::given(path("/MORDEROUS/Survivor-UI/releases/expanded_assets/v1")).respond_with(ResponseTemplate::new(200).set_body_string("")).mount(&github).await;
+    let reply = app.get("/v1/github/MORDEROUS/Survivor-UI/releases/v1", None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
 }
 
 #[sqlx::test]

@@ -267,6 +267,14 @@ mod tests {
     }
 
     #[test]
+    fn launcher_repo_defaults_to_the_official_one() {
+        assert_eq!(Config::from_map(&env(MINIMAL)).unwrap().launcher_repo, "Rezondes/SurvivorsForge");
+        let mut fork = env(MINIMAL);
+        fork.insert("LAUNCHER_REPO".into(), "me/MyForge".into());
+        assert_eq!(Config::from_map(&fork).unwrap().launcher_repo, "me/MyForge");
+    }
+
+    #[test]
     fn invalid_values_are_named() {
         let mut bad = env(MINIMAL);
         bad.insert("TRUSTED_PROXIES".into(), "10.0.0.1, nope".into());

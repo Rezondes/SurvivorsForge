@@ -118,7 +118,7 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `TRUSTED_PROXIES` | no, set by Compose | Proxies whose `X-Forwarded-For` counts | API: `FORGE_CADDY_IP` and `FORGE_WEB_IP`; website: `FORGE_CADDY_IP` |
 | `WEBSITE_IP` | no, set by Compose | The website's address; it limits each visitor itself, so the API does not count its requests again | `FORGE_WEB_IP` |
 | `SOURCE_CHECK_BATCH` | no | Versions compared with GitHub per 6-hourly run | `200` |
-| `LAUNCHER_REPO` | no | GitHub repository of the launcher; `/stats` shows its release downloads | `Rezondes/SurvivorsForge` |
+| `LAUNCHER_REPO` | no | GitHub repository of the launcher; `/stats` shows its release downloads, and `/v1/github/*` serves it for the launcher's self-update besides the registry's repos | `Rezondes/SurvivorsForge` |
 | `GRAFANA_DB_PASSWORD` | with monitoring | Password of the read-only database role Grafana reads with | random |
 | `GRAFANA_ADMIN_PASSWORD` | with monitoring | Grafana's own admin account, for emergencies | random |
 | `GRAFANA_ALERT_WEBHOOK_URL` | no | Discord webhook for Grafana's alerts; leave it out (not empty) to see them only in Grafana | - |
