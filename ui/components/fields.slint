@@ -74,6 +74,9 @@ export component TextArea inherits Rectangle {
     in property <string> placeholder;
     in property <string> label;
     in property <bool> enabled: true;
+    // Each change puts the cursor into the field (a Reply link elsewhere asks for it).
+    in property <int> focus-asks;
+    changed focus-asks => { input.focus(); }
 
     public function focus-input() {
         input.focus();

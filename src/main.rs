@@ -3670,6 +3670,10 @@ mod layout_tests {
             assert!(find("Write a comment").is_some(), "logged in: the box");
             find("Reply").expect("a Reply link on each comment").invoke_accessible_default_action();
             assert_eq!(replies.get(), 42);
+            slint::platform::update_timers_and_animations();
+            press(&ui, "x");
+            assert_eq!(ui.get_comments_draft(), "x", "Reply puts the cursor into the box");
+            ui.set_comments_draft("".into());
             ui.set_comments_reply_to("kex".into());
             assert!(find("Replying to kex").is_some(), "the box says to whom");
 

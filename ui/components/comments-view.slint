@@ -36,6 +36,8 @@ export component CommentsView inherits VerticalLayout {
     callback send();
     callback reply(int);
     callback cancel-reply();
+    // Counts the Reply clicks: each one puts the cursor into the box.
+    property <int> reply-asks;
     callback older();
     callback retry();
 
@@ -94,6 +96,7 @@ export component CommentsView inherits VerticalLayout {
             }
         }
         TextArea {
+            focus-asks: root.reply-asks;
             text <=> root.draft;
             placeholder: root.reply-to != "" ? "Your reply" : "Write a comment";
             label: root.reply-to != "" ? "Your reply" : "Write a comment";
@@ -204,7 +207,10 @@ export component CommentsView inherits VerticalLayout {
                         spacing: 16px;
                         if !row.deleted : LinkButton {
                             text: "Reply";
-                            clicked => { root.reply(row.id); }
+                            clicked => {
+                                root.reply(row.id);
+                                root.reply-asks += 1;
+                            }
                         }
                         if row.own && !row.deleted && root.links-enabled : LinkButton {
                             text: "Edit on the website";
