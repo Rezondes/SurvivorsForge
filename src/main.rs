@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use survivorsforge::config::{self, Config};
 use survivorsforge::controller::{self, Badge, Row, RowState, UNMANAGED_PREFIX};
+use survivorsforge::account::{Account, Keyring};
 use survivorsforge::deep_link;
+use survivorsforge::login;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
 use survivorsforge::github::{normalize_repo, ApiGitHub, Client, GitHub, WebGitHub};
 use survivorsforge::install::{self, Request};
@@ -98,6 +100,12 @@ struct Core {
     /// The Issues and Versions tabs of the detail view, once opened.
     issues: Option<Listing<(Vec<controller::IssueLine>, u64)>>,
     versions: Option<Listing<Vec<controller::VersionLine>>>,
+    /// The GitHub login on the platform, `None` while logged out.
+    me: Option<controller::Me>,
+    /// Set while the browser is open for a login; storing `true` stops the wait.
+    login_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// Why the last login failed; empty after a good one.
+    login_error: String,
 }
 
 /// The comments of one addon loaded so far, and how the next page is coming.
@@ -174,6 +182,9 @@ impl Core {
             comments: None,
             issues: None,
             versions: None,
+            me: None,
+            login_cancel: None,
+            login_error: String::new(),
         };
         if let Some(config) = config {
             core.switch_config(config);
@@ -694,6 +705,12 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     browse.sort_by(|a, b| list_order(&core, (&a.id, &a.name), (&b.id, &b.name)));
     ui.set_browse_rows(model(browse.into_iter().map(|b| linked(browse_row(b, &core, &rows))).collect()));
     ui.set_offline(core.offline);
+    let me = core.me.clone().unwrap_or_default();
+    ui.set_account_login(me.login.as_str().into());
+    ui.set_account_initial(me.login.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default().into());
+    ui.set_account_avatar(picture(&core, (!me.avatar_url.is_empty()).then_some(me.avatar_url.as_str())));
+    ui.set_account_busy(core.login_cancel.is_some());
+    ui.set_account_error(core.login_error.as_str().into());
     match detail(&core, &rows) {
         Some(detail) => ui.set_detail(detail),
         // Removed meanwhile: back to the list.
@@ -1774,7 +1791,115 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
     refresh(ui, shared);
     if recheck {
         check_updates(ui, shared);
+        load_account(ui, shared);
     }
+}
+
+/// The login kept for the current platform: shown at once by its saved name, then checked with
+/// `/v1/me` on a thread. A login the platform no longer knows (`401`) is forgotten.
+fn load_account(ui: &AppWindow, shared: &Shared) {
+    let (api, client) = {
+        let mut core = lock(shared);
+        let api = core.api_url();
+        let session = Account::load(&Keyring, &api).and_then(|a| a.platform);
+        core.me = session.as_ref().map(|s| controller::Me { login: s.login.clone(), avatar_url: String::new() });
+        let Some(session) = session else {
+            drop(core);
+            return refresh(ui, shared);
+        };
+        (api, (core.client(), session.token))
+    };
+    refresh(ui, shared);
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let (client, token) = client;
+        match client.get_text_as(&format!("{api}/v1/me"), &token) {
+            Ok(text) => {
+                let Some(me) = controller::parse_me(&text) else { return };
+                remember_login_name(&api, &me.login);
+                let avatar = me.avatar_url.clone();
+                lock(&shared).me = Some(me);
+                if !avatar.is_empty() {
+                    load_pictures(&weak, &shared, &client, vec![avatar], ICON_EDGE);
+                }
+            }
+            Err(Error::Api { status: 401, .. }) => {
+                let _ = Account::delete(&Keyring, &api);
+                lock(&shared).me = None;
+            }
+            // The platform is away: the saved name stays.
+            Err(_) => return,
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+    });
+}
+
+/// Keeps the login name with the account, to show it while the platform cannot be reached.
+fn remember_login_name(api: &str, login: &str) {
+    if let Some(mut account) = Account::load(&Keyring, api)
+        && let Some(session) = account.platform.as_mut()
+        && session.login != login
+    {
+        session.login = login.to_string();
+        let _ = account.save(&Keyring, api);
+    }
+}
+
+/// Logs in through the browser on a thread; the settings show the wait and how it ended.
+fn on_login(ui: &AppWindow, shared: &Shared) {
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (api, client) = {
+        let mut core = lock(shared);
+        if core.login_cancel.is_some() {
+            return;
+        }
+        core.login_cancel = Some(cancel.clone());
+        core.login_error.clear();
+        (core.api_url(), core.client())
+    };
+    refresh(ui, shared);
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let result = login::login(&client, &Keyring, &api, |url| {
+            let _ = open::that(url);
+        }, &cancel);
+        {
+            let mut core = lock(&shared);
+            core.login_cancel = None;
+            core.login_error = match &result {
+                Ok(_) | Err(login::LoginError::Cancelled) => String::new(),
+                Err(e) => e.to_string(),
+            };
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            if result.is_ok() {
+                load_account(&ui, &shared);
+            } else {
+                refresh(&ui, &shared);
+            }
+        });
+    });
+}
+
+fn on_login_cancel(ui: &AppWindow, shared: &Shared) {
+    if let Some(cancel) = lock(shared).login_cancel.as_ref() {
+        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    refresh(ui, shared);
+}
+
+/// Logs out on a thread: the platform ends the session if it answers, the keyring forgets it.
+fn on_logout(ui: &AppWindow, shared: &Shared) {
+    let (api, client) = {
+        let mut core = lock(shared);
+        core.me = None;
+        core.login_error.clear();
+        (core.api_url(), core.client())
+    };
+    refresh(ui, shared);
+    std::thread::spawn(move || {
+        let _ = login::logout(&client, &Keyring, &api);
+    });
 }
 
 fn on_setup_confirm(ui: &AppWindow, shared: &Shared) {
@@ -2221,6 +2346,9 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
         }
     });
     on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
+    on!(on_login, |ui, shared| on_login(&ui, shared));
+    on!(on_login_cancel, |ui, shared| on_login_cancel(&ui, shared));
+    on!(on_logout, |ui, shared| on_logout(&ui, shared));
     on!(on_toast_dismiss, |ui, shared, id| {
         lock(shared).toasts.dismiss(id);
         refresh(&ui, shared);
@@ -2321,6 +2449,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
         check_updates(&ui, &shared);
         fetch_icons(&ui, &shared);
     }
+    load_account(&ui, &shared);
     let (weak, linked) = (ui.as_weak(), shared.clone());
     deep_link::listen(move |id| {
         let shared = linked.clone();
@@ -3061,6 +3190,41 @@ mod layout_tests {
             assert!(at.x + size.width > window.width / 2.0 && at.y + size.height > window.height / 2.0, "bottom right: {at:?} in {window:?}");
             ElementHandle::find_by_accessible_label(&ui, "Close message").next().unwrap().mock_single_click(PointerEventButton::Left);
             assert_eq!(closed.get(), 7, "the X closes it");
+        }
+
+        #[test]
+        fn the_github_account_logs_in_waits_and_logs_out() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let (logins, cancels, logouts) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+            let (l, c, o) = (logins.clone(), cancels.clone(), logouts.clone());
+            ui.on_login(move || l.set(l.get() + 1));
+            ui.on_login_cancel(move || c.set(c.get() + 1));
+            ui.on_logout(move || o.set(o.get() + 1));
+            ui.set_page(2);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            find("Log in with GitHub").expect("logged out: a login button").invoke_accessible_default_action();
+            assert_eq!(logins.get(), 1);
+
+            ui.set_account_busy(true);
+            assert!(find("Log in with GitHub").is_none(), "no second login while the browser is open");
+            find("Cancel").expect("the wait can be cancelled").invoke_accessible_default_action();
+            assert_eq!(cancels.get(), 1);
+
+            ui.set_account_busy(false);
+            ui.set_account_error("Port 47616 is in use by another program, so the login cannot come back".into());
+            assert!(find("Error: Port 47616 is in use by another program, so the login cannot come back").is_some(), "the reason stands under the row");
+
+            ui.set_account_error("".into());
+            ui.set_account_login("octo".into());
+            assert!(find("octo").is_some(), "the login name");
+            find("Log out").expect("logged in: a logout button").invoke_accessible_default_action();
+            assert_eq!(logouts.get(), 1);
         }
 
         #[test]

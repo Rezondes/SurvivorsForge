@@ -685,6 +685,19 @@ pub struct Comment {
 }
 
 /// A page of comments, newest first, and the id to ask older ones `before`, if any.
+/// The logged-in user as `/v1/me` names them.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Me {
+    pub login: String,
+    pub avatar_url: String,
+}
+
+pub fn parse_me(json: &str) -> Option<Me> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let login = v["login"].as_str().filter(|l| !l.is_empty())?.to_string();
+    Some(Me { login, avatar_url: v["avatar_url"].as_str().unwrap_or_default().to_string() })
+}
+
 pub fn comments_page(json: &str) -> Option<(Vec<Comment>, Option<i64>)> {
     let list: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
     let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
@@ -1509,6 +1522,14 @@ mod tests {
 
     fn comment(id: i64, parent: Option<i64>) -> Comment {
         Comment { id, parent_id: parent, author: format!("u{id}"), body: format!("text {id}"), ..Comment::default() }
+    }
+
+    #[test]
+    fn me_answer_gives_login_and_avatar() {
+        let me = parse_me(r#"{"id":1,"github_id":9,"login":"octo","avatar_url":"https://avatars.test/9","role":"user"}"#);
+        assert_eq!(me, Some(Me { login: "octo".into(), avatar_url: "https://avatars.test/9".into() }));
+        assert_eq!(parse_me(r#"{"error":"unauthorized"}"#), None);
+        assert_eq!(parse_me("not json"), None);
     }
 
     #[test]

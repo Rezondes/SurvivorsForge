@@ -3,7 +3,7 @@ import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
-    IssueLine, IssuesView, VersionLine, VersionsView
+    IssueLine, IssuesView, VersionLine, VersionsView, AddonIcon
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
@@ -207,6 +207,16 @@ component SettingsView inherits VerticalLayout {
     in-out property <bool> send-install-id;
     // Install checked updates of every addon on their own.
     in-out property <bool> auto-update;
+    // The GitHub login on the platform: the login name while logged in, else empty.
+    in property <string> account-login;
+    in property <string> account-initial;
+    in property <image> account-avatar;
+    // The browser is open for the login; Cancel stops waiting.
+    in property <bool> account-busy;
+    in property <string> account-error;
+    callback login();
+    callback login-cancel();
+    callback logout();
     callback browse();
     // Tick boxes and the dropdown save at once, text fields on Enter, when they lose focus and
     // when the page is left: not on every key.
@@ -279,6 +289,53 @@ component SettingsView inherits VerticalLayout {
     }
     if root.web-error != "" : FieldError { text: root.web-error; }
     FieldHint { text: "Empty uses the built-in website."; }
+    SettingRow {
+        label: "GitHub account";
+        if root.account-login != "" : HorizontalLayout {
+            spacing: 10px;
+            AddonIcon {
+                width: 32px;
+                height: 32px;
+                icon: root.account-avatar;
+                initial: root.account-initial;
+            }
+            Text {
+                text: root.account-login;
+                font-size: Theme.body;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            ActionButton {
+                text: "Log out";
+                clicked => { root.logout(); }
+            }
+        }
+        if root.account-login == "" && !root.account-busy : ActionButton {
+            text: "Log in with GitHub";
+            // Game Mode opens no browser.
+            enabled: !root.game-mode;
+            clicked => { root.login(); }
+        }
+        if root.account-busy : HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: "Waiting for the browser...";
+                font-size: Theme.body;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+            ActionButton {
+                text: "Cancel";
+                clicked => { root.login-cancel(); }
+            }
+        }
+    }
+    if root.account-error != "" : FieldError { text: root.account-error; }
+    FieldHint {
+        text: root.game-mode && root.account-login == ""
+            ? "Log in from the desktop: Game Mode opens no browser."
+            : "Optional. Lets you write comments and issues from the launcher, as on the website.";
+    }
     SettingRow {
         label: "Statistics";
         VerticalLayout {
@@ -536,6 +593,14 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-telemetry;
     in-out property <bool> settings-send-install-id;
     in-out property <bool> settings-auto-update;
+    in property <string> account-login;
+    in property <string> account-initial;
+    in property <image> account-avatar;
+    in property <bool> account-busy;
+    in property <string> account-error;
+    callback login();
+    callback login-cancel();
+    callback logout();
     callback settings-browse();
     callback settings-save();
 
@@ -1078,6 +1143,14 @@ export component AppWindow inherits Window {
                         telemetry <=> root.settings-telemetry;
                         send-install-id <=> root.settings-send-install-id;
                         auto-update <=> root.settings-auto-update;
+                        account-login: root.account-login;
+                        account-initial: root.account-initial;
+                        account-avatar: root.account-avatar;
+                        account-busy: root.account-busy;
+                        account-error: root.account-error;
+                        login => { root.login(); }
+                        login-cancel => { root.login-cancel(); }
+                        logout => { root.logout(); }
                         version: root.app-version;
                         file-dialog: root.file-dialog;
                         game-mode: root.game-mode;
