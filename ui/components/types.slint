@@ -85,6 +85,13 @@ export struct IssueLine {
     date: string,
 }
 
+// A reply under an issue, shown in the launcher's issue view.
+export struct IssueReplyRow {
+    author: string,
+    date: string,
+    body: string,
+}
+
 // A version on the detail view's Versions tab.
 export struct VersionLine {
     tag: string,

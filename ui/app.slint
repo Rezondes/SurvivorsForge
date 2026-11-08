@@ -3,11 +3,11 @@ import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
-    IssueLine, IssuesView, VersionLine, VersionsView, AddonIcon
+    IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, VersionLine }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine }
 export { Splash } from "splash.slint";
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
@@ -558,6 +558,27 @@ export component AppWindow inherits Window {
     in property <int> issues-open;
     in property <bool> issues-loading;
     in property <bool> issues-failed;
+    in property <int> issues-mode;
+    in-out property <int> issues-new-kind;
+    in-out property <string> issues-new-title;
+    in-out property <string> issues-new-body;
+    in property <bool> issues-sending;
+    in property <string> issues-send-error;
+    in property <int> issue-number;
+    in property <string> issue-title;
+    in property <string> issue-meta;
+    in property <string> issue-body;
+    in property <bool> issue-closed;
+    in property <bool> issue-locked;
+    in property <[IssueReplyRow]> issue-replies;
+    in property <bool> issue-loading;
+    in property <bool> issue-failed;
+    in-out property <string> issue-reply-draft;
+    callback issue-show(int);
+    callback issues-back();
+    callback issues-new();
+    callback issues-submit();
+    callback issue-send-reply();
     in property <[VersionLine]> versions-rows;
     in property <bool> versions-loading;
     in property <bool> versions-failed;
@@ -976,6 +997,30 @@ export component AppWindow inherits Window {
                         loading: root.issues-loading;
                         failed: root.issues-failed;
                         links-enabled: !root.game-mode;
+                        logged-in: root.account-login != "";
+                        writable: root.detail.issues-ready;
+                        mode: root.issues-mode;
+                        new-kind <=> root.issues-new-kind;
+                        new-title <=> root.issues-new-title;
+                        new-body <=> root.issues-new-body;
+                        sending: root.issues-sending;
+                        send-error: root.issues-send-error;
+                        issue-number: root.issue-number;
+                        issue-title: root.issue-title;
+                        issue-meta: root.issue-meta;
+                        issue-body: root.issue-body;
+                        issue-closed: root.issue-closed;
+                        issue-locked: root.issue-locked;
+                        replies: root.issue-replies;
+                        issue-loading: root.issue-loading;
+                        issue-failed: root.issue-failed;
+                        reply-draft <=> root.issue-reply-draft;
+                        show(number) => { root.issue-show(number); }
+                        back => { root.issues-back(); }
+                        new-issue => { root.issues-new(); }
+                        submit => { root.issues-submit(); }
+                        send-reply => { root.issue-send-reply(); }
+                        login => { root.login(); }
                         open(number) => { root.detail-link(number == 0 ? "issues" : "issues/" + number); }
                         report => { root.detail-link("bug"); }
                         retry => { root.detail-retry(2); }

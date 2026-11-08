@@ -1,6 +1,7 @@
 import { Theme } from "../theme.slint";
-import { IssueLine, VersionLine } from "types.slint";
+import { IssueLine, IssueReplyRow, VersionLine } from "types.slint";
 import { ActionButton, LinkButton } from "buttons.slint";
+import { Field, TextArea, Dropdown } from "fields.slint";
 import { ScrollPanel } from "layout.slint";
 import { Pill, Placeholder } from "addon-parts.slint";
 
@@ -42,21 +43,219 @@ export component ListState inherits VerticalLayout {
     }
 }
 
-// The Issues tab: the open issues, each opening on the website, where writing needs its login.
+// Text that wraps inside a layout: a Rectangle around it, a HorizontalLayout would measure one line.
+component Prose inherits Rectangle {
+    in property <string> text;
+    in property <color> text-color: Theme.text;
+    height: body.preferred-height;
+    body := Text {
+        width: parent.width;
+        text: root.text;
+        font-size: Theme.body;
+        color: root.text-color;
+        wrap: word-wrap;
+    }
+}
+
+// A title, a text and the error under them: the form for a new issue, in the Issues tab.
+component NewIssueForm inherits VerticalLayout {
+    in-out property <int> kind;
+    in-out property <string> title;
+    in-out property <string> body;
+    in property <bool> sending;
+    in property <string> error;
+    callback cancel();
+    callback submit();
+
+    spacing: 10px;
+    HorizontalLayout {
+        spacing: 12px;
+        Text {
+            text: "New issue";
+            font-size: Theme.body;
+            color: Theme.gold;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        LinkButton {
+            text: "Back to the issues";
+            clicked => { root.cancel(); }
+        }
+    }
+    Dropdown {
+        label: "Kind of issue";
+        model: ["Choose the kind", "Bug report", "Feature request", "Question"];
+        current-index <=> root.kind;
+    }
+    Field {
+        text <=> root.title;
+        placeholder: "Title";
+        label: "Issue title";
+        enabled: !root.sending;
+    }
+    TextArea {
+        text <=> root.body;
+        placeholder: "What happens, and what did you expect?";
+        label: "Issue description";
+        enabled: !root.sending;
+    }
+    if root.error != "" : Text {
+        text: "Error: " + root.error;
+        font-size: Theme.meta;
+        color: Theme.danger;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        alignment: end;
+        ActionButton {
+            text: root.sending ? "Sending" : "Create issue";
+            primary: true;
+            enabled: !root.sending;
+            clicked => { root.submit(); }
+        }
+    }
+}
+
+// The Issues tab: the open issues; one opens here with its replies. Logged in with GitHub, issues
+// are written and answered here when the addon takes them on the platform (`writable`).
 export component IssuesView inherits VerticalLayout {
     in property <[IssueLine]> rows;
     in property <int> open-count;
     in property <bool> loading;
     in property <bool> failed;
     in property <bool> links-enabled: true;
-    // An issue's number, or 0 for the whole list on the website.
+    in property <bool> logged-in;
+    in property <bool> writable;
+    // 0 the list, 1 the form for a new issue, 2 one issue.
+    in property <int> mode;
+    in-out property <int> new-kind;
+    in-out property <string> new-title;
+    in-out property <string> new-body;
+    in property <bool> sending;
+    in property <string> send-error;
+    // The issue shown (`mode` 2).
+    in property <int> issue-number;
+    in property <string> issue-title;
+    in property <string> issue-meta;
+    in property <string> issue-body;
+    in property <bool> issue-closed;
+    in property <bool> issue-locked;
+    in property <[IssueReplyRow]> replies;
+    in property <bool> issue-loading;
+    in property <bool> issue-failed;
+    in-out property <string> reply-draft;
+    // An issue's number, or 0 for the whole list, on the website.
     callback open(int);
     callback report();
     callback retry();
+    // Shows an issue here.
+    callback show(int);
+    callback back();
+    callback new-issue();
+    callback submit();
+    callback send-reply();
+    callback login();
 
     spacing: 12px;
 
-    HorizontalLayout {
+    if root.mode == 1 : NewIssueForm {
+        vertical-stretch: 1;
+        kind <=> root.new-kind;
+        title <=> root.new-title;
+        body <=> root.new-body;
+        sending: root.sending;
+        error: root.send-error;
+        cancel => { root.back(); }
+        submit => { root.submit(); }
+    }
+
+    if root.mode == 2 : HorizontalLayout {
+        spacing: 12px;
+        LinkButton {
+            text: "< All issues";
+            clicked => { root.back(); }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        LinkButton {
+            text: "Open on the website";
+            clicked => { root.open(root.issue-number); }
+        }
+    }
+    if root.mode == 2 : ScrollPanel {
+        vertical-stretch: 1;
+        spacing: 12px;
+        ListState {
+            loading: root.issue-loading;
+            failed: root.issue-failed;
+            empty: false;
+            what: "issue";
+            none: "";
+            retry => { root.show(root.issue-number); }
+        }
+        if !root.issue-loading && !root.issue-failed : VerticalLayout {
+            spacing: 12px;
+            Prose {
+                text: root.issue-title + " #" + root.issue-number;
+                text-color: Theme.gold-heading;
+            }
+            Text {
+                text: (root.issue-closed ? "Closed. " : "Open. ") + root.issue-meta;
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
+            Prose { text: root.issue-body; }
+            for reply in root.replies : Rectangle {
+                background: Theme.field;
+                border-width: 1px;
+                border-color: Theme.line;
+                border-radius: Theme.radius;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 6px;
+                    Text {
+                        text: reply.author + " · " + reply.date;
+                        font-size: Theme.meta;
+                        color: Theme.gold;
+                    }
+                    Prose { text: reply.body; }
+                }
+            }
+            if root.writable && root.logged-in && !root.issue-locked : VerticalLayout {
+                spacing: 8px;
+                TextArea {
+                    text <=> root.reply-draft;
+                    placeholder: "Your reply";
+                    label: "Your reply";
+                    enabled: !root.sending;
+                }
+                if root.send-error != "" : Text {
+                    text: "Error: " + root.send-error;
+                    font-size: Theme.meta;
+                    color: Theme.danger;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    ActionButton {
+                        text: root.sending ? "Sending" : "Send reply";
+                        primary: true;
+                        enabled: !root.sending && root.reply-draft != "";
+                        clicked => { root.send-reply(); }
+                    }
+                }
+            }
+            if root.writable && !root.logged-in : HorizontalLayout {
+                alignment: start;
+                ActionButton {
+                    text: "Log in to write";
+                    enabled: root.links-enabled;
+                    clicked => { root.login(); }
+                }
+            }
+        }
+    }
+
+    if root.mode == 0 : HorizontalLayout {
         spacing: 12px;
         Text {
             text: root.loading ? "Open issues" : root.open-count == 1 ? "1 open issue" : root.open-count + " open issues";
@@ -69,13 +268,22 @@ export component IssuesView inherits VerticalLayout {
             text: "All issues on the website";
             clicked => { root.open(0); }
         }
-        ActionButton {
+        if root.writable && root.logged-in : ActionButton {
+            text: "New issue";
+            clicked => { root.new-issue(); }
+        }
+        if root.writable && !root.logged-in : ActionButton {
+            text: "Log in to write";
+            enabled: root.links-enabled;
+            clicked => { root.login(); }
+        }
+        if !root.writable : ActionButton {
             text: "Report a bug";
             enabled: root.links-enabled;
             clicked => { root.report(); }
         }
     }
-    ScrollPanel {
+    if root.mode == 0 : ScrollPanel {
         vertical-stretch: 1;
         spacing: 6px;
         ListState {
@@ -89,12 +297,12 @@ export component IssuesView inherits VerticalLayout {
         for issue in root.rows : Rectangle {
             accessible-role: button;
             accessible-label: "#" + issue.number + " " + issue.title;
+            accessible-action-default => { root.show(issue.number); }
             height: 52px;
             border-radius: Theme.radius;
-            accessible-enabled: root.links-enabled;
             border-width: open-focus.has-focus ? 2px : 1px;
-            border-color: open-focus.has-focus ? Theme.outline-active : touch.has-hover && root.links-enabled ? Theme.outline-hover : Theme.line;
-            background: touch.has-hover && root.links-enabled ? Theme.row-hover : Theme.row;
+            border-color: open-focus.has-focus ? Theme.outline-active : touch.has-hover ? Theme.outline-hover : Theme.line;
+            background: touch.has-hover ? Theme.row-hover : Theme.row;
             HorizontalLayout {
                 padding-left: 14px;
                 padding-right: 14px;
@@ -124,18 +332,16 @@ export component IssuesView inherits VerticalLayout {
                 }
             }
             touch := TouchArea {
-                enabled: root.links-enabled;
                 mouse-cursor: pointer;
-                clicked => { root.open(issue.number); }
+                clicked => { root.show(issue.number); }
             }
             // Tab reaches it, Space or Return presses it.
             open-focus := FocusScope {
                 width: 0;
                 height: 0;
-                enabled: root.links-enabled;
                 key-pressed(event) => {
                     if (event.text == " " || event.text == Key.Return) {
-                        root.open(issue.number);
+                        root.show(issue.number);
                         return accept;
                     }
                     reject

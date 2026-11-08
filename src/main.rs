@@ -100,12 +100,29 @@ struct Core {
     /// The Issues and Versions tabs of the detail view, once opened.
     issues: Option<Listing<(Vec<controller::IssueLine>, u64)>>,
     versions: Option<Listing<Vec<controller::VersionLine>>>,
+    /// What the Issues tab shows besides the list: the form or one issue.
+    issue_view: IssueView,
     /// The GitHub login on the platform, `None` while logged out.
     me: Option<controller::Me>,
     /// Set while the browser is open for a login; storing `true` stops the wait.
     login_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     /// Why the last login failed; empty after a good one.
     login_error: String,
+}
+
+/// The Issues tab of the detail view beyond its list.
+#[derive(Default)]
+struct IssueView {
+    /// 0 the list, 1 the form for a new issue, 2 one issue.
+    mode: i32,
+    slug: String,
+    number: u64,
+    page: Option<controller::IssuePage>,
+    loading: bool,
+    failed: bool,
+    sending: bool,
+    /// Why the last issue or reply was not sent; the text stays.
+    send_error: String,
 }
 
 /// The comments of one addon loaded so far, and how the next page is coming.
@@ -187,6 +204,7 @@ impl Core {
             comments: None,
             issues: None,
             versions: None,
+            issue_view: IssueView::default(),
             me: None,
             login_cancel: None,
             login_error: String::new(),
@@ -730,6 +748,22 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_issues_open(open);
     ui.set_issues_loading(loading);
     ui.set_issues_failed(failed);
+    let view = &core.issue_view;
+    ui.set_issues_mode(view.mode);
+    ui.set_issues_sending(view.sending);
+    ui.set_issues_send_error(view.send_error.as_str().into());
+    ui.set_issue_number(view.number as i32);
+    ui.set_issue_loading(view.loading);
+    ui.set_issue_failed(view.failed);
+    let page = view.page.clone().unwrap_or_default();
+    ui.set_issue_title(page.title.as_str().into());
+    ui.set_issue_meta(format!("Opened {} by {}", page.date, page.author).into());
+    ui.set_issue_body(page.body.as_str().into());
+    ui.set_issue_closed(page.state == "closed");
+    ui.set_issue_locked(page.locked);
+    let replies: Vec<IssueReplyRow> =
+        page.replies.into_iter().map(|r| IssueReplyRow { author: r.author.into(), date: r.date.into(), body: r.body.into() }).collect();
+    ui.set_issue_replies(ModelRc::new(VecModel::from(replies)));
     let verified_author = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).is_some_and(|a| a.verified_author == Some(true));
     let installed = core.detail.as_ref().and_then(|(id, _)| core.state.get(id)).map(|e| e.version.clone()).unwrap_or_default();
     let held = core.detail.as_ref().is_some_and(|(id, _)| core.config.held.contains(id));
@@ -2356,6 +2390,11 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
     on!(on_login, |ui, shared| on_login(&ui, shared));
     on!(on_comments_send, |ui, shared| on_comment_send(&ui, shared));
+    on!(on_issue_show, |ui, shared, number| on_issue_show(&ui, shared, number));
+    on!(on_issues_back, |ui, shared| on_issues_back(&ui, shared));
+    on!(on_issues_new, |ui, shared| on_issues_new(&ui, shared));
+    on!(on_issues_submit, |ui, shared| on_issues_submit(&ui, shared));
+    on!(on_issue_send_reply, |ui, shared| on_issue_send_reply(&ui, shared));
     on!(on_comments_reply, |ui, shared, id| on_comment_reply(&ui, shared, id));
     on!(on_comments_cancel_reply, |ui, shared| on_comment_cancel_reply(&ui, shared));
     on!(on_login_cancel, |ui, shared| on_login_cancel(&ui, shared));
@@ -2619,7 +2658,10 @@ fn load_detail_list(ui: &AppWindow, shared: &Shared, tab: i32) {
         let mut core = lock(shared);
         let Some(slug) = core.detail.as_ref().and_then(|(id, _)| registry_entry(&core, id)).map(|a| a.id.clone()) else { return };
         match tab {
-            2 => core.issues = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
+            2 => {
+                core.issues = Some(Listing { slug: slug.clone(), rows: None, failed: false });
+                core.issue_view = IssueView { slug: slug.clone(), ..Default::default() };
+            }
             4 => core.versions = Some(Listing { slug: slug.clone(), rows: None, failed: false }),
             _ => return,
         }
@@ -2810,6 +2852,155 @@ fn on_comment_send(ui: &AppWindow, shared: &Shared) {
                 refresh(&ui, &shared);
             }
         });
+    });
+}
+
+/// The addon of the detail view's Issues tab.
+fn issues_slug(core: &Core) -> Option<String> {
+    core.detail.as_ref().and_then(|(id, _)| registry_entry(core, id)).map(|a| a.id.clone())
+}
+
+/// Shows issue `number` in the Issues tab and loads it with its replies on a thread.
+fn on_issue_show(ui: &AppWindow, shared: &Shared, number: i32) {
+    let job = {
+        let mut core = lock(shared);
+        let Some(slug) = issues_slug(&core) else { return };
+        let keep_error = core.issue_view.mode == 2 && core.issue_view.number == number as u64;
+        let send_error = if keep_error { std::mem::take(&mut core.issue_view.send_error) } else { String::new() };
+        core.issue_view = IssueView { mode: 2, slug: slug.clone(), number: number as u64, loading: true, send_error, ..Default::default() };
+        (format!("{}/v1/addons/{slug}/issues/{number}", core.api_url()), core.client(), slug)
+    };
+    refresh(ui, shared);
+    let (url, client, slug) = job;
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let page = client.get_text_quick(&url).ok().and_then(|t| controller::issue_page(&t));
+        {
+            let mut core = lock(&shared);
+            let view = &mut core.issue_view;
+            if view.mode != 2 || view.slug != slug || view.number != number as u64 {
+                return;
+            }
+            view.loading = false;
+            view.failed = page.is_none();
+            view.page = page;
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+    });
+}
+
+fn on_issues_back(ui: &AppWindow, shared: &Shared) {
+    {
+        let mut core = lock(shared);
+        let slug = std::mem::take(&mut core.issue_view.slug);
+        core.issue_view = IssueView { slug, ..Default::default() };
+    }
+    refresh(ui, shared);
+}
+
+fn on_issues_new(ui: &AppWindow, shared: &Shared) {
+    {
+        let mut core = lock(shared);
+        let slug = std::mem::take(&mut core.issue_view.slug);
+        core.issue_view = IssueView { mode: 1, slug, ..Default::default() };
+    }
+    refresh(ui, shared);
+}
+
+/// Posts `body` to `path` of the detail view's addon as the user on GitHub, on a thread: the
+/// GitHub token is renewed first when needed. `done` gets the answer on the UI thread.
+fn post_as_github_user(ui: &AppWindow, shared: &Shared, path: String, body: serde_json::Value, done: fn(&AppWindow, &Shared, String)) {
+    let job = {
+        let mut core = lock(shared);
+        let Some(token) = bearer(&core) else {
+            forget_login(&mut core);
+            drop(core);
+            return refresh(ui, shared);
+        };
+        core.issue_view.sending = true;
+        core.issue_view.send_error.clear();
+        (core.api_url(), core.client(), token, core.issue_view.slug.clone())
+    };
+    refresh(ui, shared);
+    let (api, client, token, slug) = job;
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let reauth = || Error::Api { status: 403, code: "github_reauth".into(), message: "Log in again to post on GitHub".into() };
+        let result = survivorsforge::account::github_access(&client, &Keyring, &api, chrono::Utc::now()).map_err(|_| reauth()).and_then(|github| {
+            client.post_json(&format!("{api}/v1/addons/{slug}/{path}"), Some(&token), &[(survivorsforge::account::GITHUB_TOKEN_HEADER, &github)], &body)
+        });
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            let answer = {
+                let mut core = lock(&shared);
+                if matches!(result, Err(Error::Api { status: 401, .. })) {
+                    forget_login(&mut core);
+                }
+                if core.issue_view.slug != slug {
+                    return;
+                }
+                core.issue_view.sending = false;
+                match result {
+                    Ok(answer) => Some(answer),
+                    Err(Error::Api { status: 401, .. }) => {
+                        core.issue_view.send_error = "Your login ran out. Log in again to write.".into();
+                        None
+                    }
+                    Err(e) => {
+                        core.issue_view.send_error = e.to_string();
+                        None
+                    }
+                }
+            };
+            match answer {
+                Some(answer) => done(&ui, &shared, answer),
+                None => refresh(&ui, &shared),
+            }
+        });
+    });
+}
+
+/// Creates the issue of the form; once created the list reloads and the new issue shows.
+fn on_issues_submit(ui: &AppWindow, shared: &Shared) {
+    let kind = usize::try_from(ui.get_issues_new_kind() - 1).ok().and_then(|i| controller::ISSUE_KINDS.get(i)).map_or("", |(k, _)| k);
+    let body = match controller::issue_body(kind, &ui.get_issues_new_title(), &ui.get_issues_new_body()) {
+        Ok(body) => body,
+        Err(why) => {
+            lock(shared).issue_view.send_error = why.into();
+            return refresh(ui, shared);
+        }
+    };
+    if lock(shared).issue_view.sending {
+        return;
+    }
+    post_as_github_user(ui, shared, "issues".into(), body, |ui, shared, answer| {
+        ui.set_issues_new_kind(0);
+        ui.set_issues_new_title(SharedString::new());
+        ui.set_issues_new_body(SharedString::new());
+        load_detail_list(ui, shared, 2);
+        let number = serde_json::from_str::<serde_json::Value>(&answer).ok().and_then(|v| v["number"].as_i64());
+        if let Some(number) = number {
+            on_issue_show(ui, shared, number as i32);
+        }
+    });
+}
+
+/// Answers the issue shown; the issue reloads with the reply.
+fn on_issue_send_reply(ui: &AppWindow, shared: &Shared) {
+    let text = ui.get_issue_reply_draft().trim().to_string();
+    let number = {
+        let core = lock(shared);
+        if core.issue_view.sending || core.issue_view.mode != 2 {
+            return;
+        }
+        core.issue_view.number
+    };
+    if text.is_empty() {
+        return;
+    }
+    post_as_github_user(ui, shared, format!("issues/{number}/comments"), serde_json::json!({ "body": text }), |ui, shared, _| {
+        ui.set_issue_reply_draft(SharedString::new());
+        let number = lock(shared).issue_view.number;
+        on_issue_show(ui, shared, number as i32);
     });
 }
 
@@ -3389,6 +3580,62 @@ mod layout_tests {
             ui.set_comments_send_error("At most 20 comments an hour, try again later".into());
             assert!(find("Error: At most 20 comments an hour, try again later").is_some(), "why it was not sent");
             assert_eq!(ui.get_comments_draft(), "Thanks!", "the text stays");
+        }
+
+        #[test]
+        fn issues_are_read_here_and_written_when_the_addon_takes_them() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let (shown, news, submits, replies, logins) =
+                (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+            let (s, n, u, r, l) = (shown.clone(), news.clone(), submits.clone(), replies.clone(), logins.clone());
+            ui.on_issue_show(move |number| s.set(number));
+            ui.on_issues_new(move || n.set(n.get() + 1));
+            ui.on_issues_submit(move || u.set(u.get() + 1));
+            ui.on_issue_send_reply(move || r.set(r.get() + 1));
+            ui.on_login(move || l.set(l.get() + 1));
+            ui.set_page(1);
+            ui.set_detail_page(1);
+            ui.set_detail_tab(2);
+            let line = crate::IssueLine { number: 12, title: "Crash on start".into(), author: "kex".into(), comments: 1, date: "2026-11-01".into() };
+            ui.set_issues_rows(slint::ModelRc::new(slint::VecModel::from(vec![line])));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            let Some(row) = find("#12 Crash on start") else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            row.invoke_accessible_default_action();
+            assert_eq!(shown.get(), 12, "an issue opens in the launcher");
+            assert!(find("Report a bug").is_some() && find("New issue").is_none(), "the addon takes no issues here: GitHub's way");
+
+            let mut detail = ui.get_detail();
+            detail.issues_ready = true;
+            ui.set_detail(detail);
+            find("Log in to write").expect("logged out: a way to log in").invoke_accessible_default_action();
+            assert_eq!(logins.get(), 1);
+            ui.set_account_login("octo".into());
+            find("New issue").expect("logged in: a new issue").invoke_accessible_default_action();
+            assert_eq!(news.get(), 1);
+
+            ui.set_issues_mode(1);
+            assert!(find("Issue title").is_some() && find("Issue description").is_some(), "the form");
+            find("Create issue").unwrap().invoke_accessible_default_action();
+            assert_eq!(submits.get(), 1);
+            ui.set_issues_send_error("Give the issue a title".into());
+            assert!(find("Error: Give the issue a title").is_some());
+
+            ui.set_issues_mode(2);
+            ui.set_issues_send_error("".into());
+            ui.set_issue_number(12);
+            ui.set_issue_title("Crash on start".into());
+            ui.set_issue_body("It crashes.".into());
+            let reply = crate::IssueReplyRow { author: "kex".into(), date: "2026-11-02".into(), body: "Same here".into() };
+            ui.set_issue_replies(slint::ModelRc::new(slint::VecModel::from(vec![reply])));
+            assert!(find("It crashes.").is_some() && find("Same here").is_some(), "the issue with its replies");
+            ui.set_issue_reply_draft("Fixed?".into());
+            find("Send reply").unwrap().invoke_accessible_default_action();
+            assert_eq!(replies.get(), 1);
         }
 
         #[test]

@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 const SERVICE: &str = "SurvivorsForge";
+/// The header the platform takes the user's GitHub token in, for writes on GitHub as them.
+pub const GITHUB_TOKEN_HEADER: &str = "x-github-token";
 
 /// A login on the platform: the API's bearer token.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

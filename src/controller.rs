@@ -598,6 +598,63 @@ pub fn issue_lines(json: &str) -> Option<(Vec<IssueLine>, u64)> {
     Some((issues.collect(), v["counts"]["open"].as_u64().unwrap_or_default()))
 }
 
+/// The kinds of a new issue as the platform takes them, with their names in the form.
+pub const ISSUE_KINDS: [(&str, &str); 3] = [("bug", "Bug report"), ("feature", "Feature request"), ("question", "Question")];
+
+/// The body of `POST /v1/addons/{slug}/issues`; what is missing is refused before any request.
+pub fn issue_body(kind: &str, title: &str, body: &str) -> Result<serde_json::Value, &'static str> {
+    if !ISSUE_KINDS.iter().any(|(k, _)| *k == kind) {
+        return Err("Choose a bug report, a feature request or a question");
+    }
+    let (title, body) = (title.trim(), body.trim());
+    if title.is_empty() {
+        return Err("Give the issue a title");
+    }
+    if body.is_empty() {
+        return Err("Describe the issue");
+    }
+    Ok(serde_json::json!({ "kind": kind, "title": title, "body": body }))
+}
+
+/// One issue with its replies, as `/v1/addons/{slug}/issues/{number}` gives it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct IssuePage {
+    pub number: u64,
+    pub title: String,
+    /// `open` or `closed`.
+    pub state: String,
+    pub author: String,
+    pub date: String,
+    pub body: String,
+    pub locked: bool,
+    pub replies: Vec<IssueReply>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct IssueReply {
+    pub author: String,
+    pub date: String,
+    pub body: String,
+}
+
+pub fn issue_page(json: &str) -> Option<IssuePage> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let day = |v: &serde_json::Value| v.as_str().unwrap_or_default().chars().take(10).collect::<String>();
+    let i = &v["issue"];
+    let replies = v["replies"].as_array().into_iter().flatten().map(|r| IssueReply { author: text(&r["author"]["login"]), date: day(&r["created_at"]), body: text(&r["body"]) });
+    Some(IssuePage {
+        number: i["number"].as_u64()?,
+        title: text(&i["title"]),
+        state: text(&i["state"]),
+        author: text(&i["author"]["login"]),
+        date: day(&i["created_at"]),
+        body: text(&i["body"]),
+        locked: i["locked"] == true,
+        replies: replies.collect(),
+    })
+}
+
 /// A version on the detail view's Versions tab.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VersionLine {
@@ -1535,6 +1592,26 @@ mod tests {
 
     fn comment(id: i64, parent: Option<i64>) -> Comment {
         Comment { id, parent_id: parent, author: format!("u{id}"), body: format!("text {id}"), ..Comment::default() }
+    }
+
+    #[test]
+    fn issue_body_needs_kind_and_title() {
+        assert_eq!(issue_body("bug", " Crash on start ", " It crashes.\n"), Ok(serde_json::json!({ "kind": "bug", "title": "Crash on start", "body": "It crashes." })));
+        assert_eq!(issue_body("", "t", "b"), Err("Choose a bug report, a feature request or a question"));
+        assert_eq!(issue_body("rant", "t", "b"), Err("Choose a bug report, a feature request or a question"));
+        assert_eq!(issue_body("question", "  ", "b"), Err("Give the issue a title"));
+        assert_eq!(issue_body("feature", "t", " "), Err("Describe the issue"));
+    }
+
+    #[test]
+    fn issue_page_reads_issue_and_replies() {
+        let json = r#"{"issues_here":true,"issue":{"number":12,"title":"Crash","state":"open","locked":false,"author":{"login":"kex","avatar_url":""},"created_at":"2026-11-01T10:00:00Z","body":"It crashes."},
+            "replies":[{"id":1,"author":{"login":"octo","avatar_url":""},"body":"Fixed in v2","created_at":"2026-11-02T08:00:00Z"}]}"#;
+        let page = issue_page(json).unwrap();
+        assert_eq!((page.number, page.title.as_str(), page.state.as_str(), page.author.as_str(), page.date.as_str()), (12, "Crash", "open", "kex", "2026-11-01"));
+        assert_eq!(page.body, "It crashes.");
+        assert_eq!(page.replies, vec![IssueReply { author: "octo".into(), date: "2026-11-02".into(), body: "Fixed in v2".into() }]);
+        assert_eq!(issue_page(r#"{"error":"not_found"}"#), None);
     }
 
     #[test]
