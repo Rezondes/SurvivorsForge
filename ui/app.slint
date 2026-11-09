@@ -596,14 +596,20 @@ component SettingsView inherits VerticalLayout {
                     }
                 }
             }
+            // As tall as the dropdown whether it shows or not, the box centred beside its label: the
+            // line keeps its height and place when the box is ticked.
             HorizontalLayout {
                 spacing: 10px;
-                PickBox {
-                    label: "Look for updates while the launcher is open";
-                    checked: root.periodic-check;
-                    toggled => {
-                        root.periodic-check = !root.periodic-check;
-                        root.save();
+                height: Theme.touch ? 44px : 38px;
+                VerticalLayout {
+                    alignment: center;
+                    PickBox {
+                        label: "Look for updates while the launcher is open";
+                        checked: root.periodic-check;
+                        toggled => {
+                            root.periodic-check = !root.periodic-check;
+                            root.save();
+                        }
                     }
                 }
                 TickLabel {

@@ -4742,12 +4742,20 @@ mod layout_tests {
                 return;
             };
             assert_eq!(choice.accessible_value().as_deref(), Some("every 30 minutes"), "the default");
-            ElementHandle::find_by_accessible_label(&ui, "Look for updates while the launcher is open")
-                .find(|e| e.accessible_role() == Some(AccessibleRole::Checkbox))
-                .expect("the switch")
-                .mock_single_click(PointerEventButton::Left);
+            let switch = || {
+                ElementHandle::find_by_accessible_label(&ui, "Look for updates while the launcher is open")
+                    .find(|e| e.accessible_role() == Some(AccessibleRole::Checkbox))
+                    .expect("the switch")
+            };
+            let middle = |e: &ElementHandle| e.absolute_position().y + e.size().height / 2.0;
+            let (box_on, choice_on) = (middle(&switch()), middle(&choice));
+            assert!((box_on - choice_on).abs() < 1.0, "the box sits in the middle of the line: {box_on} vs {choice_on}");
+            let next = middle(&ElementHandle::find_by_accessible_label(&ui, "Profile name").next().expect("the next row"));
+            switch().mock_single_click(PointerEventButton::Left);
             assert!(!ui.get_settings_periodic_check());
             assert!(often().is_none(), "off: no time to choose");
+            assert_eq!(middle(&switch()), box_on, "the box stays where it was");
+            assert_eq!(middle(&ElementHandle::find_by_accessible_label(&ui, "Profile name").next().unwrap()), next, "the line keeps its height");
         }
 
         #[test]
