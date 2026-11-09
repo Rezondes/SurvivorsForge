@@ -244,6 +244,10 @@ component SettingsView inherits VerticalLayout {
     in-out property <bool> sync-profiles;
     // The backups of the addon settings, newest first, and how many stay.
     in property <[BackupLine]> backups;
+    // All the backups there are; `backups` holds the newest 3 unless all are shown.
+    in property <int> backups-total;
+    in-out property <bool> backups-all;
+    callback backups-toggled();
     in property <[string]> backups-kept-labels;
     in-out property <int> backups-kept-index;
     callback backup-restore(int);
@@ -579,6 +583,16 @@ component SettingsView inherits VerticalLayout {
                     text: "Restore";
                     accessible-label: "Restore the backup of " + line.when;
                     clicked => { root.backup-restore(index); }
+                }
+            }
+            if root.backups-total > 3 : HorizontalLayout {
+                alignment: start;
+                LinkButton {
+                    text: root.backups-all ? "Show the newest 3" : "Show all " + root.backups-total + " backups";
+                    clicked => {
+                        root.backups-all = !root.backups-all;
+                        root.backups-toggled();
+                    }
                 }
             }
         }
@@ -1108,6 +1122,9 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-periodic-check: true;
     in-out property <bool> settings-update-disabled: true;
     in property <[BackupLine]> settings-backups;
+    in property <int> settings-backups-total;
+    in-out property <bool> settings-backups-all;
+    callback backups-toggled();
     in property <[ProfileLine]> settings-profiles;
     in-out property <string> settings-profile-name;
     in property <string> settings-profile-error;
@@ -1760,6 +1777,9 @@ export component AppWindow inherits Window {
                             check-labels: root.settings-check-labels;
                             check-index <=> root.settings-check-index;
                             backups: root.settings-backups;
+                            backups-total: root.settings-backups-total;
+                            backups-all <=> root.settings-backups-all;
+                            backups-toggled => { root.backups-toggled(); }
                             profiles: root.settings-profiles;
                             profile-name <=> root.settings-profile-name;
                             profile-error: root.settings-profile-error;

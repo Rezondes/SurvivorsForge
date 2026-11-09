@@ -2723,13 +2723,16 @@ fn on_profile_delete(ui: &AppWindow, shared: &Shared, index: usize) {
 }
 
 /// The backups of the addon settings in the settings, newest first.
+/// The newest 3, or all of them once the user asked for all: up to 50 are kept.
 fn fill_backups(ui: &AppWindow, core: &Core) {
-    let rows: Vec<BackupLine> = backup::game_config_dir(core.addons_dir())
-        .map(backup::list)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|b| BackupLine { when: b.when.into(), size: format!("{:.1} MB", b.bytes as f64 / 1_048_576.0).into() })
+    let all = backup::game_config_dir(core.addons_dir()).map(backup::list).unwrap_or_default();
+    let shown = if ui.get_settings_backups_all() { all.len() } else { 3 };
+    let rows: Vec<BackupLine> = all
+        .iter()
+        .take(shown)
+        .map(|b| BackupLine { when: b.when.clone().into(), size: format!("{:.1} MB", b.bytes as f64 / 1_048_576.0).into() })
         .collect();
+    ui.set_settings_backups_total(all.len() as i32);
     ui.set_settings_backups(ModelRc::new(VecModel::from(rows)));
 }
 
@@ -3288,6 +3291,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_toast_action, |ui, shared, id| on_undo_remove(&ui, shared, id));
     on!(on_row_toggle, |ui, shared, id| on_row_toggle(&ui, shared, id.to_string()));
     on!(on_backup_restore, |ui, shared, index| on_backup_restore(&ui, shared, index.max(0) as usize));
+    on!(on_backups_toggled, |ui, shared| fill_backups(&ui, &lock(shared)));
     on!(on_profile_save, |ui, shared| on_profile_save(&ui, shared));
     on!(on_profile_apply, |ui, shared, index| on_profile_apply(&ui, shared, index.max(0) as usize));
     on!(on_profile_delete, |ui, shared, index| on_profile_delete(&ui, shared, index.max(0) as usize));
@@ -4920,6 +4924,14 @@ mod layout_tests {
             let line = |when: &str| crate::BackupLine { when: when.into(), size: "0.2 MB".into() };
             ui.set_settings_backups(slint::ModelRc::new(slint::VecModel::from(vec![line("2026-11-09 14:03:12"), line("2026-11-08 09:00:00")])));
             assert!(find("No backups yet.").is_none());
+            assert!(find("Show all 2 backups").is_none(), "3 or fewer: nothing folded away");
+            let toggled = Rc::new(Cell::new(0));
+            let t = toggled.clone();
+            ui.on_backups_toggled(move || t.set(t.get() + 1));
+            ui.set_settings_backups_total(12);
+            find("Show all 12 backups").expect("more than 3: a way to the rest").invoke_accessible_default_action();
+            assert!(ui.get_settings_backups_all() && toggled.get() == 1);
+            assert!(find("Show the newest 3").is_some(), "and back");
             find("Restore the backup of 2026-11-08 09:00:00").expect("each backup can be restored").invoke_accessible_default_action();
             assert_eq!(restored.get(), 1);
         }
