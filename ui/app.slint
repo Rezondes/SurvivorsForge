@@ -913,6 +913,8 @@ export component AppWindow inherits Window {
     // Running work and how it ended, bottom right (crates/slint-toast).
     in property <[Toast]> toasts;
     callback toast-dismiss(int);
+    // A zip is dragged over the window: dropping it installs it.
+    in-out property <bool> drop-hover;
     callback toast-action(int);
 
     // The results of "Update all" and of updates that installed on their own; empty: closed.
@@ -1766,6 +1768,20 @@ export component AppWindow inherits Window {
             shots: root.zoom-shots;
             index <=> root.zoom-index;
             close => { root.zoom-open = false; }
+        }
+
+        if root.drop-hover : Rectangle {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            background: Theme.overlay;
+            border-width: 2px;
+            border-color: Theme.gold;
+            Text {
+                text: "Drop the zip to install it";
+                font-size: 24px;
+                color: Theme.gold-heading;
+            }
         }
 
         if root.results-open : Overlay {

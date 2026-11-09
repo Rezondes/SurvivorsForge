@@ -1045,6 +1045,11 @@ pub fn is_new(id: &str, seen: &[String]) -> bool {
     !seen.is_empty() && !seen.iter().any(|s| s == id)
 }
 
+/// Whether a file dragged onto the window is a zip the launcher can install.
+pub fn is_zip(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) && !path.is_dir()
+}
+
 /// How many of the updates `after` a check were not there `before` it.
 pub fn new_updates(before: &[String], after: &[String]) -> usize {
     after.iter().filter(|id| !before.contains(id)).count()
@@ -1178,6 +1183,18 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn only_a_zip_file_can_be_dropped() {
+        use std::path::Path;
+        assert!(is_zip(Path::new("C:/Downloads/Lucky-1.2.ZIP")));
+        assert!(!is_zip(Path::new("C:/Downloads/Lucky.rar")));
+        assert!(!is_zip(Path::new("C:/Downloads/Lucky")));
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("odd.zip");
+        std::fs::create_dir(&folder).unwrap();
+        assert!(!is_zip(&folder), "a folder named like a zip");
+    }
 
     #[test]
     fn new_is_what_was_not_there_at_the_last_close() {

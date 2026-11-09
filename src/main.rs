@@ -1967,6 +1967,25 @@ fn on_install_zip(ui: &AppWindow, shared: &Shared) {
         return;
     }
     let Some(file) = rfd::FileDialog::new().add_filter("Zip archive", &["zip"]).pick_file() else { return };
+    install_zip_from(ui, shared, file);
+}
+
+/// A file dragged onto the window: a zip installs as with "Install zip", anything else says why
+/// not. Not while a dialog is open, in the first setup or in Game Mode.
+fn on_file_dropped(ui: &AppWindow, shared: &Shared, file: PathBuf) {
+    ui.set_drop_hover(false);
+    if ui.get_game_mode() || ui.get_needs_setup() || ui.get_confirm_open() || ui.get_repo_open() {
+        return;
+    }
+    if !controller::is_zip(&file) {
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        lock(shared).notify(format!("Only .zip files can be installed, not {name}"), Kind::Error);
+        return refresh(ui, shared);
+    }
+    install_zip_from(ui, shared, file);
+}
+
+fn install_zip_from(ui: &AppWindow, shared: &Shared, file: PathBuf) {
     let detected = match archive::analyze(&file).map_err(Error::from) {
         Ok(detected) => detected,
         Err(e) => {
@@ -3126,6 +3145,30 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     if !needs_setup {
         check_updates(&ui, &shared);
         fetch_icons(&ui, &shared);
+    }
+    // A zip dragged from the file manager onto the window installs (Windows, macOS, X11; winit
+    // brings no file drops under Wayland).
+    if !game_mode {
+        let (weak, s) = (ui.as_weak(), shared.clone());
+        ui.window().on_winit_window_event(move |_, event| {
+            use slint::winit_030::winit::event::WindowEvent as W;
+            let Some(ui) = weak.upgrade() else { return slint::winit_030::EventResult::Propagate };
+            match event {
+                W::HoveredFile(path) => ui.set_drop_hover(controller::is_zip(path)),
+                W::HoveredFileCancelled => ui.set_drop_hover(false),
+                W::DroppedFile(path) => {
+                    let (ui, s, path) = (ui.as_weak(), s.clone(), path.clone());
+                    // Out of winit's event handler: the install may open a dialog.
+                    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                        if let Some(ui) = ui.upgrade() {
+                            on_file_dropped(&ui, &s, path);
+                        }
+                    });
+                }
+                _ => {}
+            }
+            slint::winit_030::EventResult::Propagate
+        });
     }
     // The quiet update check: it looks once a minute whether its time has come.
     {
