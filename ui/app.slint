@@ -392,6 +392,12 @@ component SettingsView inherits VerticalLayout {
                     }
                 }
             }
+            Text {
+                text: "Disabled addons wait in AddOns.disabled beside the AddOns folder. On: their updates install there; off: an update waits until the addon is enabled.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
+            }
             // As tall as the dropdown whether it shows or not, the box centred beside its label: the
             // line keeps its height and place when the box is ticked.
             HorizontalLayout {
