@@ -281,9 +281,13 @@ component SettingsView inherits VerticalLayout {
             accepted => { root.save(); }
             focus-lost => { root.save(); }
         }
-        if root.file-dialog : ActionButton {
-            text: "Browse...";
-            clicked => { root.browse(); }
+        // Centred on the taller field, as the buttons beside the profile fields.
+        if root.file-dialog : VerticalLayout {
+            alignment: center;
+            ActionButton {
+                text: "Browse...";
+                clicked => { root.browse(); }
+            }
         }
     }
     if root.path-error != "" : FieldError { text: root.path-error; }

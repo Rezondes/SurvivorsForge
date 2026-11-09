@@ -4728,6 +4728,23 @@ mod layout_tests {
         }
 
         #[test]
+        fn browse_sits_in_the_middle_of_the_folder_field() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            ui.set_file_dialog(true);
+            ui.set_page(2);
+            ui.show().unwrap();
+            let find = |label: &str, role: AccessibleRole| ElementHandle::find_by_accessible_label(&ui, label).find(|e| e.accessible_role() == Some(role));
+            let Some(field) = find("AddOns folder", AccessibleRole::TextInput) else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let button = find("Browse...", AccessibleRole::Button).expect("the button");
+            let middle = |e: &ElementHandle| e.absolute_position().y + e.size().height / 2.0;
+            assert!((middle(&field) - middle(&button)).abs() < 1.0, "{} vs {}", middle(&field), middle(&button));
+        }
+
+        #[test]
         fn how_often_to_look_shows_while_looking_is_on() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
