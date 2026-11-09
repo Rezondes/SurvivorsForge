@@ -151,13 +151,21 @@ component SetupView inherits Rectangle {
 
 component SettingRow inherits HorizontalLayout {
     in property <string> label;
+    // The height of the group's first line: the label stands beside it, not in the middle of a
+    // tall group. A field or a dropdown by default; tick boxes and hints pass their own.
+    in property <length> first-line: Theme.touch ? 44px : 38px;
     spacing: Theme.gap-loose;
-    Text {
-        width: 180px;
-        text: root.label;
-        font-size: 16px;
-        color: Theme.gold;
-        vertical-alignment: center;
+    VerticalLayout {
+        alignment: start;
+        Text {
+            width: 180px;
+            height: max(root.first-line, self.preferred-height);
+            text: root.label;
+            font-size: 16px;
+            color: Theme.gold;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
     }
     @children
 }
@@ -444,6 +452,7 @@ component SettingsView inherits VerticalLayout {
     }
     SettingRow {
         label: "Statistics";
+        first-line: Theme.touch ? 44px : 24px;
         VerticalLayout {
             spacing: 8px;
             HorizontalLayout {
@@ -556,6 +565,7 @@ component SettingsView inherits VerticalLayout {
     }
     SettingRow {
         label: "Updates";
+        first-line: Theme.touch ? 44px : 24px;
         VerticalLayout {
             spacing: 6px;
             HorizontalLayout {
@@ -635,6 +645,7 @@ component SettingsView inherits VerticalLayout {
     }
     SettingRow {
         label: "Profiles";
+        first-line: Theme.meta * 1.4;
         VerticalLayout {
             spacing: 8px;
             Text {
@@ -812,7 +823,7 @@ component SettingsView inherits VerticalLayout {
         }
     }
     if !root.game-mode : SettingRow {
-        label: "After launching the game";
+        label: "Once the game runs";
         Dropdown {
             label: "After launching the game";
             model: root.after-launch-labels;
