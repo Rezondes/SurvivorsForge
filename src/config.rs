@@ -44,7 +44,7 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub last_page: u8,
     /// What the launcher does once the game it started runs; chosen in the settings.
-    #[serde(default, skip_serializing_if = "AfterLaunch::is_nothing")]
+    #[serde(default)]
     pub after_launch: AfterLaunch,
     /// Look for updates on its own while the launcher is open, every `check_minutes`.
     #[serde(default = "yes")]
@@ -89,8 +89,9 @@ pub fn snap_check_minutes(minutes: u8) -> u8 {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AfterLaunch {
-    #[default]
     Nothing,
+    /// The default: out of the way while the game runs, back when it ends.
+    #[default]
     Minimize,
     Close,
 }
@@ -98,10 +99,6 @@ pub enum AfterLaunch {
 impl AfterLaunch {
     /// The choices in the order of the settings dropdown.
     pub const LABELS: [&str; 3] = ["Stay open", "Minimize", "Close"];
-
-    fn is_nothing(&self) -> bool {
-        *self == AfterLaunch::Nothing
-    }
 
     pub fn index(self) -> i32 {
         self as i32
@@ -179,7 +176,7 @@ impl Default for Config {
             held: Vec::new(),
             window: None,
             last_page: 0,
-            after_launch: AfterLaunch::Nothing,
+            after_launch: AfterLaunch::Minimize,
             periodic_check: true,
             check_minutes: default_check_minutes(),
             backups_kept: default_backups_kept(),
@@ -672,12 +669,15 @@ mod tests {
     }
 
     #[test]
-    fn after_launch_does_nothing_unless_chosen() {
+    fn after_launch_minimizes_unless_chosen() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
         let old = Config::load(dir.path()).unwrap();
-        assert_eq!(old.after_launch, AfterLaunch::Nothing, "old config files still load");
-        assert_eq!(old.after_launch(false), AfterLaunch::Nothing);
+        assert_eq!(old.after_launch, AfterLaunch::Minimize, "old config files minimize too");
+        assert_eq!(Config::default().after_launch, AfterLaunch::Minimize);
+        let stay = Config { after_launch: AfterLaunch::Nothing, ..old.clone() };
+        stay.save(dir.path()).unwrap();
+        assert_eq!(Config::load(dir.path()).unwrap().after_launch, AfterLaunch::Nothing, "staying open is kept once chosen");
         let close = Config { after_launch: AfterLaunch::Close, ..old };
         assert_eq!(close.after_launch(false), AfterLaunch::Close);
         assert_eq!(close.after_launch(true), AfterLaunch::Nothing, "Game Mode has its own way back");
