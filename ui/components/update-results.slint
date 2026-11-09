@@ -1,0 +1,92 @@
+import { Theme } from "../theme.slint";
+import { UpdateResult } from "types.slint";
+import { ActionButton, LinkButton } from "buttons.slint";
+import { DialogCard } from "layout.slint";
+
+// The results of "Update all" and of the updates that installed on their own: per addon from which
+// version to which, or why it did not update and what helps.
+export component UpdateResultsDialog inherits DialogCard {
+    in property <[UpdateResult]> results;
+    // Release notes open in the browser: not in Game Mode.
+    in property <bool> links-enabled;
+    callback fix(string);
+    callback notes(string);
+    callback retry-failed();
+    callback close();
+
+    // How many updated, and whether a failure can be tried again; counted in Rust.
+    in property <int> updated;
+    in property <bool> retryable;
+
+    width: 560px;
+    title: root.updated == root.results.length ? (root.updated == 1 ? "1 addon updated" : root.updated + " addons updated")
+        : "Updated " + root.updated + " of " + root.results.length + " addons";
+
+    Rectangle {
+        // At most this tall: a longer list scrolls.
+        height: min(list.preferred-height, 360px);
+        Flickable {
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                spacing: 10px;
+                for result in root.results : HorizontalLayout {
+                    spacing: Theme.gap-tight;
+                    accessible-role: list-item;
+                    accessible-label: result.name + ": " + result.line;
+                    Rectangle {
+                        width: 4px;
+                        border-radius: 1px;
+                        background: result.failed ? (result.fix == "Review" ? Theme.warn : Theme.danger) : Theme.ok;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: result.name;
+                            font-size: Theme.body;
+                            font-weight: 600;
+                            color: Theme.text;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: result.line;
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if result.notes && root.links-enabled : VerticalLayout {
+                        alignment: center;
+                        LinkButton {
+                            text: "Release notes";
+                            accessible-label: "Release notes of " + result.name;
+                            clicked => { root.notes(result.id); }
+                        }
+                    }
+                    if result.fix != "" : VerticalLayout {
+                        alignment: center;
+                        ActionButton {
+                            text: result.fix;
+                            accessible-label: result.fix + " " + result.name;
+                            clicked => { root.fix(result.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-tight;
+        if root.retryable : ActionButton {
+            text: "Retry failed";
+            clicked => { root.retry-failed(); }
+        }
+        ActionButton {
+            text: "Close";
+            primary: true;
+            init => { self.focus-button(); }
+            clicked => { root.close(); }
+        }
+    }
+}

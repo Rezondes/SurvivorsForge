@@ -125,3 +125,14 @@ export struct CommentRow {
     depth: int,
     body: string,
 }
+
+// One addon in the results of "Update all": updated (`line` says from which version to which) or
+// not (`line` says why, `fix` names what helps, empty when nothing does).
+export struct UpdateResult {
+    id: string,
+    name: string,
+    line: string,
+    failed: bool,
+    fix: string,
+    notes: bool,
+}

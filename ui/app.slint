@@ -3,11 +3,12 @@ import {
     AddonRow, ActionButton, TabButton, SectionHeading, Field, ScrollPanel, AddonRowView,
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
-    IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea
+    IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea,
+    UpdateResult, UpdateResultsDialog
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine, UpdateResult }
 export { Splash } from "splash.slint";
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
@@ -702,7 +703,7 @@ export component AppWindow inherits Window {
     // Ctrl+F asks the search field for the cursor.
     property <int> search-focus;
     // No dialog or picture is open over the pages, which would take these keys.
-    property <bool> keys-free: !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open && !root.comments-compose-open;
+    property <bool> keys-free: !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open && !root.comments-compose-open && !root.results-open;
     // A search, category or safety filter hides some addons.
     property <bool> filtered: root.search != "" || root.category-index > 0 || root.safety-index > 0;
     function clear-filters() {
@@ -837,6 +838,16 @@ export component AppWindow inherits Window {
     in property <[Toast]> toasts;
     callback toast-dismiss(int);
 
+    // The results of "Update all" and of updates that installed on their own; empty: closed.
+    in property <[UpdateResult]> update-results;
+    in property <int> update-results-updated;
+    in property <bool> update-results-retryable;
+    property <bool> results-open: root.update-results.length > 0;
+    callback update-result-fix(string);
+    callback update-result-notes(string);
+    callback update-results-retry();
+    callback update-results-close();
+
     // Settings
     in-out property <string> settings-path;
     in property <[string]> settings-game-versions;
@@ -932,7 +943,7 @@ export component AppWindow inherits Window {
                 return accept;
             }
             // The shoulder buttons of a controller come as Page Up and Page Down.
-            if ((event.text == Key.PageDown || event.text == Key.PageUp) && !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open) {
+            if ((event.text == Key.PageDown || event.text == Key.PageUp) && !root.needs-setup && !root.zoom-open && !root.confirm-open && !root.repo-open && !root.results-open) {
                 root.open-page(mod(root.page + (event.text == Key.PageDown ? 1 : 2), 3));
                 return accept;
             }
@@ -947,6 +958,8 @@ export component AppWindow inherits Window {
                 } else {
                     root.confirm-cancel();
                 }
+            } else if (root.results-open) {
+                root.update-results-close();
             } else if (root.repo-open) {
                 if (!root.repo-busy) {
                     root.repo-cancel();
@@ -1650,6 +1663,22 @@ export component AppWindow inherits Window {
             shots: root.zoom-shots;
             index <=> root.zoom-index;
             close => { root.zoom-open = false; }
+        }
+
+        if root.results-open : Overlay {
+            y: root.title-height;
+            width: parent.width;
+            height: parent.height - root.title-height;
+            UpdateResultsDialog {
+                results: root.update-results;
+                updated: root.update-results-updated;
+                retryable: root.update-results-retryable;
+                links-enabled: !root.game-mode;
+                fix(id) => { root.update-result-fix(id); }
+                notes(id) => { root.update-result-notes(id); }
+                retry-failed => { root.update-results-retry(); }
+                close => { root.update-results-close(); }
+            }
         }
 
         if root.confirm-open : Overlay {

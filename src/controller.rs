@@ -598,6 +598,68 @@ pub fn addon_link(web: &str, slug: &str, page: &str) -> Option<String> {
 }
 
 /// The GitHub page of release `tag` of `repo` ("owner/name"), where its release notes are.
+/// What helps after an update failed, offered beside it in the results of "Update all".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fix {
+    None,
+    Retry,
+    /// GitHub limits requests without a login.
+    SignIn,
+    /// The folder cannot be written: look at it.
+    OpenFolder,
+    /// The platform holds the version back: its details say why.
+    Details,
+    /// The update asks for a confirmation first.
+    Review,
+}
+
+impl Fix {
+    pub fn label(self) -> &'static str {
+        match self {
+            Fix::None => "",
+            Fix::Retry => "Retry",
+            Fix::SignIn => "Sign in",
+            Fix::OpenFolder => "Open folder",
+            Fix::Details => "Details",
+            Fix::Review => "Review",
+        }
+    }
+}
+
+/// How one addon of "Update all" ended.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateOutcome {
+    pub id: String,
+    pub name: String,
+    /// "1.1 to 1.2" when it updated, else why not.
+    pub line: String,
+    pub failed: bool,
+    pub fix: Fix,
+    /// The release page of the new version.
+    pub notes: Option<String>,
+}
+
+/// Why an update failed, in words, and what helps.
+pub fn fix_for(error: &crate::Error, game_running: bool) -> (String, Fix) {
+    use crate::Error;
+    let why = error.to_string();
+    match error {
+        Error::Io(_) if game_running => (format!("{why}. Close the game and try again."), Fix::Retry),
+        Error::Io(_) => (why, Fix::OpenFolder),
+        Error::RateLimited => (why, Fix::SignIn),
+        Error::HashMismatch { .. } | Error::NotInstallable(_) | Error::ForbiddenHost(_) | Error::NoMatchingAsset | Error::NoRelease | Error::NoAddonFound => {
+            (why, Fix::Details)
+        }
+        _ => (why, Fix::Retry),
+    }
+}
+
+/// The release page of version `tag`; none for a commit, which has no release.
+pub fn notes_page(repo: &str, tag: &str) -> Option<String> {
+    let commit = tag.len() == 40 && tag.bytes().all(|b| b.is_ascii_hexdigit());
+    (!tag.is_empty() && !commit).then(|| release_page(repo, tag))
+}
+
 pub fn release_page(repo: &str, tag: &str) -> String {
     let tag: String = tag
         .bytes()
@@ -1090,6 +1152,31 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_failed_update_says_why_and_what_helps() {
+        use crate::Error;
+        let fix = |e: Error| fix_for(&e, false).1;
+        assert_eq!(fix(Error::Network("timed out".into())), Fix::Retry);
+        assert_eq!(fix(Error::Http(502)), Fix::Retry);
+        assert_eq!(fix(Error::RateLimited), Fix::SignIn);
+        assert_eq!(fix(Error::Io("access denied".into())), Fix::OpenFolder);
+        assert_eq!(fix(Error::HashMismatch { expected: "a".into(), actual: "b".into() }), Fix::Details);
+        assert_eq!(fix(Error::NotInstallable("blocked".into())), Fix::Details);
+        assert_eq!(fix(Error::NoMatchingAsset), Fix::Details);
+        let (why, fix) = fix_for(&Error::Io("access denied".into()), true);
+        assert_eq!(fix, Fix::Retry, "a running game may hold the files");
+        assert!(why.contains("Close the game"), "{why}");
+        assert_eq!(fix_for(&Error::Network("timed out".into()), false).0, "Network error: timed out");
+        assert_eq!([Fix::None, Fix::Retry, Fix::SignIn, Fix::OpenFolder, Fix::Details, Fix::Review].map(Fix::label), ["", "Retry", "Sign in", "Open folder", "Details", "Review"]);
+    }
+
+    #[test]
+    fn release_notes_only_for_a_tag() {
+        assert_eq!(notes_page("o/lucky", "v1.2").as_deref(), Some("https://github.com/o/lucky/releases/tag/v1.2"));
+        assert_eq!(notes_page("o/lucky", "0123456789abcdef0123456789abcdef01234567"), None, "a commit has no release");
+        assert_eq!(notes_page("o/lucky", ""), None);
+    }
 
     #[test]
     fn the_quiet_check_waits_for_its_time_and_for_quiet() {

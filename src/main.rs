@@ -45,6 +45,8 @@ struct Core {
     checking: bool,
     /// When the last update check started, by hand or on its own.
     last_check: Option<std::time::Instant>,
+    /// How the last run of updates ended, per addon; shown until closed.
+    update_results: Vec<controller::UpdateOutcome>,
     search: String,
     /// Running work and how things ended, bottom right.
     toasts: Toasts,
@@ -188,6 +190,7 @@ impl Core {
             busy: HashSet::new(),
             checking: false,
             last_check: None,
+            update_results: Vec::new(),
             search: String::new(),
             toasts: Toasts::default(),
             work: None,
@@ -902,8 +905,12 @@ fn run_bg(
                     let message = controller::note_running_game(message, core.game_running);
                     core.notify(message, Kind::Success)
                 }
-                // Nothing worth a word: the quiet update check found no news.
-                Ok(message) if message.is_empty() => {}
+                // Nothing worth a word (the quiet update check found no news, a dialog says it).
+                Ok(message) if message.is_empty() => {
+                    if let Some(id) = core.work.take() {
+                        core.toasts.dismiss(id);
+                    }
+                }
                 Ok(message) => core.notify(message, Kind::Success),
                 Err(e) => core.notify(e.to_string(), Kind::Error),
             }
@@ -1412,15 +1419,15 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
             controller::split_confirmations(ids, &core.registry, &core.state, core.config.game_version.as_deref(), &core.game_versions);
         let (ids, unchecked): (Vec<String>, Vec<String>) = ids.into_iter().partition(|id| controller::unchecked_update(&core.state, &core.statuses, id).is_none());
         skipped.extend(unchecked);
-        let skipped_names: Vec<String> = skipped.iter().map(|id| core.state.get(id).map(|e| e.name.clone()).unwrap_or(id.clone())).collect();
-        (ids, skipped_names)
+        (ids, skipped)
     };
     install_updates(ui, shared, ids, skipped);
 }
 
-/// Installs the updates `ids` one after the other; `skipped` names the ones left for the user.
+/// Installs the updates `ids` one after the other; `skipped` are the ones left for the user. The
+/// results show in a dialog, per addon.
 fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: Vec<String>) {
-    let jobs = {
+    let (jobs, mut results) = {
         let mut core = lock(shared);
         let jobs: Vec<_> = ids
             .into_iter()
@@ -1434,38 +1441,121 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
             core.outcomes.remove(id);
             core.progress.insert(id.clone(), controller::Progress::Waiting);
         }
-        core.set_status(format!("Updating {} addons...", jobs.len()));
-        jobs
+        let skipped: Vec<controller::UpdateOutcome> = skipped
+            .into_iter()
+            .map(|id| controller::UpdateOutcome {
+                name: core.state.get(&id).map(|e| e.name.clone()).unwrap_or(id.clone()),
+                id,
+                line: "Asks for your confirmation before it updates.".into(),
+                failed: true,
+                fix: controller::Fix::Review,
+                notes: None,
+            })
+            .collect();
+        if !jobs.is_empty() {
+            core.set_status(format!("Updating {} addons...", jobs.len()));
+        }
+        (jobs, skipped)
     };
     refresh(ui, shared);
     let weak = ui.as_weak();
     run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
         let total = jobs.len();
-        let mut failed = Vec::new();
+        let mut done = Vec::new();
         for (i, (id, (name, repo, spec, source, remote))) in jobs.into_iter().enumerate() {
             show_progress(shared, true, |core| {
                 core.set_status(format!("Updating {} of {total}: {name}", i + 1));
             });
-            if let Err(e) = install_remote(shared, &id, &name, &repo, &spec, source, remote, false) {
-                failed.push(format!("{name}: {e}"));
-            }
+            let from = lock(shared).state.get(&id).map(|e| controller::display_version(&e.version)).unwrap_or_default();
+            let target = remote.as_ref().map(|r| (r.id.clone(), r.label.clone()));
+            let outcome = match install_remote(shared, &id, &name, &repo, &spec, source, remote, false) {
+                Ok(_) => {
+                    let core = lock(shared);
+                    let (tag, label) = target.unwrap_or_else(|| {
+                        let v = core.state.get(&id).map(|e| e.version.clone()).unwrap_or_default();
+                        (v.clone(), controller::display_version(&v))
+                    });
+                    controller::UpdateOutcome {
+                        id: id.clone(),
+                        name,
+                        line: if from.is_empty() { format!("Now {label}") } else { format!("{from} to {label}") },
+                        failed: false,
+                        fix: controller::Fix::None,
+                        notes: controller::notes_page(&repo, &tag),
+                    }
+                }
+                Err(e) => {
+                    let (line, fix) = controller::fix_for(&e, lock(shared).game_running);
+                    controller::UpdateOutcome { id: id.clone(), name, line, failed: true, fix, notes: None }
+                }
+            };
+            done.push(outcome);
             lock(shared).busy.remove(&id);
             let s = shared.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &s));
         }
-        let skipped_note = if skipped.is_empty() {
-            String::new()
-        } else {
-            format!(". Needs your confirmation, update one by one: {}", skipped.join(", "))
-        };
-        if failed.is_empty() && total == 0 && !skipped.is_empty() {
-            Ok(format!("Nothing updated. Needs your confirmation, update one by one: {}", skipped.join(", ")))
-        } else if failed.is_empty() {
-            Ok(controller::note_running_game(format!("Updated {total} addons{skipped_note}"), lock(shared).game_running))
-        } else {
-            Err(Error::UpdatesFailed { failed: failed.len(), total, details: failed.join(" | ") })
+        done.append(&mut results);
+        if done.is_empty() {
+            return Ok(String::new());
         }
+        let running = {
+            let mut core = lock(shared);
+            core.update_results = done;
+            core.game_running
+        };
+        let s = shared.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| show_update_results(&ui, &s));
+        // The dialog says it all; only that a running game takes the new files at its next start.
+        if running && total > 0 {
+            return Ok("The updates take effect the next time the game starts.".into());
+        }
+        Ok(String::new())
     });
+}
+
+/// Puts the results of the last updates in their dialog; none closes it.
+fn show_update_results(ui: &AppWindow, shared: &Shared) {
+    let core = lock(shared);
+    let rows: Vec<UpdateResult> = core
+        .update_results
+        .iter()
+        .map(|o| UpdateResult {
+            id: o.id.clone().into(),
+            name: o.name.clone().into(),
+            line: o.line.clone().into(),
+            failed: o.failed,
+            fix: o.fix.label().into(),
+            notes: o.notes.is_some(),
+        })
+        .collect();
+    ui.set_update_results_updated(core.update_results.iter().filter(|o| !o.failed).count() as i32);
+    ui.set_update_results_retryable(core.update_results.iter().any(|o| o.fix == controller::Fix::Retry));
+    ui.set_update_results(ModelRc::new(VecModel::from(rows)));
+}
+
+/// What a button beside a result does.
+fn on_update_result_fix(ui: &AppWindow, shared: &Shared, id: String) {
+    let fix = lock(shared).update_results.iter().find(|o| o.id == id).map(|o| o.fix);
+    let Some(fix) = fix else { return };
+    close_update_results(ui, shared);
+    match fix {
+        controller::Fix::None => {}
+        controller::Fix::Retry => install_updates(ui, shared, vec![id], Vec::new()),
+        controller::Fix::SignIn => {
+            ui.set_page(2);
+            on_login(ui, shared);
+        }
+        controller::Fix::OpenFolder => ui.invoke_open_addons_dir(),
+        controller::Fix::Details | controller::Fix::Review => {
+            ui.set_page(0);
+            on_row_details(ui, shared, id);
+        }
+    }
+}
+
+fn close_update_results(ui: &AppWindow, shared: &Shared) {
+    lock(shared).update_results.clear();
+    show_update_results(ui, shared);
 }
 
 fn check_updates(ui: &AppWindow, shared: &Shared) {
@@ -2640,6 +2730,20 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     });
     on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
     on!(on_login, |ui, shared| on_login(&ui, shared));
+    on!(on_update_result_fix, |ui, shared, id| on_update_result_fix(&ui, shared, id.to_string()));
+    on!(on_update_results_close, |ui, shared| close_update_results(&ui, shared));
+    on!(on_update_results_retry, |ui, shared| {
+        let failed: Vec<String> =
+            lock(shared).update_results.iter().filter(|o| o.fix == controller::Fix::Retry).map(|o| o.id.clone()).collect();
+        close_update_results(&ui, shared);
+        install_updates(&ui, shared, failed, Vec::new());
+    });
+    on!(on_update_result_notes, |ui, shared, id| {
+        let url = lock(shared).update_results.iter().find(|o| o.id == id.as_str()).and_then(|o| o.notes.clone());
+        if let Some(url) = url {
+            open_url(&ui, shared, url);
+        }
+    });
     on!(on_comments_send, |ui, shared| on_comment_send(&ui, shared));
     on!(on_issue_show, |ui, shared, number| on_issue_show(&ui, shared, number));
     on!(on_issues_back, |ui, shared| on_issues_back(&ui, shared));
@@ -2906,6 +3010,11 @@ fn on_detail_link(ui: &AppWindow, shared: &Shared, page: &str) {
             url
         }
     };
+    open_url(ui, shared, url);
+}
+
+/// Opens `url` in the browser, saying so while the browser starts.
+fn open_url(ui: &AppWindow, shared: &Shared, url: String) {
     let opening = lock(shared).set_status("Opening the browser".into());
     refresh(ui, shared);
     let (weak, shared) = (ui.as_weak(), shared.clone());
@@ -4026,6 +4135,59 @@ mod layout_tests {
                 .mock_single_click(PointerEventButton::Left);
             assert!(!ui.get_settings_periodic_check());
             assert!(often().is_none(), "off: no time to choose");
+        }
+
+        #[test]
+        fn the_update_results_name_each_addon_and_what_helps() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let fixes = Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+            let (f, n) = (fixes.clone(), fixes.clone());
+            let closed = Rc::new(Cell::new(0));
+            let c = closed.clone();
+            ui.on_update_result_fix(move |id| f.borrow_mut().push(format!("fix {id}")));
+            ui.on_update_result_notes(move |id| n.borrow_mut().push(format!("notes {id}")));
+            ui.on_update_results_close(move || c.set(c.get() + 1));
+            let row = |id: &str, line: &str, failed: bool, fix: &str, notes: bool| crate::UpdateResult {
+                id: id.into(),
+                name: id.to_uppercase().into(),
+                line: line.into(),
+                failed,
+                fix: fix.into(),
+                notes,
+            };
+            let rows = vec![
+                row("lucky", "1.1 to 1.2", false, "", true),
+                row("dragon", "Network error: timed out", true, "Retry", false),
+                row("plates", "Asks for your confirmation before it updates.", true, "Review", false),
+            ];
+            ui.set_update_results(slint::ModelRc::new(slint::VecModel::from(rows)));
+            ui.set_update_results_updated(1);
+            ui.set_update_results_retryable(true);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Updated 1 of 3 addons").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("LUCKY: 1.1 to 1.2").is_some(), "from which version to which");
+            assert!(find("DRAGON: Network error: timed out").is_some(), "why it failed");
+            find("Release notes of LUCKY").expect("notes of the new version").invoke_accessible_default_action();
+            find("Retry DRAGON").expect("what helps").invoke_accessible_default_action();
+            find("Review PLATES").expect("a confirmation to give").invoke_accessible_default_action();
+            assert!(find("Retry failed").is_some(), "all failures at once");
+            assert_eq!(*fixes.borrow(), ["notes lucky", "fix dragon", "fix plates"]);
+            assert!(find("Release notes of DRAGON").is_none(), "a failure has no new version");
+            let escape: slint::SharedString = Key::Escape.into();
+            ui.window().dispatch_event(WindowEvent::KeyPressed { text: escape.clone() });
+            ui.window().dispatch_event(WindowEvent::KeyReleased { text: escape });
+            assert_eq!(closed.get(), 1, "Escape closes it");
+            ui.set_update_results(slint::ModelRc::new(slint::VecModel::from(vec![row("lucky", "1.1 to 1.2", false, "", true)])));
+            ui.set_update_results_updated(1);
+            ui.set_update_results_retryable(false);
+            assert!(find("1 addon updated").is_some() && find("Retry failed").is_none());
+            ui.set_game_mode(true);
+            assert!(find("Release notes of LUCKY").is_none(), "Game Mode opens no browser");
         }
 
         #[test]
