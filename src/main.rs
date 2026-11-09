@@ -4804,6 +4804,25 @@ mod layout_tests {
         }
 
         #[test]
+        fn an_error_toast_can_be_copied() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let toast = |id: i32, kind: slint_toast::Kind| crate::Toast { id, text: format!("Toast {id}").into(), kind: kind as i32, action: "".into() };
+            let toasts = vec![toast(1, slint_toast::Kind::Error), toast(2, slint_toast::Kind::Success)];
+            ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(toasts)));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).collect::<Vec<_>>();
+            if find("Toast 1").is_empty() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            let copy = find("Copy message");
+            assert_eq!(copy.len(), 1, "only the error has it");
+            copy[0].invoke_accessible_default_action();
+            assert_eq!(find("Copied").len(), 1, "it says so");
+        }
+
+        #[test]
         fn a_removal_toast_offers_undo() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

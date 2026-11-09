@@ -96,6 +96,57 @@ component ToastAction inherits Rectangle {
     }
 }
 
+// Copies the text of an error toast, to paste it into a bug report; says "Copied" for a moment.
+component CopyButton inherits Rectangle {
+    in property <string> text;
+    in property <color> glyph;
+    in property <color> hover;
+    in property <color> done;
+    in property <length> size: 26px;
+    property <bool> copied;
+
+    accessible-role: button;
+    accessible-label: root.copied ? "Copied" : "Copy message";
+    accessible-action-default => { root.copy(); }
+    width: root.size;
+    height: root.size;
+    border-radius: 3px;
+
+    function copy() {
+        holder.text = root.text;
+        holder.select-all();
+        holder.copy();
+        holder.clear-selection();
+        root.copied = true;
+    }
+
+    // Holds the text while it is copied; never seen.
+    holder := TextInput {
+        width: 0;
+        height: 0;
+        read-only: true;
+    }
+    Timer {
+        interval: 1500ms;
+        running: root.copied;
+        triggered => { root.copied = false; }
+    }
+    // Two sheets, or a tick once copied.
+    Path {
+        width: 12px;
+        height: 12px;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        commands: root.copied ? "M 2 6.5 L 5 9.5 L 10 3" : "M 4 4 L 11 4 L 11 11 L 4 11 Z M 8 1 L 1 1 L 1 8";
+        stroke: root.copied ? root.done : touch.has-hover ? root.hover : root.glyph;
+        stroke-width: 1.5px;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.copy(); }
+    }
+}
+
 // One toast. Info and success go after `done-time`, a warning or an error stays until it is closed,
 // a busy one shows a running bar until its work finishes.
 component ToastCard inherits Rectangle {
@@ -105,11 +156,14 @@ component ToastCard inherits Rectangle {
     // How long a toast with a button stays: long enough to press it.
     in property <duration> action-time;
     in property <bool> busy-closable;
+    in property <bool> errors-copyable;
     callback dismiss(int);
     callback action(int);
 
     property <bool> closable: root.toast.kind != 4 || root.busy-closable;
-    property <length> close-room: (root.closable ? root.style.close-size : 0px) + (root.toast.action != "" ? button.width + 8px : 0px);
+    property <bool> copyable: root.toast.kind == 3 && root.errors-copyable;
+    property <length> close-room: (root.closable ? root.style.close-size : 0px) + (root.copyable ? root.style.close-size + 4px : 0px)
+        + (root.toast.action != "" ? button.width + 8px : 0px);
     property <color> accent: [root.style.info, root.style.success, root.style.warning, root.style.error, root.style.busy][root.toast.kind];
 
     accessible-role: text;
@@ -149,13 +203,22 @@ component ToastCard inherits Rectangle {
         wrap: word-wrap;
     }
     button := ToastAction {
-        x: parent.width - 10px - (root.closable ? root.style.close-size + 4px : 0px) - self.width;
+        x: parent.width - 10px - (root.closable ? root.style.close-size + 4px : 0px) - (root.copyable ? root.style.close-size + 4px : 0px) - self.width;
         y: (parent.height - self.height) / 2;
         visible: root.toast.action != "";
         text: root.toast.action;
         tint: root.accent;
         font-size: root.style.font-size;
         clicked => { root.action(root.toast.id); }
+    }
+    if root.copyable : CopyButton {
+        x: parent.width - 10px - (root.closable ? root.style.close-size + 4px : 0px) - self.width;
+        y: (parent.height - self.height) / 2;
+        text: root.toast.text;
+        glyph: root.style.muted;
+        hover: root.style.text;
+        done: root.style.success;
+        size: root.style.close-size;
     }
     if root.closable : CloseButton {
         x: parent.width - self.width - 10px;
@@ -195,6 +258,8 @@ export component ToastStack inherits VerticalLayout {
     };
     in property <duration> done-time: 4s;
     in property <duration> action-time: 10s;
+    // True: an error toast has a button that copies its text.
+    in property <bool> errors-copyable: false;
     // False: a busy toast has no X, so running work cannot be closed.
     in property <bool> busy-closable: true;
     callback dismiss(int);
@@ -209,6 +274,7 @@ export component ToastStack inherits VerticalLayout {
         done-time: root.done-time;
         action-time: root.action-time;
         busy-closable: root.busy-closable;
+        errors-copyable: root.errors-copyable;
         dismiss(id) => { root.dismiss(id); }
         action(id) => { root.action(id); }
     }

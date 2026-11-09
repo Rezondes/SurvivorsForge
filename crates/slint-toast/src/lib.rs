@@ -11,6 +11,7 @@
 //! - Slint: `import { Toast, ToastStack } from "@toast/toast.slint";`, export `Toast`, place a
 //!   `ToastStack` and forward its `dismiss(id)` to [`Toasts::dismiss_by_user`] (or to
 //!   [`Toasts::dismiss`] with `busy-closable: true`, so running work can be closed too).
+//!   `errors-copyable: true` gives each error toast a button that copies its text.
 //! - Rust (feature `slint`): keep one `VecModel` of the generated `Toast` and call [`sync`] after
 //!   each change.
 
