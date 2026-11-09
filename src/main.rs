@@ -2577,6 +2577,35 @@ fn apply_profile(ui: &AppWindow, shared: &Shared, name: String, plan: profile::P
     }
 }
 
+/// A pasted or linked profile string: saved as a profile (another name when one has it), then
+/// offered to apply with what it changes.
+fn on_profile_import(ui: &AppWindow, shared: &Shared, text: &str) {
+    let index = {
+        let mut core = lock(shared);
+        match profile::decode(text) {
+            Err(e) => {
+                core.notify(e, Kind::Error);
+                None
+            }
+            Ok(mut imported) => {
+                imported.name = core.profiles.free_name(&imported.name);
+                imported.updated_at = now_secs();
+                let name = imported.name.clone();
+                core.profiles.put(imported);
+                let _ = core.profiles.save(&core.data_dir);
+                core.notify(format!("Profile {name} imported"), Kind::Success);
+                fill_profiles(ui, &core);
+                core.profiles.profiles.iter().position(|p| p.name == name)
+            }
+        }
+    };
+    refresh(ui, shared);
+    if let Some(index) = index {
+        ui.set_settings_profile_import(SharedString::new());
+        on_profile_apply(ui, shared, index);
+    }
+}
+
 fn on_profile_delete(ui: &AppWindow, shared: &Shared, index: usize) {
     let Some(name) = lock(shared).profiles.profiles.get(index).map(|p| p.name.clone()) else { return };
     let (weak, shared) = (ui.as_weak(), shared.clone());
@@ -2793,7 +2822,7 @@ fn select_backend() -> Result<(), slint::PlatformError> {
 
 fn main() -> Result<(), slint::PlatformError> {
     // A link from the website: a running launcher opens the addon, this one ends.
-    let link = std::env::args().nth(1).and_then(|a| deep_link::addon_id(&a));
+    let link = std::env::args().nth(1).and_then(|a| deep_link::from_args(&a));
     if let Some(id) = &link
         && deep_link::send_to_running(id)
     {
@@ -3158,6 +3187,17 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_profile_save, |ui, shared| on_profile_save(&ui, shared));
     on!(on_profile_apply, |ui, shared, index| on_profile_apply(&ui, shared, index.max(0) as usize));
     on!(on_profile_delete, |ui, shared, index| on_profile_delete(&ui, shared, index.max(0) as usize));
+    on!(on_profile_import, |ui, shared, text| on_profile_import(&ui, shared, text.as_str()));
+    on!(on_profile_copied, |ui, shared| {
+        lock(shared).notify("Profile string copied: paste it where it should go, or into Import on another computer.".into(), Kind::Success);
+        refresh(&ui, shared);
+    });
+    {
+        let s = shared.clone();
+        ui.on_profile_string(move |index| {
+            lock(&s).profiles.profiles.get(index.max(0) as usize).map(profile::encode).unwrap_or_default().into()
+        });
+    }
     on!(on_category_changed, |ui, shared, index| {
         {
             let mut core = lock(shared);
@@ -3865,6 +3905,13 @@ fn on_comment_compose(ui: &AppWindow, shared: &Shared) {
 fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
     if ui.get_needs_setup() {
         return;
+    }
+    // A profile from a link: imported, then offered to apply.
+    if id.starts_with(profile::STRING_PREFIX) {
+        ui.set_page(2);
+        ui.window().set_minimized(false);
+        ui.window().with_winit_window(|w| w.focus_window());
+        return on_profile_import(ui, shared, &id);
     }
     if lock(shared).registry.get(&id).is_none() {
         lock(shared).notify(format!("The addon \"{id}\" from the link is not in the list of verified addons."), Kind::Error);
@@ -4777,6 +4824,17 @@ mod layout_tests {
             find("Apply the profile Solo").expect("apply").invoke_accessible_default_action();
             find("Delete the profile Raid").expect("delete").invoke_accessible_default_action();
             assert_eq!(*calls.borrow(), ["save", "apply 1", "delete 0"]);
+            let (d, e, f) = (calls.clone(), calls.clone(), calls.clone());
+            ui.on_profile_string(move |i| {
+                d.borrow_mut().push(format!("string {i}"));
+                "SFP1:abc".into()
+            });
+            ui.on_profile_copied(move || e.borrow_mut().push("copied".into()));
+            ui.on_profile_import(move |text| f.borrow_mut().push(format!("import {text}")));
+            find("Copy the string of the profile Raid").expect("copy").invoke_accessible_default_action();
+            ui.set_settings_profile_import("SFP1:xyz".into());
+            find("Import").expect("import").invoke_accessible_default_action();
+            assert_eq!(calls.borrow()[3..], ["string 0", "copied", "import SFP1:xyz"]);
         }
 
         #[test]

@@ -227,6 +227,11 @@ component SettingsView inherits VerticalLayout {
     callback profile-save();
     callback profile-apply(int);
     callback profile-delete(int);
+    // The profile string of a profile, to copy; and one pasted to import.
+    pure callback profile-string(int) -> string;
+    callback profile-copied();
+    in-out property <string> profile-import-text;
+    callback profile-import(string);
     // The backups of the addon settings, newest first, and how many stay.
     in property <[BackupLine]> backups;
     in property <[string]> backups-kept-labels;
@@ -641,6 +646,27 @@ component SettingsView inherits VerticalLayout {
                 }
             }
             if root.profile-error != "" : FieldError { text: root.profile-error; }
+            HorizontalLayout {
+                spacing: 10px;
+                Field {
+                    text <=> root.profile-import-text;
+                    label: "Profile string";
+                    placeholder: "Paste a profile string (SFP1:...)";
+                    accepted => { root.profile-import(root.profile-import-text); }
+                }
+                ActionButton {
+                    text: "Import";
+                    enabled: root.profile-import-text != "";
+                    clicked => { root.profile-import(root.profile-import-text); }
+                }
+            }
+            // Holds the string while it is copied; never seen.
+            export-text := TextInput {
+                width: 0;
+                height: 0;
+                read-only: true;
+                accessible-role: none;
+            }
             for line[index] in root.profiles : HorizontalLayout {
                 spacing: 10px;
                 Text {
@@ -661,6 +687,17 @@ component SettingsView inherits VerticalLayout {
                     text: "Apply";
                     accessible-label: "Apply the profile " + line.name;
                     clicked => { root.profile-apply(index); }
+                }
+                LinkButton {
+                    text: "Copy string";
+                    accessible-label: "Copy the string of the profile " + line.name;
+                    clicked => {
+                        export-text.text = root.profile-string(index);
+                        export-text.select-all();
+                        export-text.copy();
+                        export-text.clear-selection();
+                        root.profile-copied();
+                    }
                 }
                 LinkButton {
                     text: "Delete";
@@ -1015,6 +1052,10 @@ export component AppWindow inherits Window {
     callback profile-save();
     callback profile-apply(int);
     callback profile-delete(int);
+    pure callback profile-string(int) -> string;
+    callback profile-copied();
+    in-out property <string> settings-profile-import;
+    callback profile-import(string);
     in property <[string]> settings-backups-kept-labels;
     in-out property <int> settings-backups-kept-index: 2;
     callback backup-restore(int);
@@ -1662,6 +1703,10 @@ export component AppWindow inherits Window {
                             profile-save => { root.profile-save(); }
                             profile-apply(index) => { root.profile-apply(index); }
                             profile-delete(index) => { root.profile-delete(index); }
+                            profile-string(index) => { return root.profile-string(index); }
+                            profile-copied => { root.profile-copied(); }
+                            profile-import-text <=> root.settings-profile-import;
+                            profile-import(text) => { root.profile-import(text); }
                             backups-kept-labels: root.settings-backups-kept-labels;
                             backups-kept-index <=> root.settings-backups-kept-index;
                             backup-restore(index) => { root.backup-restore(index); }

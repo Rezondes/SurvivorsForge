@@ -18,6 +18,27 @@ pub fn addon_id(link: &str) -> Option<String> {
     valid_id(id).then(|| id.to_string())
 }
 
+/// The profile string of `survivorsforge://profile/<code>`, `None` for anything else.
+pub fn profile_string(link: &str) -> Option<String> {
+    let rest = link.trim().strip_prefix(SCHEME)?.strip_prefix("://")?;
+    let code = rest.strip_prefix("profile/")?.trim_end_matches('/');
+    valid_code(code).then(|| format!("SFP1:{code}"))
+}
+
+/// What a launcher started with a link hands to the running one: an addon id or a profile string.
+pub fn from_args(link: &str) -> Option<String> {
+    addon_id(link).or_else(|| profile_string(link))
+}
+
+fn valid_code(code: &str) -> bool {
+    !code.is_empty() && code.len() <= 60_000 && code.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+}
+
+/// What a launcher may hand over: an addon id or `SFP1:` and a profile code.
+fn valid_message(line: &str) -> bool {
+    valid_id(line) || line.strip_prefix("SFP1:").is_some_and(valid_code)
+}
+
 fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 100 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
 }
@@ -53,7 +74,7 @@ pub fn listen(open: impl Fn(String) + Send + 'static) -> bool {
                 continue;
             }
             let mut line = String::new();
-            if BufReader::new(&stream).read_line(&mut line).is_ok() && valid_id(line.trim_end()) {
+            if BufReader::new(&stream).read_line(&mut line).is_ok() && valid_message(line.trim_end()) {
                 open(line.trim_end().to_string());
             }
         }
@@ -100,6 +121,16 @@ pub fn register() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_profile_link_brings_its_string() {
+        assert_eq!(profile_string("survivorsforge://profile/abc-_9/").as_deref(), Some("SFP1:abc-_9"));
+        assert_eq!(profile_string("survivorsforge://profile/a%20b"), None);
+        assert_eq!(profile_string("survivorsforge://addon/lucky"), None);
+        assert_eq!(from_args("survivorsforge://addon/lucky").as_deref(), Some("lucky"));
+        assert_eq!(from_args("survivorsforge://profile/xyz").as_deref(), Some("SFP1:xyz"));
+        assert!(valid_message("SFP1:xyz") && valid_message("lucky") && !valid_message("SFP1:x y"));
+    }
 
     #[test]
     fn links_name_one_addon() {

@@ -101,6 +101,60 @@ pub fn valid_name(name: &str) -> Result<String, String> {
     }
 }
 
+/// What starts a profile string: version 1, then base64url of the deflated JSON of the profile.
+pub const STRING_PREFIX: &str = "SFP1:";
+/// At most this much JSON in a string, and this many addons: anything bigger is not a profile.
+const JSON_MAX: u64 = 64 * 1024;
+pub const ADDONS_MAX: usize = 200;
+
+/// `profile` as a string to copy and send.
+pub fn encode(profile: &Profile) -> String {
+    use base64::Engine;
+    use std::io::Write;
+    let shared = Profile { updated_at: 0, ..profile.clone() };
+    let json = serde_json::to_vec(&shared).expect("a profile serializes");
+    let mut deflate = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::best());
+    deflate.write_all(&json).expect("writing to memory");
+    let packed = deflate.finish().expect("writing to memory");
+    format!("{STRING_PREFIX}{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(packed))
+}
+
+/// The profile in a string from `encode`, checked: a bad string says why.
+pub fn decode(text: &str) -> Result<Profile, String> {
+    use base64::Engine;
+    use std::io::Read;
+    let bad = || "This is not a SurvivorsForge profile string".to_string();
+    let code = text.trim().strip_prefix(STRING_PREFIX).ok_or_else(bad)?;
+    let packed = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(code).map_err(|_| bad())?;
+    let mut json = Vec::new();
+    flate2::read::DeflateDecoder::new(packed.as_slice()).take(JSON_MAX + 1).read_to_end(&mut json).map_err(|_| bad())?;
+    if json.len() as u64 > JSON_MAX {
+        return Err("The profile string is too big".into());
+    }
+    let mut profile: Profile = serde_json::from_slice(&json).map_err(|_| bad())?;
+    profile.name = valid_name(&profile.name)?;
+    if profile.addons.len() > ADDONS_MAX {
+        return Err(format!("A profile has at most {ADDONS_MAX} addons"));
+    }
+    for addon in &profile.addons {
+        let fine = match &addon.source {
+            ProfileSource::Platform { id } => plain(id, "-_."),
+            ProfileSource::GitHub { repo } => repo.split_once('/').is_some_and(|(o, r)| plain(o, "-") && plain(r, "-_.")),
+            ProfileSource::Local { folder } => plain(folder, "-_. ()!'"),
+        };
+        if !fine || addon.name.chars().count() > 100 {
+            return Err(format!("The profile string has an odd addon: {}", addon.name.chars().take(100).collect::<String>()));
+        }
+    }
+    profile.updated_at = 0;
+    Ok(profile)
+}
+
+/// 1 to 100 ASCII letters and digits, plus `extra`, and no `..`.
+fn plain(text: &str, extra: &str) -> bool {
+    (1..=100).contains(&text.len()) && !text.contains("..") && text.chars().all(|c| c.is_ascii_alphanumeric() || extra.contains(c))
+}
+
 /// The installed addons as a profile's list: each with where it comes from and whether it is on.
 pub fn snapshot(rows: &[Row], state: &State, held: &[String]) -> Vec<ProfileAddon> {
     rows.iter()
@@ -300,6 +354,40 @@ mod tests {
         profiles.remove("Raid");
         assert!(profiles.profiles.is_empty() && profiles.active.is_none());
         assert_eq!(profiles.deleted, ["Raid"], "the account forgets it at the next sync");
+    }
+
+    #[test]
+    fn a_profile_travels_as_a_string() {
+        let rows = vec![row("lucky", false), row("plates", true), row("mine", false)];
+        let profile = Profile { name: "Raid night".into(), addons: snapshot(&rows, &state(), &["lucky".into()]), updated_at: 99 };
+        let text = encode(&profile);
+        assert!(text.starts_with("SFP1:"), "{text}");
+        assert!(text[5..].chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'), "safe in a link: {text}");
+        assert_eq!(decode(&format!("  {text}\n")), Ok(Profile { updated_at: 0, ..profile }));
+    }
+
+    #[test]
+    fn a_bad_string_says_why() {
+        let raid = |addons: Vec<ProfileAddon>| encode(&Profile { name: "Raid".into(), addons, updated_at: 0 });
+        let addon = |source: ProfileSource| ProfileAddon { name: "X".into(), source, enabled: true, version: None };
+        assert!(decode("hello").unwrap_err().contains("not a SurvivorsForge profile"));
+        assert!(decode("SFP1:%%%").is_err());
+        assert!(decode("SFP1:AAAA").is_err(), "not deflate");
+        assert!(decode(&raid(vec![addon(ProfileSource::Platform { id: "../x".into() })])).unwrap_err().contains("odd addon"));
+        assert!(decode(&raid(vec![addon(ProfileSource::GitHub { repo: "nope".into() })])).is_err());
+        assert!(decode(&raid(vec![addon(ProfileSource::Local { folder: "..\\Windows".into() })])).is_err());
+        assert!(decode(&raid((0..201).map(|_| addon(ProfileSource::Platform { id: "lucky".into() })).collect())).unwrap_err().contains("at most 200"));
+        assert!(decode(&encode(&Profile { name: " ".into(), addons: Vec::new(), updated_at: 0 })).is_err(), "a name is needed");
+    }
+
+    #[test]
+    fn a_packed_bomb_is_refused() {
+        use base64::Engine;
+        use std::io::Write;
+        let mut deflate = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::best());
+        deflate.write_all(&vec![b' '; 10 * 1024 * 1024]).unwrap();
+        let text = format!("SFP1:{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(deflate.finish().unwrap()));
+        assert_eq!(decode(&text).unwrap_err(), "The profile string is too big");
     }
 
     #[test]
