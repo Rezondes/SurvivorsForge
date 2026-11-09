@@ -2736,6 +2736,28 @@ fn fill_backups(ui: &AppWindow, core: &Core) {
     ui.set_settings_backups(ModelRc::new(VecModel::from(rows)));
 }
 
+/// Moves the backup `index` (of the settings list) to the recycle bin, after asking.
+fn on_backup_delete(ui: &AppWindow, shared: &Shared, index: usize) {
+    let picked = {
+        let core = lock(shared);
+        backup::game_config_dir(core.addons_dir()).and_then(|dir| backup::list(dir).into_iter().nth(index))
+    };
+    let Some(picked) = picked else { return };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    let text = format!("The backup of {} goes to the recycle bin; the addon settings stay as they are.", picked.when);
+    ask(ui, "Delete this backup?", &text, "Delete", true, move || {
+        let Some(ui) = weak.upgrade() else { return };
+        let mut core = lock(&shared);
+        match install::to_recycle_bin(&picked.path) {
+            Ok(()) => core.notify(format!("Backup of {} deleted", picked.when), Kind::Success),
+            Err(e) => core.notify(format!("Could not delete the backup: {e}"), Kind::Error),
+        }
+        fill_backups(&ui, &core);
+        drop(core);
+        refresh(&ui, &shared);
+    });
+}
+
 /// Puts the backup `index` (of the settings list) back, after asking.
 fn on_backup_restore(ui: &AppWindow, shared: &Shared, index: usize) {
     let picked = {
@@ -3292,6 +3314,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_row_toggle, |ui, shared, id| on_row_toggle(&ui, shared, id.to_string()));
     on!(on_backup_restore, |ui, shared, index| on_backup_restore(&ui, shared, index.max(0) as usize));
     on!(on_backups_toggled, |ui, shared| fill_backups(&ui, &lock(shared)));
+    on!(on_backup_delete, |ui, shared, index| on_backup_delete(&ui, shared, index.max(0) as usize));
     on!(on_profile_save, |ui, shared| on_profile_save(&ui, shared));
     on!(on_profile_apply, |ui, shared, index| on_profile_apply(&ui, shared, index.max(0) as usize));
     on!(on_profile_delete, |ui, shared, index| on_profile_delete(&ui, shared, index.max(0) as usize));
@@ -4934,6 +4957,11 @@ mod layout_tests {
             assert!(ui.get_settings_backups_all() && toggled.get() == 1);
             assert!(find("Show the newest 3").is_some(), "and back");
             find("Restore the backup of 2026-11-08 09:00:00").expect("each backup can be restored").invoke_accessible_default_action();
+            let deleted = Rc::new(Cell::new(-1));
+            let d = deleted.clone();
+            ui.on_backup_delete(move |i| d.set(i));
+            find("Delete the backup of 2026-11-09 14:03:12").expect("and deleted").mock_single_click(PointerEventButton::Left);
+            assert_eq!(deleted.get(), 0);
             assert_eq!(restored.get(), 1);
         }
 

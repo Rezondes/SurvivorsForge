@@ -251,6 +251,7 @@ component SettingsView inherits VerticalLayout {
     in property <[string]> backups-kept-labels;
     in-out property <int> backups-kept-index;
     callback backup-restore(int);
+    callback backup-delete(int);
     // The GitHub login on the platform: the login name while logged in, else empty.
     in property <string> account-login;
     in property <string> account-initial;
@@ -619,6 +620,10 @@ component SettingsView inherits VerticalLayout {
                         accessible-label: "Restore the backup of " + line.when;
                         clicked => { root.backup-restore(index); }
                     }
+                }
+                RemoveButton {
+                    label: "Delete the backup of " + line.when;
+                    clicked => { root.backup-delete(index); }
                 }
             }
             if root.backups.length > 0 : Text {
@@ -1180,6 +1185,7 @@ export component AppWindow inherits Window {
     in property <int> settings-backups-total;
     in-out property <bool> settings-backups-all;
     callback backups-toggled();
+    callback backup-delete(int);
     in property <[ProfileLine]> settings-profiles;
     in-out property <string> settings-profile-name;
     in property <string> settings-profile-error;
@@ -1855,6 +1861,7 @@ export component AppWindow inherits Window {
                             backups-kept-labels: root.settings-backups-kept-labels;
                             backups-kept-index <=> root.settings-backups-kept-index;
                             backup-restore(index) => { root.backup-restore(index); }
+                            backup-delete(index) => { root.backup-delete(index); }
                             account-login: root.account-login;
                             account-initial: root.account-initial;
                             account-avatar: root.account-avatar;
