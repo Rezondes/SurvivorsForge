@@ -5281,7 +5281,7 @@ mod layout_tests {
             ui.set_settings_game_versions_failed(true);
             assert!(find(failed).is_some() && find("Loading the game versions...").is_none(), "after a check without them");
             ui.set_settings_game_versions_failed(false);
-            assert!(find(failed).is_none() && find("The platform lists no game versions yet.").is_some(), "the platform answered with an empty list");
+            assert!(find(failed).is_none() && find("The platform lists no game versions yet. Once it does, you choose yours here.").is_some(), "the platform answered with an empty list");
         }
 
         #[test]

@@ -327,7 +327,7 @@ component SettingsView inherits VerticalLayout {
         if root.game-versions.length <= 1 : Text {
             text: root.checking ? "Loading the game versions..."
                 : root.game-versions-failed ? "The platform does not answer, so its game versions are not loaded."
-                : "The platform lists no game versions yet.";
+                : "The platform lists no game versions yet. Once it does, you choose yours here.";
             font-size: Theme.meta;
             color: Theme.text-muted;
             vertical-alignment: center;
