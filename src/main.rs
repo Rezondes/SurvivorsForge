@@ -5296,6 +5296,8 @@ mod layout_tests {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             }
+            assert!(find("Never sent: your name or file contents. No IP address is stored.").is_none(), "folded away at first");
+            find("What is sent?").expect("a way to the points").invoke_accessible_default_action();
             for line in [
                 "Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.",
                 "Never sent: your name or file contents. No IP address is stored.",

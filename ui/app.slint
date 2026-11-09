@@ -270,6 +270,8 @@ component SettingsView inherits VerticalLayout {
     property <string> copied-code;
     // The platform addresses are shown: opened by hand, or a refused one has to be fixed.
     property <bool> advanced-open;
+    // The points of what the statistics send are open.
+    property <bool> stats-details;
     property <bool> show-advanced: root.advanced-open || root.api-error != "" || root.web-error != "";
     callback login();
     callback login-device();
@@ -811,8 +813,16 @@ component SettingsView inherits VerticalLayout {
                     }
                 }
             }
-            // What the two boxes send, in the words of telemetry.rs and /stats: one point a line.
-            VerticalLayout {
+            // What the two boxes send, in the words of telemetry.rs and /stats: one point a line,
+            // folded away behind a link; read once, it need not push the page down every time.
+            HorizontalLayout {
+                alignment: start;
+                LinkButton {
+                    text: root.stats-details ? "Hide what is sent" : "What is sent?";
+                    clicked => { root.stats-details = !root.stats-details; }
+                }
+            }
+            if root.stats-details : VerticalLayout {
                 spacing: 2px;
                 HorizontalLayout {
                     spacing: 6px;
