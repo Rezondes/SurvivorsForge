@@ -891,12 +891,17 @@ component SettingsView inherits VerticalLayout {
     }
     // Another platform than the built-in one: set once, if ever. Folded away at the end, open on
     // its own while one of its fields was refused.
-    HorizontalLayout {
-        alignment: start;
-        LinkButton {
-            text: (root.show-advanced ? "Hide advanced settings" : "Show advanced settings")
-                + (!root.show-advanced && (root.api-url != "" || root.web-url != "") ? " (another platform is set)" : "");
-            clicked => { root.advanced-open = !root.show-advanced; }
+    // A row of its own, its link in the column of the fields.
+    SettingRow {
+        label: "Advanced";
+        first-line: Theme.touch ? 44px : 24px;
+        HorizontalLayout {
+            alignment: start;
+            LinkButton {
+                text: (root.show-advanced ? "Hide the platform addresses" : "Show the platform addresses")
+                    + (!root.show-advanced && (root.api-url != "" || root.web-url != "") ? " (another platform is set)" : "");
+                clicked => { root.advanced-open = !root.show-advanced; }
+            }
         }
     }
     if root.show-advanced : VerticalLayout {

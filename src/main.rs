@@ -4655,12 +4655,12 @@ mod layout_tests {
                 return;
             }
             assert!(find("Platform API address").is_none(), "hidden at first: hardly anyone changes it");
-            find("Show advanced settings").expect("a way to them").invoke_accessible_default_action();
+            find("Show the platform addresses").expect("a way to them").invoke_accessible_default_action();
             assert!(find("Platform API address").is_some() && find("Platform website address").is_some());
-            find("Hide advanced settings").expect("and back").invoke_accessible_default_action();
+            find("Hide the platform addresses").expect("and back").invoke_accessible_default_action();
             assert!(find("Platform API address").is_none());
             ui.set_settings_api_url("http://localhost:3081".into());
-            assert!(find("Show advanced settings (another platform is set)").is_some(), "a changed address says so while hidden");
+            assert!(find("Show the platform addresses (another platform is set)").is_some(), "a changed address says so while hidden");
         }
 
         #[test]
@@ -5317,7 +5317,7 @@ mod layout_tests {
             ui.window().set_size(slint::LogicalSize::new(980.0, 660.0));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
-            let Some(advanced) = find("Show advanced settings") else {
+            let Some(advanced) = find("Show the platform addresses") else {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             };
