@@ -85,6 +85,30 @@ impl LauncherToken {
     }
 }
 
+/// Names (lowercase) of generic HTTP tools, libraries and browsers, and of the docs' example: a
+/// client of the public API names itself (docs/public-api.md, rule 6), not what it is built with.
+const GENERIC_CLIENTS: [&str; 22] = [
+    "axios", "got", "undici", "deno", "bun", "reqwest", "ureq", "hyper", "rust", "aiohttp", "httpx", "urllib3", "libwww-perl",
+    "lwp-request", "faraday", "restsharp", "guzzlehttp", "dalvik", "scrapy", "k6", "mylauncher", "survivorsforge-unofficial",
+];
+/// Name beginnings of the same, for families with many spellings (`python-requests`, `Go-http-client`).
+const GENERIC_PREFIXES: [&str; 18] = [
+    "curl", "wget", "python", "java", "go-", "apache-", "node", "php", "ruby", "perl", "dart", "okhttp", "mozilla", "opera",
+    "postman", "insomnia", "powershell", "httpie",
+];
+
+/// Whether `user_agent` names a client of its own: `Name/version` first, and a name that is no
+/// generic tool, library or browser, no example of the docs and no unofficial launcher build.
+// ponytail: a fixed list; anyone can still type any name, it only makes a client name itself
+pub fn names_own_client(user_agent: Option<&str>) -> bool {
+    let Some((name, version)) = user_agent.and_then(|ua| ua.split_whitespace().next()).and_then(|w| w.split_once('/')) else { return false };
+    let name = name.to_ascii_lowercase();
+    !name.is_empty()
+        && !version.is_empty()
+        && !GENERIC_CLIENTS.contains(&name.as_str())
+        && !GENERIC_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
 /// The routes of the public API for other launchers (docs/public-api.md).
 pub const PUBLIC_ROUTES: [&str; 7] = [
     "/v1/registry",
@@ -331,6 +355,7 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let sent = request.headers().get(BUILD_HEADER).and_then(|v| v.to_str().ok());
     let spoofed = route != SELF_UPDATE_ROUTE && recorder.launcher_token.as_ref().is_some_and(|t| t.spoofed(user_agent, sent));
     let client = if spoofed { Client::Other } else { classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website) };
+    let unnamed = client == Client::Other && PUBLIC_ROUTES.contains(&route.as_str()) && !names_own_client(user_agent);
     if client == Client::Other && PUBLIC_ROUTES.contains(&route.as_str()) {
         recorder.stats.record_public((recorder.clock)(), &route, public_client(user_agent), country(request.headers()));
     }
@@ -348,6 +373,9 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     let response = if spoofed {
         let message = "Only official SurvivorsForge builds may name themselves SurvivorsForge; send your own User-Agent (see /docs/public-api.md)";
         crate::error::ApiError::new(axum::http::StatusCode::FORBIDDEN, "unofficial_client", message).into_response()
+    } else if unnamed {
+        let message = "Name your client in the User-Agent, e.g. MyTool/1.0 (+https://github.com/you/mytool); generic tools, libraries and browsers are refused (see /docs/public-api.md)";
+        crate::error::ApiError::new(axum::http::StatusCode::FORBIDDEN, "user_agent_required", message).into_response()
     } else {
         crate::github::usage::ORIGIN.scope(origin, next.run(request)).instrument(span.clone()).await
     };
@@ -405,6 +433,36 @@ pub fn spawn_metrics_server(addr: std::net::SocketAddr) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_clients_that_name_themselves_count_as_named() {
+        for ua in ["MyTool/1.0 (+https://github.com/me/mytool)", "RebornForge/0.7.2 (windows)", "GitHub-Hookshot/abc"] {
+            assert!(names_own_client(Some(ua)), "{ua}");
+        }
+        for ua in [
+            None,
+            Some(""),
+            Some("MyTool"),
+            Some("MyTool/"),
+            Some("/1.0"),
+            Some("curl/8.5.0"),
+            Some("Wget/1.21"),
+            Some("python-requests/2.31"),
+            Some("Python-urllib/3.12"),
+            Some("Go-http-client/2.0"),
+            Some("Mozilla/5.0 (Windows NT 10.0) WindowsPowerShell/5.1"),
+            Some("Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0"),
+            Some("PostmanRuntime/7.39"),
+            Some("node-fetch/1.0"),
+            Some("axios/1.7"),
+            Some("okhttp/4.12"),
+            Some("Java/21"),
+            Some("MyLauncher/1.2 (+https://github.com/me/mylauncher)"),
+            Some("SurvivorsForge-unofficial/0.7.3 (windows)"),
+        ] {
+            assert!(!names_own_client(ua), "{ua:?}");
+        }
+    }
 
     #[test]
     fn public_routes_are_the_documented_ones() {

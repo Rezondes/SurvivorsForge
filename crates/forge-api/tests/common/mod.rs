@@ -78,7 +78,7 @@ impl TestApp {
 
     /// Like `call`, with the user's GitHub token in `X-GitHub-Token` as the website sends it.
     pub async fn call_as(&self, method: &str, uri: &str, token: Option<&str>, github_token: Option<&str>, body: Option<serde_json::Value>) -> Reply {
-        let mut request = Request::builder().method(method).uri(uri);
+        let mut request = Request::builder().method(method).uri(uri).header("user-agent", "ForgeTest/1.0");
         if let Some(github_token) = github_token {
             request = request.header("x-github-token", github_token);
         }

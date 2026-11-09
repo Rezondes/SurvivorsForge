@@ -55,7 +55,8 @@ fn forwarded(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
 
 impl ApiClient {
     pub fn new(base: &str) -> ApiClient {
-        let builder = || reqwest::Client::builder().timeout(std::time::Duration::from_secs(30));
+        // The API knows the website by `WEBSITE_IP`; the name helps where that is not set.
+        let builder = || reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).user_agent(concat!("SurvivorsForge-Web/", env!("CARGO_PKG_VERSION")));
         ApiClient {
             http: builder().build().expect("HTTP client"),
             no_redirect: builder().redirect(reqwest::redirect::Policy::none()).build().expect("HTTP client"),

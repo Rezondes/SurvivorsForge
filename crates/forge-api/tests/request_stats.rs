@@ -28,7 +28,7 @@ async fn counts_by_route_template(pool: PgPool) {
     for slug in ["a", "a", "a", "b"] {
         send(&app.router, get(&format!("/v1/addons/{slug}"), "SurvivorsForge/0.4.3")).await;
     }
-    send(&app.router, get("/v1/addons", "curl/8")).await;
+    send(&app.router, get("/v1/addons", "MyTool/1.0")).await;
     assert_eq!(
         rows(&app).await,
         [("/v1/addons".into(), "GET".into(), 200, "other".into(), 1), ("/v1/addons/{slug}".into(), "GET".into(), 404, "launcher".into(), 4)]
@@ -137,8 +137,8 @@ async fn website_requests_are_marked(pool: PgPool) {
 #[sqlx::test]
 async fn rate_limited_requests_counted(pool: PgPool) {
     let app = TestApp::with_config(pool, |c| c.rate_limit_per_minute = 1);
-    send(&app.router, get("/v1/addons", "curl/8")).await;
-    let limited = send(&app.router, get("/v1/addons", "curl/8")).await;
+    send(&app.router, get("/v1/addons", "MyTool/1.0")).await;
+    let limited = send(&app.router, get("/v1/addons", "MyTool/1.0")).await;
     assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
     let statuses: Vec<i16> = rows(&app).await.into_iter().map(|r| r.2).collect();
     assert_eq!(statuses, [200, 429]);
@@ -202,8 +202,8 @@ async fn only_official_builds_may_name_themselves_survivorsforge(pool: PgPool) {
     assert!(spoofed.body.contains("unofficial_client"), "{}", spoofed.body);
     let wrong = send(&app.router, call("/v1/categories", "SurvivorsForge/1.0.0", Some("guess"))).await;
     assert_eq!(wrong.status, StatusCode::FORBIDDEN);
-    // Launchers from before the token, other clients and unofficial builds pass.
-    for user_agent in ["SurvivorsForge/0.7.2 (windows)", "MyLauncher/1.2", "SurvivorsForge-unofficial/0.7.3 (windows)"] {
+    // Launchers from before the token and clients with a name of their own pass.
+    for user_agent in ["SurvivorsForge/0.7.2 (windows)", "RebornForge/1.2 (windows)"] {
         assert_eq!(send(&app.router, call("/v1/categories", user_agent, None)).await.status, StatusCode::OK, "{user_agent}");
     }
     // The self-update stays open, so a launcher can always reach the build with the token.
@@ -213,4 +213,21 @@ async fn only_official_builds_may_name_themselves_survivorsforge(pool: PgPool) {
     let counted: Vec<(String, i16, String)> = rows(&app).await.into_iter().filter(|r| r.0 == "/v1/categories").map(|r| (r.0, r.2, r.3)).collect();
     assert!(counted.contains(&("/v1/categories".into(), 403, "other".into())), "{counted:?}");
     assert!(!counted.iter().any(|r| r.1 == 403 && r.2 == "launcher"), "{counted:?}");
+}
+
+#[sqlx::test]
+async fn the_public_api_wants_a_client_name_of_its_own(pool: PgPool) {
+    let app = TestApp::new(pool);
+    for user_agent in ["", "curl/8.5.0", "python-requests/2.31", "Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0", "MyLauncher/1.2 (+https://github.com/me/mylauncher)", "SurvivorsForge-unofficial/0.7.3 (windows)"] {
+        let reply = send(&app.router, get("/v1/categories", user_agent)).await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{user_agent}");
+        assert!(reply.body.contains("user_agent_required"), "{}", reply.body);
+    }
+    assert_eq!(send(&app.router, get("/v1/categories", "MyTool/1.0 (+https://github.com/me/mytool)")).await.status, StatusCode::OK);
+    // Only the public routes: the login opens in a browser.
+    assert_ne!(send(&app.router, get("/v1/auth/github/start", "Mozilla/5.0 Firefox/130.0")).await.status, StatusCode::FORBIDDEN);
+    // The website (WEBSITE_IP) passes with any name.
+    let app = TestApp::with_config(app.pool.clone(), |c| c.website_ip = Some("10.0.0.11".parse().unwrap()));
+    let router = app.router.clone().layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 11], 4000))));
+    assert_eq!(send(&router, get("/v1/categories", "reqwest")).await.status, StatusCode::OK);
 }

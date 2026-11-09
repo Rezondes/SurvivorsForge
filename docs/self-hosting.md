@@ -244,8 +244,11 @@ installs nothing.
 
 Only official builds may name themselves `SurvivorsForge/<version>` in their User-Agent. The release
 workflow compiles the repository secret `SURVIVORSFORGE_BUILD_TOKEN` into the launcher, which sends
-it as `X-SurvivorsForge-Build` to the API only, never to GitHub. A build without it (a fork, your own
-`cargo build`, a debug build) sends `SurvivorsForge-unofficial/<version>` and counts as another client.
+it as `X-SurvivorsForge-Build` to the API only, never to GitHub. A release build without it (a fork, your own
+`cargo build --release`) sends `SurvivorsForge-unofficial/<version>`, a debug build
+`SurvivorsForge-dev/<version>`; both count as another client.
+The public API refuses that name (`403 user_agent_required`, docs/public-api.md rule 6): a fork sets
+its own at build time with `SURVIVORSFORGE_CLIENT_NAME=MyForge cargo build --release`.
 To see a local build as the launcher, build it with any `SURVIVORSFORGE_BUILD_TOKEN` against a platform
 without `LAUNCHER_BUILD_TOKEN`.
 

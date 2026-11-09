@@ -123,7 +123,7 @@ async fn etag_and_cache_headers(pool: PgPool) {
     let first = app.get("/v1/registry", None).await;
     assert_eq!(first.headers["cache-control"], "public, max-age=300");
     let etag = first.headers["etag"].to_str().unwrap().to_string();
-    let second = send(&app.router, Request::get("/v1/registry").header("if-none-match", etag).body(Body::empty()).unwrap()).await;
+    let second = send(&app.router, Request::get("/v1/registry").header("user-agent", "ForgeTest/1.0").header("if-none-match", etag).body(Body::empty()).unwrap()).await;
     assert_eq!(second.status, StatusCode::NOT_MODIFIED);
 }
 

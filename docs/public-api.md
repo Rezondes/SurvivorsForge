@@ -40,7 +40,7 @@ Anyone may use this API on these conditions:
 3. **Follow removals.** An addon that disappears from `/v1/registry` was deleted or blocked. Stop offering it and do not keep installing it from an older copy of the list.
 4. **Link, do not rehost.** Download from `asset_url` and do not mirror the zips.
 5. **Do not pose as SurvivorsForge.** Saying that your launcher reads the SurvivorsForge index is fine; looking like the official launcher is not. The User-Agent name `SurvivorsForge` belongs to the official builds alone, also for these public endpoints and also for forks of the launcher. A request that names itself `SurvivorsForge/<version>` without being an official build gets `403 unofficial_client`. A fork built from the source sends `SurvivorsForge-unofficial/<version>` by itself; give it a name of its own.
-6. **Name your client.** Trying the API by hand (curl, a browser, the playground) is fine. A tool that calls it regularly sends its own User-Agent, as under "How often", and meets the conditions above.
+6. **Name your client.** Every request to these endpoints sends a User-Agent that starts with a name of your own and a version, `Name/version`, as under "How often". The API answers `403 user_agent_required` to a request without one, to the default of a generic tool, library or browser (curl, wget, Python, Go, Java, Node, PowerShell, Postman, `Mozilla/...` and the like), to `MyLauncher` from the examples below and to `SurvivorsForge-unofficial`. To try it by hand, use the [playground](https://forge.rezondes.net/docs/api-docs/playground) or name yourself, e.g. `curl -A "MyName/1.0" https://forgeapi.rezondes.net/v1/categories`. A tool that calls it regularly also meets the conditions above.
 
 ## Stability
 
@@ -52,7 +52,7 @@ Anyone may use this API on these conditions:
 
 These examples are only a starting point, not tested ready-to-use code. Read them, adapt them to your launcher and test your client yourself.
 
-Each example polls the registry with a `User-Agent` and `If-None-Match`, and downloads a version only when its trust level allows it and its SHA-256 matches. Call `poll` at most every 5 minutes. Addons missing from a new list were deleted or blocked: stop offering them. `latest` is a registry entry's `latest` or an entry of `/v1/addons/{slug}/versions`.
+Replace `MyLauncher` and the URL in `UA` with your own: the API refuses the example's name. Each example polls the registry with a `User-Agent` and `If-None-Match`, and downloads a version only when its trust level allows it and its SHA-256 matches. Call `poll` at most every 5 minutes. Addons missing from a new list were deleted or blocked: stop offering them. `latest` is a registry entry's `latest` or an entry of `/v1/addons/{slug}/versions`.
 
 ### JavaScript (Node 18+)
 
@@ -245,6 +245,7 @@ Errors are JSON with a stable code and a readable message:
 | `404` | `not_found` | Unknown or deleted addon, unknown tag. |
 | `422` | `unknown_game_version` | `?game=` names a game version that does not exist. |
 | `422` | `invalid_sort` | `/v1/addons?sort=` is not `relevance`, `downloads`, `updated` or `name`. |
+| `403` | `user_agent_required` | The User-Agent does not start with a `Name/version` of your own (rule 6). |
 | `403` | `unofficial_client` | The User-Agent names the official launcher (`SurvivorsForge/<version>`), but the request does not come from an official build (rule 5). |
 | `429` | `rate_limited` | More than 120 requests in a minute. |
 

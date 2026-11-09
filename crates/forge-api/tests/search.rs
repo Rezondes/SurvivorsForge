@@ -165,7 +165,7 @@ async fn etag_304(pool: PgPool) {
     let app = catalog(pool).await;
     let first = app.get("/v1/addons", None).await;
     let etag = first.headers["etag"].to_str().unwrap().to_string();
-    let request = Request::get("/v1/addons").header("if-none-match", &etag).body(Body::empty()).unwrap();
+    let request = Request::get("/v1/addons").header("user-agent", "ForgeTest/1.0").header("if-none-match", &etag).body(Body::empty()).unwrap();
     let second = send(&app.router, request).await;
     assert_eq!(second.status, StatusCode::NOT_MODIFIED);
     assert!(second.body.is_empty());

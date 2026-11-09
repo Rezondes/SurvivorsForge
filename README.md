@@ -348,7 +348,7 @@ turns off the events (and with them the ID) or only the ID.
 
 Every request names the launcher version and operating system in its User-Agent
 (`SurvivorsForge/0.6.4 (windows)`). Only release builds, which compile in the secret build token,
-send `SurvivorsForge`; every other build sends `SurvivorsForge-unofficial/<version>`
+send `SurvivorsForge`; every other build sends `SURVIVORSFORGE_CLIENT_NAME` from build time, else `SurvivorsForge-unofficial/<version>` (refused by the public API) or, for a debug build, `SurvivorsForge-dev/<version>`
 (see [docs/self-hosting.md](docs/self-hosting.md#official-launcher-builds)). A request with an installation ID marks that launcher active for the
 hour (`launcher_active`, forgotten with the IDs after 90 days); Grafana's *Launcher and downloads* shows
 the active launchers of this hour and of today (Europe/Berlin) by platform and version.

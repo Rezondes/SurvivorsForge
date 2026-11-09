@@ -158,11 +158,19 @@ pub fn with_build_token(request: ureq::Request) -> ureq::Request {
     }
 }
 
+/// The name a build without the token sends: `SURVIVORSFORGE_CLIENT_NAME` at build time, so a fork
+/// names itself, else `SurvivorsForge-dev` for a debug build (the local platform) and
+/// `SurvivorsForge-unofficial` for a release build, which the platform's public API refuses.
+fn unofficial_name() -> &'static str {
+    let fallback = if cfg!(debug_assertions) { "SurvivorsForge-dev" } else { "SurvivorsForge-unofficial" };
+    option_env!("SURVIVORSFORGE_CLIENT_NAME").filter(|n| !n.is_empty()).unwrap_or(fallback)
+}
+
 /// `SurvivorsForge/<version> (<platform>)` for an official build: the platform counts the active
 /// launchers by both (`forge-api` request_stats::launcher_build). Other builds send
 /// `SurvivorsForge-unofficial/<version> (<platform>)`, so they never pose as the official launcher.
 pub fn user_agent() -> String {
-    let name = if build_token().is_some() { crate::APP_NAME } else { "SurvivorsForge-unofficial" };
+    let name = if build_token().is_some() { crate::APP_NAME } else { unofficial_name() };
     format!("{name}/{} ({})", crate::APP_VERSION, std::env::consts::OS)
 }
 
@@ -715,7 +723,7 @@ mod tests {
 
     #[test]
     fn names_version_and_platform_for_the_active_launcher_counts() {
-        let name = if build_token().is_some() { "SurvivorsForge" } else { "SurvivorsForge-unofficial" };
+        let name = if build_token().is_some() { "SurvivorsForge" } else { unofficial_name() };
         assert_eq!(user_agent(), format!("{name}/{} ({})", crate::APP_VERSION, std::env::consts::OS));
     }
 

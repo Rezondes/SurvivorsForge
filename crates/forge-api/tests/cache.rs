@@ -37,7 +37,7 @@ async fn a_cached_answer_still_honours_if_none_match(pool: PgPool) {
     let first = app.get("/v1/registry", None).await;
     let etag = first.headers["etag"].to_str().unwrap().to_string();
 
-    let request = Request::get("/v1/registry").header("if-none-match", &etag).body(Body::empty()).unwrap();
+    let request = Request::get("/v1/registry").header("user-agent", "ForgeTest/1.0").header("if-none-match", &etag).body(Body::empty()).unwrap();
     let reply = send(&app.router, request).await;
     assert_eq!(reply.status, StatusCode::NOT_MODIFIED);
     assert_eq!(reply.headers["etag"].to_str().unwrap(), etag);
