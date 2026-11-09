@@ -62,6 +62,9 @@ pub struct Config {
     /// The platform addons known when the launcher last closed; the others are new in Browse.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub seen_addons: Vec<String>,
+    /// Keep the profiles in the platform account too, for the user's other computers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sync_profiles: bool,
 }
 
 fn default_backups_kept() -> u8 {
@@ -182,6 +185,7 @@ impl Default for Config {
             backups_kept: default_backups_kept(),
             update_disabled: true,
             seen_addons: Vec::new(),
+            sync_profiles: false,
         }
     }
 }
@@ -214,6 +218,7 @@ pub struct SettingsInput {
     pub check_minutes: u8,
     pub backups_kept: u8,
     pub update_disabled: bool,
+    pub sync_profiles: bool,
 }
 
 /// The settings with every valid field of `input` taken over; an invalid field keeps the saved
@@ -231,6 +236,7 @@ pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Settings
         check_minutes: snap_check_minutes(input.check_minutes),
         backups_kept: input.backups_kept.clamp(1, 50),
         update_disabled: input.update_disabled,
+        sync_profiles: input.sync_profiles,
         ..saved.clone()
     };
     let mut warning = None;
@@ -525,6 +531,7 @@ mod tests {
             check_minutes: 45,
             backups_kept: 0,
             update_disabled: false,
+            sync_profiles: true,
         };
         let (config, errors, _) = apply_settings(&saved, input);
         assert_eq!(config.after_launch, AfterLaunch::Minimize);
@@ -532,6 +539,7 @@ mod tests {
         assert_eq!(config.backups_kept, 1, "at least one backup stays");
         assert_eq!(Config::default().backups_kept, 10);
         assert!(!config.update_disabled);
+        assert!(config.sync_profiles && !Config::default().sync_profiles, "off unless chosen");
         assert!(Config::default().update_disabled, "disabled addons update unless switched off");
         assert!(!config.telemetry, "the privacy toggle is taken over");
         assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));

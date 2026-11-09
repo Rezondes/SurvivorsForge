@@ -155,6 +155,62 @@ fn plain(text: &str, extra: &str) -> bool {
     (1..=100).contains(&text.len()) && !text.contains("..") && text.chars().all(|c| c.is_ascii_alphanumeric() || extra.contains(c))
 }
 
+/// What a sync with the account does: which profiles go up, which come down, which go away there.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SyncPlan {
+    pub upload: Vec<Profile>,
+    pub download: Vec<Profile>,
+    pub delete_remote: Vec<String>,
+    /// Profiles here that a newer one from the account replaces.
+    pub replaced: Vec<String>,
+}
+
+/// Brings this computer's profiles and the account's together: the newer of two with the same name
+/// wins, one only here goes up, one only there comes down unless it was deleted here.
+pub fn merge(local: &Profiles, remote: &[Profile]) -> SyncPlan {
+    let mut plan = SyncPlan::default();
+    for mine in &local.profiles {
+        match remote.iter().find(|r| r.name.eq_ignore_ascii_case(&mine.name)) {
+            None => plan.upload.push(mine.clone()),
+            Some(theirs) if theirs.updated_at > mine.updated_at => {
+                if theirs.addons != mine.addons {
+                    plan.replaced.push(mine.name.clone());
+                }
+                plan.download.push(theirs.clone());
+            }
+            Some(theirs) if theirs.updated_at < mine.updated_at => plan.upload.push(mine.clone()),
+            Some(_) => {}
+        }
+    }
+    for theirs in remote {
+        if local.get(&theirs.name).is_some() {
+            continue;
+        }
+        if local.deleted.iter().any(|d| d.eq_ignore_ascii_case(&theirs.name)) {
+            plan.delete_remote.push(theirs.name.clone());
+        } else {
+            plan.download.push(theirs.clone());
+        }
+    }
+    plan
+}
+
+/// The account's profiles from `GET /v1/me/profiles`; a broken one is left out.
+pub fn parse_remote(json: &str) -> Vec<Profile> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else { return Vec::new() };
+    value["profiles"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let mut profile: Profile = serde_json::from_value(p["data"].clone()).ok()?;
+            profile.name = p["name"].as_str()?.to_string();
+            profile.updated_at = p["updated_at"].as_u64()?;
+            Some(profile)
+        })
+        .collect()
+}
+
 /// The installed addons as a profile's list: each with where it comes from and whether it is on.
 pub fn snapshot(rows: &[Row], state: &State, held: &[String]) -> Vec<ProfileAddon> {
     rows.iter()
@@ -388,6 +444,34 @@ mod tests {
         deflate.write_all(&vec![b' '; 10 * 1024 * 1024]).unwrap();
         let text = format!("SFP1:{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(deflate.finish().unwrap()));
         assert_eq!(decode(&text).unwrap_err(), "The profile string is too big");
+    }
+
+    #[test]
+    fn a_sync_keeps_the_newer_side() {
+        let p = |name: &str, at: u64, on: bool| Profile {
+            name: name.into(),
+            addons: vec![ProfileAddon { name: "Lucky".into(), source: ProfileSource::Platform { id: "lucky".into() }, enabled: on, version: None }],
+            updated_at: at,
+        };
+        let mut local = Profiles::default();
+        for profile in [p("Raid", 10, true), p("Solo", 30, true), p("Same", 5, true), p("New here", 1, true)] {
+            local.put(profile);
+        }
+        local.deleted = vec!["Gone".into()];
+        let remote = vec![p("raid", 20, false), p("Solo", 25, false), p("Same", 5, true), p("Gone", 3, true), p("Other PC", 7, true)];
+        let plan = merge(&local, &remote);
+        let names = |list: &[Profile]| list.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&plan.upload), ["Solo", "New here"]);
+        assert_eq!(names(&plan.download), ["raid", "Other PC"]);
+        assert_eq!(plan.delete_remote, ["Gone"]);
+        assert_eq!(plan.replaced, ["Raid"], "said, so a change is not lost unnoticed");
+    }
+
+    #[test]
+    fn the_account_answer_is_read_with_its_names_and_times() {
+        let json = r#"{"profiles":[{"name":"Raid","updated_at":9,"data":{"name":"x","addons":[]}},{"name":"Bad","updated_at":1,"data":7}]}"#;
+        assert_eq!(parse_remote(json), [Profile { name: "Raid".into(), addons: Vec::new(), updated_at: 9 }]);
+        assert!(parse_remote("not json").is_empty());
     }
 
     #[test]

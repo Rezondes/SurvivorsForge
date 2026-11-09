@@ -1778,6 +1778,11 @@ fn run_check(ui: &AppWindow, shared: &Shared, quiet: bool) {
             let _ = weak.upgrade_in_event_loop(move |ui| install_updates(&ui, &s, auto, Vec::new()));
         }
 
+        // The profiles follow the account once per check by hand (the start is one).
+        if !quiet {
+            let s = shared.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| sync_profiles(&ui, &s));
+        }
         let found = core.update_ids();
         if quiet {
             return Ok(match controller::new_updates(&known_updates, &found) {
@@ -2193,6 +2198,7 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
             periodic_check: ui.get_settings_periodic_check(),
             check_minutes: config::CHECK_MINUTES.get(ui.get_settings_check_index().max(0) as usize).copied().unwrap_or(30),
             update_disabled: ui.get_settings_update_disabled(),
+            sync_profiles: ui.get_settings_sync_profiles(),
             backups_kept: backup::KEPT_CHOICES.get(ui.get_settings_backups_kept_index().max(0) as usize).copied().unwrap_or(10),
         };
         // A bad field keeps its saved value and its text in the field; the others still save.
@@ -2242,6 +2248,8 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
         Err(e) => lock(shared).notify(format!("Could not save the settings: {e}"), Kind::Error),
     }
     refresh(ui, shared);
+    // Switched on (or still on): the profiles meet the account now.
+    sync_profiles(ui, shared);
     if recheck {
         check_updates(ui, shared);
         load_account(ui, shared);
@@ -2463,6 +2471,7 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_after_launch_index(core.config.after_launch.index());
     ui.set_settings_periodic_check(core.config.periodic_check);
     ui.set_settings_update_disabled(core.config.update_disabled);
+    ui.set_settings_sync_profiles(core.config.sync_profiles);
     ui.set_settings_backups_kept_index(backup::KEPT_CHOICES.iter().position(|k| *k == core.config.backups_kept).unwrap_or(2) as i32);
     fill_backups(ui, &core);
     fill_profiles(ui, &core);
@@ -2518,6 +2527,61 @@ fn on_profile_save(ui: &AppWindow, shared: &Shared) {
     }
     ui.set_settings_profile_name(SharedString::new());
     refresh(ui, shared);
+    sync_profiles(ui, shared);
+}
+
+/// Brings the profiles here and in the platform account together, on a thread: the newer side of
+/// each wins. Only while switched on and logged in; offline it waits for the next time.
+fn sync_profiles(ui: &AppWindow, shared: &Shared) {
+    let job = {
+        let core = lock(shared);
+        if !core.config.sync_profiles || core.offline {
+            return;
+        }
+        let Some(token) = bearer(&core) else { return };
+        (core.client(), core.api_url(), token)
+    };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    std::thread::spawn(move || {
+        let (client, api, token) = job;
+        let base = format!("{api}/v1/me/profiles");
+        let Ok(text) = client.get_text_as(&base, &token) else { return };
+        let plan = {
+            let core = lock(&shared);
+            profile::merge(&core.profiles, &profile::parse_remote(&text))
+        };
+        let path = |name: &str| {
+            let name: String = name.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+            format!("{base}/{name}")
+        };
+        let mut all_sent = true;
+        for p in &plan.upload {
+            let data = serde_json::json!({ "name": p.name, "addons": p.addons });
+            let body = serde_json::json!({ "data": data, "updated_at": p.updated_at });
+            all_sent &= client.put_json(&path(&p.name), &token, &body).is_ok();
+        }
+        for name in &plan.delete_remote {
+            all_sent &= client.delete_as(&path(name), &token).is_ok();
+        }
+        {
+            let mut core = lock(&shared);
+            for p in plan.download {
+                core.profiles.put(p);
+            }
+            if all_sent {
+                core.profiles.deleted.clear();
+            }
+            let _ = core.profiles.save(&core.data_dir);
+            if !plan.replaced.is_empty() {
+                let message = format!("Your account had newer versions of these profiles, which replace the ones here: {}", plan.replaced.join(", "));
+                core.notify(message, Kind::Info);
+            }
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            fill_profiles(&ui, &lock(&shared));
+            refresh(&ui, &shared);
+        });
+    });
 }
 
 /// Applies the profile `index` after showing what it changes.
@@ -2600,6 +2664,7 @@ fn on_profile_import(ui: &AppWindow, shared: &Shared, text: &str) {
         }
     };
     refresh(ui, shared);
+    sync_profiles(ui, shared);
     if let Some(index) = index {
         ui.set_settings_profile_import(SharedString::new());
         on_profile_apply(ui, shared, index);
@@ -2615,6 +2680,8 @@ fn on_profile_delete(ui: &AppWindow, shared: &Shared, index: usize) {
         core.profiles.remove(&name);
         let _ = core.profiles.save(&core.data_dir);
         fill_profiles(&ui, &core);
+        drop(core);
+        sync_profiles(&ui, &shared);
     });
 }
 
@@ -4835,6 +4902,11 @@ mod layout_tests {
             ui.set_settings_profile_import("SFP1:xyz".into());
             find("Import").expect("import").invoke_accessible_default_action();
             assert_eq!(calls.borrow()[3..], ["string 0", "copied", "import SFP1:xyz"]);
+            let sync = || ElementHandle::find_by_accessible_label(&ui, "Keep the profiles in my account").find(|e| e.accessible_role() == Some(AccessibleRole::Checkbox));
+            assert!(sync().is_none(), "logged out: no account to keep them in");
+            ui.set_account_login("alice".into());
+            sync().expect("logged in: the switch").mock_single_click(PointerEventButton::Left);
+            assert!(ui.get_settings_sync_profiles());
         }
 
         #[test]

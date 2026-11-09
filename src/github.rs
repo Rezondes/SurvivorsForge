@@ -220,6 +220,16 @@ impl Client {
         self.platform_call(self.agent.post(url), bearer.unwrap_or_default(), headers, Some(body))
     }
 
+    /// A platform PUT of JSON as `bearer`.
+    pub fn put_json(&self, url: &str, bearer: &str, body: &serde_json::Value) -> Result<String> {
+        self.platform_call(self.agent.put(url), bearer, &[], Some(body))
+    }
+
+    /// A platform DELETE as `bearer`.
+    pub fn delete_as(&self, url: &str, bearer: &str) -> Result<String> {
+        self.platform_call(self.agent.delete(url), bearer, &[], None)
+    }
+
     fn platform_call(&self, mut request: ureq::Request, bearer: &str, headers: &[(&str, &str)], body: Option<&serde_json::Value>) -> Result<String> {
         if !bearer.is_empty() {
             request = request.set("Authorization", &format!("Bearer {bearer}"));
