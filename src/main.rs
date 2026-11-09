@@ -5022,6 +5022,7 @@ mod layout_tests {
             ui.on_login_cancel(move || c.set(c.get() + 1));
             ui.on_logout(move || o.set(o.get() + 1));
             ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2400.0));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
             if find("Installed (0)").is_none() {
@@ -5200,6 +5201,7 @@ mod layout_tests {
             let d = devices.clone();
             ui.on_login_device(move || d.set(d.get() + 1));
             ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2400.0));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
             if find("Installed (0)").is_none() {
@@ -5272,6 +5274,7 @@ mod layout_tests {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
             ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2400.0));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
             if find("Installed (0)").is_none() {

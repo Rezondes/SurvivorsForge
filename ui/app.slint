@@ -280,6 +280,10 @@ component SettingsView inherits VerticalLayout {
     spacing: 16px;
     alignment: start;
 
+    SectionHeading {
+        text: "Game";
+        size: 20px;
+    }
     SettingRow {
         label: "AddOns folder";
         Field {
@@ -324,246 +328,18 @@ component SettingsView inherits VerticalLayout {
             wrap: word-wrap;
         }
     }
-    SettingRow {
-        label: "GitHub account";
-        if root.account-login != "" : HorizontalLayout {
-            spacing: 10px;
-            alignment: start;
-            AddonIcon {
-                width: 32px;
-                height: 32px;
-                icon: root.account-avatar;
-                initial: root.account-initial;
-            }
-            Text {
-                text: root.account-login;
-                font-size: Theme.body;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
-            ActionButton {
-                text: "Log out";
-                clicked => { root.logout(); }
-            }
-        }
-        if root.account-login == "" && !root.account-busy && root.account-github-only != "" : HorizontalLayout {
-            spacing: 10px;
-            alignment: start;
-            Text {
-                text: root.account-github-only + " (GitHub only)";
-                font-size: Theme.body;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
-            ActionButton {
-                text: "Log out";
-                clicked => { root.logout(); }
-            }
-        }
-        if root.account-login == "" && !root.account-busy : ActionButton {
-            // Logged in to GitHub alone already: this is the platform login on top.
-            text: root.account-github-only != "" ? "Log in to SurvivorsForge too" : "Log in with GitHub";
-            // Game Mode opens no browser; offline the browser would wait for a dead page.
-            enabled: !root.game-mode && !root.offline;
-            clicked => { root.login(); }
-        }
-        if root.account-login == "" && !root.account-busy && root.account-github-only == "" && root.device-login-offered : ActionButton {
-            text: "Log in to GitHub only";
-            clicked => { root.login-device(); }
-        }
-        // Two lines: where to go, then the code with its buttons; one line is too wide next to the label.
-        if root.account-busy && root.account-device-code != "" : VerticalLayout {
-            spacing: 6px;
-            HorizontalLayout {
-                alignment: start;
-                spacing: 6px;
-                Text {
-                    text: "Enter this code at";
-                    font-size: Theme.body;
-                    color: Theme.text-muted;
-                    vertical-alignment: center;
-                }
-                // A link opens the page again (say the first browser tab was closed); Game Mode opens
-                // no browser, so there it is the address to type on another device.
-                if !root.game-mode : LinkButton {
-                    text: "github.com/login/device";
-                    clicked => { root.open-device-page(); }
-                }
-                if root.game-mode : Text {
-                    text: "github.com/login/device";
-                    font-size: Theme.body;
-                    color: Theme.text;
-                    vertical-alignment: center;
-                }
-            }
-            HorizontalLayout {
-                alignment: start;
-                spacing: 10px;
-                // Read-only input: the code can be selected and copied like any text.
-                device-code := TextInput {
-                    text: root.account-device-code;
-                    read-only: true;
-                    single-line: true;
-                    font-size: 22px;
-                    color: Theme.gold-bright;
-                    selection-background-color: #8A6C3A;
-                    selection-foreground-color: Theme.gold-bright;
-                    vertical-alignment: center;
-                    accessible-label: "Device code " + root.account-device-code;
-                }
-                ActionButton {
-                    text: root.copied-code == root.account-device-code ? "Copied" : "Copy code";
-                    clicked => {
-                        device-code.select-all();
-                        device-code.copy();
-                        device-code.clear-selection();
-                        root.copied-code = root.account-device-code;
-                    }
-                }
-                ActionButton {
-                    text: "Cancel";
-                    clicked => { root.login-cancel(); }
-                }
-            }
-        }
-        if root.account-busy && root.account-device-code == "" : HorizontalLayout {
-            spacing: 10px;
-            Text {
-                text: "Waiting for the browser...";
-                font-size: Theme.body;
-                color: Theme.text-muted;
-                vertical-alignment: center;
-            }
-            ActionButton {
-                text: "Cancel";
-                clicked => { root.login-cancel(); }
-            }
+    if !root.game-mode : SettingRow {
+        label: "Once the game runs";
+        Dropdown {
+            label: "After launching the game";
+            model: root.after-launch-labels;
+            current-index <=> root.after-launch-index;
+            selected => { root.save(); }
         }
     }
-    if root.account-error != "" : FieldError { text: root.account-error; }
-    FieldHint {
-        text: root.device-login-offered && root.account-login == ""
-            ? "The SurvivorsForge server cannot be reached. Logging in to GitHub only still gets updates past GitHub's limits for logged-out users; comments and issues need the server."
-            : root.offline && root.account-login == ""
-            ? "The SurvivorsForge server cannot be reached, so its login waits until it is back."
-            : root.game-mode && root.account-login == ""
-            ? "Log in from the desktop: Game Mode opens no browser."
-            : root.account-login != ""
-            ? "You write comments and issues in the launcher as " + root.account-login + "."
-            : "Optional. Lets you write comments and issues from the launcher, as on the website.";
-    }
-    SettingRow {
-        label: "Statistics";
-        first-line: Theme.touch ? 44px : 24px;
-        VerticalLayout {
-            spacing: 8px;
-            HorizontalLayout {
-                spacing: 10px;
-                PickBox {
-                    label: "Count my installs in the public statistics";
-                    checked: root.telemetry;
-                    toggled => {
-                        root.telemetry = !root.telemetry;
-                        root.save();
-                    }
-                }
-                TickLabel {
-                    text: "Count my installs in the public statistics";
-                    clicked => {
-                        root.telemetry = !root.telemetry;
-                        root.save();
-                    }
-                }
-            }
-            HorizontalLayout {
-                spacing: 10px;
-                padding-left: (Theme.touch ? 44px : 24px) + 10px;
-                PickBox {
-                    label: "Send an anonymous installation ID";
-                    enabled: root.telemetry;
-                    checked: root.send-install-id;
-                    toggled => {
-                        root.send-install-id = !root.send-install-id;
-                        root.save();
-                    }
-                }
-                TickLabel {
-                    text: "Send an anonymous installation ID";
-                    enabled: root.telemetry;
-                    clicked => {
-                        root.send-install-id = !root.send-install-id;
-                        root.save();
-                    }
-                }
-            }
-            // What the two boxes send, in the words of telemetry.rs and /stats: one point a line.
-            VerticalLayout {
-                spacing: 2px;
-                HorizontalLayout {
-                    spacing: 6px;
-                    Text {
-                        text: "•";
-                        font-size: Theme.meta;
-                        color: Theme.text-muted;
-                        accessible-role: none;
-                    }
-                    // A Rectangle around the wrapping text: the layout would measure it as one line.
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: point1.preferred-height;
-                        point1 := Text {
-                            width: parent.width;
-                            text: "Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.";
-                            font-size: Theme.meta;
-                            color: Theme.text-muted;
-                            wrap: word-wrap;
-                        }
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    Text {
-                        text: "•";
-                        font-size: Theme.meta;
-                        color: Theme.text-muted;
-                        accessible-role: none;
-                    }
-                    // A Rectangle around the wrapping text: the layout would measure it as one line.
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: point2.preferred-height;
-                        point2 := Text {
-                            width: parent.width;
-                            text: "Never sent: your name or file contents. No IP address is stored.";
-                            font-size: Theme.meta;
-                            color: Theme.text-muted;
-                            wrap: word-wrap;
-                        }
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    Text {
-                        text: "•";
-                        font-size: Theme.meta;
-                        color: Theme.text-muted;
-                        accessible-role: none;
-                    }
-                    // A Rectangle around the wrapping text: the layout would measure it as one line.
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: point3.preferred-height;
-                        point3 := Text {
-                            width: parent.width;
-                            text: "The installation ID is a random number that counts active launchers. The platform forgets it after 90 days.";
-                            font-size: Theme.meta;
-                            color: Theme.text-muted;
-                            wrap: word-wrap;
-                        }
-                    }
-                }
-            }
-        }
+    SectionHeading {
+        text: "Addons";
+        size: 20px;
     }
     SettingRow {
         label: "Updates";
@@ -807,13 +583,249 @@ component SettingsView inherits VerticalLayout {
             }
         }
     }
-    if !root.game-mode : SettingRow {
-        label: "Once the game runs";
-        Dropdown {
-            label: "After launching the game";
-            model: root.after-launch-labels;
-            current-index <=> root.after-launch-index;
-            selected => { root.save(); }
+    SectionHeading {
+        text: "Account & privacy";
+        size: 20px;
+    }
+    SettingRow {
+        label: "GitHub account";
+        if root.account-login != "" : HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            AddonIcon {
+                width: 32px;
+                height: 32px;
+                icon: root.account-avatar;
+                initial: root.account-initial;
+            }
+            Text {
+                text: root.account-login;
+                font-size: Theme.body;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            ActionButton {
+                text: "Log out";
+                clicked => { root.logout(); }
+            }
+        }
+        if root.account-login == "" && !root.account-busy && root.account-github-only != "" : HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            Text {
+                text: root.account-github-only + " (GitHub only)";
+                font-size: Theme.body;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            ActionButton {
+                text: "Log out";
+                clicked => { root.logout(); }
+            }
+        }
+        if root.account-login == "" && !root.account-busy : ActionButton {
+            // Logged in to GitHub alone already: this is the platform login on top.
+            text: root.account-github-only != "" ? "Log in to SurvivorsForge too" : "Log in with GitHub";
+            // Game Mode opens no browser; offline the browser would wait for a dead page.
+            enabled: !root.game-mode && !root.offline;
+            clicked => { root.login(); }
+        }
+        if root.account-login == "" && !root.account-busy && root.account-github-only == "" && root.device-login-offered : ActionButton {
+            text: "Log in to GitHub only";
+            clicked => { root.login-device(); }
+        }
+        // Two lines: where to go, then the code with its buttons; one line is too wide next to the label.
+        if root.account-busy && root.account-device-code != "" : VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 6px;
+                Text {
+                    text: "Enter this code at";
+                    font-size: Theme.body;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+                // A link opens the page again (say the first browser tab was closed); Game Mode opens
+                // no browser, so there it is the address to type on another device.
+                if !root.game-mode : LinkButton {
+                    text: "github.com/login/device";
+                    clicked => { root.open-device-page(); }
+                }
+                if root.game-mode : Text {
+                    text: "github.com/login/device";
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                // Read-only input: the code can be selected and copied like any text.
+                device-code := TextInput {
+                    text: root.account-device-code;
+                    read-only: true;
+                    single-line: true;
+                    font-size: 22px;
+                    color: Theme.gold-bright;
+                    selection-background-color: #8A6C3A;
+                    selection-foreground-color: Theme.gold-bright;
+                    vertical-alignment: center;
+                    accessible-label: "Device code " + root.account-device-code;
+                }
+                ActionButton {
+                    text: root.copied-code == root.account-device-code ? "Copied" : "Copy code";
+                    clicked => {
+                        device-code.select-all();
+                        device-code.copy();
+                        device-code.clear-selection();
+                        root.copied-code = root.account-device-code;
+                    }
+                }
+                ActionButton {
+                    text: "Cancel";
+                    clicked => { root.login-cancel(); }
+                }
+            }
+        }
+        if root.account-busy && root.account-device-code == "" : HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: "Waiting for the browser...";
+                font-size: Theme.body;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+            }
+            ActionButton {
+                text: "Cancel";
+                clicked => { root.login-cancel(); }
+            }
+        }
+    }
+    if root.account-error != "" : FieldError { text: root.account-error; }
+    FieldHint {
+        text: root.device-login-offered && root.account-login == ""
+            ? "The SurvivorsForge server cannot be reached. Logging in to GitHub only still gets updates past GitHub's limits for logged-out users; comments and issues need the server."
+            : root.offline && root.account-login == ""
+            ? "The SurvivorsForge server cannot be reached, so its login waits until it is back."
+            : root.game-mode && root.account-login == ""
+            ? "Log in from the desktop: Game Mode opens no browser."
+            : root.account-login != ""
+            ? "You write comments and issues in the launcher as " + root.account-login + "."
+            : "Optional. Lets you write comments and issues from the launcher, as on the website.";
+    }
+    SettingRow {
+        label: "Statistics";
+        first-line: Theme.touch ? 44px : 24px;
+        VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 10px;
+                PickBox {
+                    label: "Count my installs in the public statistics";
+                    checked: root.telemetry;
+                    toggled => {
+                        root.telemetry = !root.telemetry;
+                        root.save();
+                    }
+                }
+                TickLabel {
+                    text: "Count my installs in the public statistics";
+                    clicked => {
+                        root.telemetry = !root.telemetry;
+                        root.save();
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                padding-left: (Theme.touch ? 44px : 24px) + 10px;
+                PickBox {
+                    label: "Send an anonymous installation ID";
+                    enabled: root.telemetry;
+                    checked: root.send-install-id;
+                    toggled => {
+                        root.send-install-id = !root.send-install-id;
+                        root.save();
+                    }
+                }
+                TickLabel {
+                    text: "Send an anonymous installation ID";
+                    enabled: root.telemetry;
+                    clicked => {
+                        root.send-install-id = !root.send-install-id;
+                        root.save();
+                    }
+                }
+            }
+            // What the two boxes send, in the words of telemetry.rs and /stats: one point a line.
+            VerticalLayout {
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "•";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        accessible-role: none;
+                    }
+                    // A Rectangle around the wrapping text: the layout would measure it as one line.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: point1.preferred-height;
+                        point1 := Text {
+                            width: parent.width;
+                            text: "Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.";
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "•";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        accessible-role: none;
+                    }
+                    // A Rectangle around the wrapping text: the layout would measure it as one line.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: point2.preferred-height;
+                        point2 := Text {
+                            width: parent.width;
+                            text: "Never sent: your name or file contents. No IP address is stored.";
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "•";
+                        font-size: Theme.meta;
+                        color: Theme.text-muted;
+                        accessible-role: none;
+                    }
+                    // A Rectangle around the wrapping text: the layout would measure it as one line.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: point3.preferred-height;
+                        point3 := Text {
+                            width: parent.width;
+                            text: "The installation ID is a random number that counts active launchers. The platform forgets it after 90 days.";
+                            font-size: Theme.meta;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
         }
     }
     SettingRow {
