@@ -45,6 +45,8 @@ struct Core {
     /// Entry ids with an install, update or removal running.
     busy: HashSet<String>,
     checking: bool,
+    /// The launcher minimized itself for the running game: it comes back when the game ends.
+    minimized_for_game: bool,
     /// When the last update check started, by hand or on its own.
     last_check: Option<std::time::Instant>,
     /// How the last run of updates ended, per addon; shown until closed.
@@ -252,6 +254,7 @@ impl Core {
             busy: HashSet::new(),
             checking: false,
             last_check: None,
+            minimized_for_game: false,
             update_results: Vec::new(),
             parked: Vec::new(),
             backed_up: None,
@@ -1364,7 +1367,10 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
                     let after = lock(&repaint).config.after_launch(ui.get_game_mode());
                     match after {
                         config::AfterLaunch::Nothing => {}
-                        config::AfterLaunch::Minimize => ui.window().set_minimized(true),
+                        config::AfterLaunch::Minimize => {
+                            lock(&repaint).minimized_for_game = true;
+                            ui.window().set_minimized(true);
+                        }
                         // The usual way out: it saves the window and asks while work still runs.
                         config::AfterLaunch::Close => ui.invoke_close_window(),
                     }
@@ -1379,12 +1385,20 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
             }
             Err(message) => (message, Kind::Error),
         };
-        {
+        let back = {
             let mut core = lock(&shared);
             core.game_running = false;
             core.notify(message, kind);
-        }
-        let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
+            std::mem::take(&mut core.minimized_for_game)
+        };
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            // Minimized for the game: back as it was before (a maximized window stays maximized).
+            if back {
+                ui.window().set_minimized(false);
+                ui.window().with_winit_window(|w| w.focus_window());
+            }
+            refresh(&ui, &shared);
+        });
     });
 }
 
