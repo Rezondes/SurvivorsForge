@@ -79,6 +79,8 @@ Tests run offline. Tests that need the network are marked `#[ignore]`:
 cargo test -- --ignored
 ```
 
+To look at a page without starting the launcher, `cargo test --bin SurvivorsForge shots -- --ignored` draws it with Slint's software renderer into `target/shots/*.png` (the settings page, with the update check on and off).
+
 To try the app against a copy of an AddOns folder without touching your real settings, point the data folder somewhere else:
 
 ```bash

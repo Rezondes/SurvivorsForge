@@ -5294,3 +5294,65 @@ mod layout_tests {
         }
     }
 }
+
+/// Draws pages of the window into PNG files, to look at a layout without starting the launcher:
+/// `cargo test --bin SurvivorsForge shots -- --ignored`, the files land in `target/shots/`.
+/// Alone in its process, since it sets its own Slint platform.
+#[cfg(test)]
+mod shots {
+    use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+    use slint::Rgb8Pixel;
+    use slint::platform::{Platform, WindowAdapter};
+    use slint::ComponentHandle;
+    use std::rc::Rc;
+
+    struct Software(Rc<MinimalSoftwareWindow>);
+
+    impl Platform for Software {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    fn save(window: &MinimalSoftwareWindow, name: &str, width: u32, height: u32) {
+        let mut pixels = vec![Rgb8Pixel::default(); (width * height) as usize];
+        window.request_redraw();
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut pixels, width as usize);
+        });
+        let bytes: Vec<u8> = pixels.iter().flat_map(|p| [p.r, p.g, p.b]).collect();
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("shots");
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbImage::from_raw(width, height, bytes).unwrap().save(dir.join(format!("{name}.png"))).unwrap();
+    }
+
+    #[test]
+    #[ignore = "draws PNG files; run on its own with --ignored"]
+    fn shots() {
+        let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        if slint::platform::set_platform(Box::new(Software(window.clone()))).is_err() {
+            eprintln!("skipped: another test set the Slint platform first; run `cargo test --bin SurvivorsForge shots -- --ignored`");
+            return;
+        }
+        let ui = crate::AppWindow::new().unwrap();
+        let labels = |list: &[&str]| slint::ModelRc::new(slint::VecModel::from(list.iter().map(|l| slint::SharedString::from(*l)).collect::<Vec<_>>()));
+        ui.set_settings_path(r"P:\AzerothSurvivors\benilla-config\Addons".into());
+        ui.set_settings_check_labels(labels(&["every 30 minutes"]));
+        ui.set_settings_check_index(0);
+        ui.set_settings_backups_kept_labels(labels(&["Keep the last 10"]));
+        ui.set_settings_backups_kept_index(0);
+        ui.set_settings_after_launch_labels(labels(&["Stay open", "Minimize", "Close"]));
+        ui.set_account_login("Rezondes".into());
+        let line = |name: &str, active: bool, modified: bool| crate::ProfileLine { name: name.into(), count: "4 of 5 addons on".into(), active, modified };
+        ui.set_settings_profiles(slint::ModelRc::new(slint::VecModel::from(vec![line("Raid", true, true), line("Questing with a long name", false, false)])));
+        let backup = |when: &str| crate::BackupLine { when: when.into(), size: "0.2 MB".into() };
+        ui.set_settings_backups(slint::ModelRc::new(slint::VecModel::from(vec![backup("2026-11-09 14:03:12"), backup("2026-11-08 09:00:00")])));
+        ui.set_page(2);
+        let (width, height) = (1180, 2300);
+        window.set_size(slint::PhysicalSize::new(width, height));
+        ui.show().unwrap();
+        save(&window, "settings", width, height);
+        ui.set_settings_periodic_check(false);
+        save(&window, "settings-check-off", width, height);
+    }
+}
