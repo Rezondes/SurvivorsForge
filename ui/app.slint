@@ -611,6 +611,12 @@ component SettingsView inherits VerticalLayout {
                     clicked => { root.backup-restore(index); }
                 }
             }
+            if root.backups.length > 0 : Text {
+                text: "Restore asks first, and backs up the current settings before it replaces them.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
+            }
             if root.backups-total > 3 : HorizontalLayout {
                 alignment: start;
                 LinkButton {

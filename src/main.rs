@@ -4924,6 +4924,7 @@ mod layout_tests {
             let line = |when: &str| crate::BackupLine { when: when.into(), size: "0.2 MB".into() };
             ui.set_settings_backups(slint::ModelRc::new(slint::VecModel::from(vec![line("2026-11-09 14:03:12"), line("2026-11-08 09:00:00")])));
             assert!(find("No backups yet.").is_none());
+            assert!(find("Restore asks first, and backs up the current settings before it replaces them.").is_some(), "what Restore does");
             assert!(find("Show all 2 backups").is_none(), "3 or fewer: nothing folded away");
             let toggled = Rc::new(Cell::new(0));
             let t = toggled.clone();
