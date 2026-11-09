@@ -4,11 +4,11 @@ import {
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
     IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea,
-    UpdateResult, UpdateResultsDialog, BackupLine
+    UpdateResult, UpdateResultsDialog, BackupLine, ProfileLine
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine, UpdateResult, BackupLine }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine, UpdateResult, BackupLine, ProfileLine }
 export { Splash } from "splash.slint";
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
@@ -220,6 +220,13 @@ component SettingsView inherits VerticalLayout {
     in-out property <bool> periodic-check;
     in property <[string]> check-labels;
     in-out property <int> check-index;
+    // The profiles, and the name typed for a new one.
+    in property <[ProfileLine]> profiles;
+    in-out property <string> profile-name;
+    in property <string> profile-error;
+    callback profile-save();
+    callback profile-apply(int);
+    callback profile-delete(int);
     // The backups of the addon settings, newest first, and how many stay.
     in property <[BackupLine]> backups;
     in property <[string]> backups-kept-labels;
@@ -610,6 +617,60 @@ component SettingsView inherits VerticalLayout {
         }
     }
     SettingRow {
+        label: "Profiles";
+        VerticalLayout {
+            spacing: 6px;
+            Text {
+                text: "A profile is a set of addons, each on or off. Applying one installs the platform addons it has, enables them and disables all others. Nothing is deleted.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Field {
+                    text <=> root.profile-name;
+                    label: "Profile name";
+                    placeholder: "Name of a new profile";
+                    invalid: root.profile-error != "";
+                    accepted => { root.profile-save(); }
+                }
+                ActionButton {
+                    text: "Save current addons";
+                    clicked => { root.profile-save(); }
+                }
+            }
+            if root.profile-error != "" : FieldError { text: root.profile-error; }
+            for line[index] in root.profiles : HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: line.name + (line.active ? (line.modified ? "  (applied, changed since)" : "  (applied)") : "");
+                    font-size: Theme.body;
+                    color: line.active ? Theme.gold-heading : Theme.text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: line.count;
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+                LinkButton {
+                    text: "Apply";
+                    accessible-label: "Apply the profile " + line.name;
+                    clicked => { root.profile-apply(index); }
+                }
+                LinkButton {
+                    text: "Delete";
+                    accessible-label: "Delete the profile " + line.name;
+                    clicked => { root.profile-delete(index); }
+                }
+            }
+        }
+    }
+    SettingRow {
         label: "Backups";
         VerticalLayout {
             spacing: 6px;
@@ -948,6 +1009,12 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-periodic-check: true;
     in-out property <bool> settings-update-disabled: true;
     in property <[BackupLine]> settings-backups;
+    in property <[ProfileLine]> settings-profiles;
+    in-out property <string> settings-profile-name;
+    in property <string> settings-profile-error;
+    callback profile-save();
+    callback profile-apply(int);
+    callback profile-delete(int);
     in property <[string]> settings-backups-kept-labels;
     in-out property <int> settings-backups-kept-index: 2;
     callback backup-restore(int);
@@ -1589,6 +1656,12 @@ export component AppWindow inherits Window {
                             check-labels: root.settings-check-labels;
                             check-index <=> root.settings-check-index;
                             backups: root.settings-backups;
+                            profiles: root.settings-profiles;
+                            profile-name <=> root.settings-profile-name;
+                            profile-error: root.settings-profile-error;
+                            profile-save => { root.profile-save(); }
+                            profile-apply(index) => { root.profile-apply(index); }
+                            profile-delete(index) => { root.profile-delete(index); }
                             backups-kept-labels: root.settings-backups-kept-labels;
                             backups-kept-index <=> root.settings-backups-kept-index;
                             backup-restore(index) => { root.backup-restore(index); }

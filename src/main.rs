@@ -10,6 +10,7 @@ use survivorsforge::config::{self, Config};
 use survivorsforge::controller::{self, Badge, Row, RowState, UNMANAGED_PREFIX};
 use survivorsforge::account::{Account, Keyring, TokenSource};
 use survivorsforge::backup;
+use survivorsforge::profile::{self, Profile, Profiles};
 use survivorsforge::deep_link;
 use survivorsforge::login;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
@@ -52,6 +53,8 @@ struct Core {
     parked: Vec<Parked>,
     /// When the addon settings were last backed up: one backup serves a whole run of changes.
     backed_up: Option<std::time::Instant>,
+    /// The profiles of `profiles.json`.
+    profiles: Profiles,
     search: String,
     /// Running work and how things ended, bottom right.
     toasts: Toasts,
@@ -237,6 +240,7 @@ impl Core {
     fn new(data_dir: PathBuf, config: Option<Config>) -> Core {
         let registry = registry::load(None, &data_dir.join("cache")).0;
         let platform = controller::PlatformCache::load(&data_dir.join("cache"));
+        let profiles = Profiles::load(&data_dir);
         let mut core = Core {
             data_dir,
             config: Config::default(),
@@ -251,6 +255,7 @@ impl Core {
             update_results: Vec::new(),
             parked: Vec::new(),
             backed_up: None,
+            profiles,
             search: String::new(),
             toasts: Toasts::default(),
             work: None,
@@ -2460,10 +2465,128 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_update_disabled(core.config.update_disabled);
     ui.set_settings_backups_kept_index(backup::KEPT_CHOICES.iter().position(|k| *k == core.config.backups_kept).unwrap_or(2) as i32);
     fill_backups(ui, &core);
+    fill_profiles(ui, &core);
     ui.set_settings_check_index(config::CHECK_MINUTES.iter().position(|m| *m == core.config.check_minutes).unwrap_or(3) as i32);
     ui.set_installed_tiles(core.config.tiles("installed"));
     ui.set_browse_tiles(core.config.tiles("browse"));
     fill_game_versions(ui, &core);
+}
+
+/// The profiles in the settings; the applied one says whether the addons changed since.
+fn fill_profiles(ui: &AppWindow, core: &Core) {
+    let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+    let lines: Vec<ProfileLine> = core
+        .profiles
+        .profiles
+        .iter()
+        .map(|p| {
+            let active = core.profiles.active.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(&p.name));
+            let on = p.addons.iter().filter(|a| a.enabled).count();
+            ProfileLine {
+                name: p.name.clone().into(),
+                count: format!("{on} of {} addons on", p.addons.len()).into(),
+                active,
+                modified: active && !profile::matches(p, &rows, &core.state),
+            }
+        })
+        .collect();
+    ui.set_settings_profiles(ModelRc::new(VecModel::from(lines)));
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
+}
+
+/// Saves the installed addons, each on or off, under the typed name.
+fn on_profile_save(ui: &AppWindow, shared: &Shared) {
+    let name = match profile::valid_name(&ui.get_settings_profile_name()) {
+        Ok(name) => name,
+        Err(e) => return ui.set_settings_profile_error(e.into()),
+    };
+    ui.set_settings_profile_error(SharedString::new());
+    {
+        let mut core = lock(shared);
+        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+        let addons = profile::snapshot(&rows, &core.state, &core.config.held);
+        core.profiles.put(Profile { name: name.clone(), addons, updated_at: now_secs() });
+        core.profiles.active = Some(name.clone());
+        match core.profiles.save(&core.data_dir) {
+            Ok(()) => core.notify(format!("Profile {name} saved"), Kind::Success),
+            Err(e) => core.notify(format!("Could not save the profile: {e}"), Kind::Error),
+        }
+        fill_profiles(ui, &core);
+    }
+    ui.set_settings_profile_name(SharedString::new());
+    refresh(ui, shared);
+}
+
+/// Applies the profile `index` after showing what it changes.
+fn on_profile_apply(ui: &AppWindow, shared: &Shared, index: usize) {
+    let (name, plan) = {
+        let core = lock(shared);
+        let Some(p) = core.profiles.profiles.get(index).cloned() else { return };
+        if core.game_running {
+            drop(core);
+            lock(shared).notify("Close the game first: it reads the AddOns folder while it runs.".into(), Kind::Warning);
+            return refresh(ui, shared);
+        }
+        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+        let installable = |id: &str| core.registry.get(id).is_some_and(|a| a.latest.as_ref().is_none_or(|l| l.trust.installable()));
+        (p.name.clone(), profile::plan(&p, &rows, &core.state, &installable))
+    };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    ask(ui, &format!("Apply the profile {name}?"), &plan.describe(), "Apply", false, move || {
+        let Some(ui) = weak.upgrade() else { return };
+        apply_profile(&ui, &shared, name, plan);
+    });
+}
+
+fn apply_profile(ui: &AppWindow, shared: &Shared, name: String, plan: profile::ProfilePlan) {
+    {
+        let mut core = lock(shared);
+        if let Err(e) = core.back_up_settings() {
+            core.notify(e.to_string(), Kind::Error);
+            drop(core);
+            return refresh(ui, shared);
+        }
+        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+        let addons = core.addons_dir().to_path_buf();
+        let folders = |id: &str| rows.iter().find(|r| r.id == id).map(|r| r.folders.clone()).unwrap_or_default();
+        let mut failed = Vec::new();
+        for (enable, list) in [(true, &plan.enable), (false, &plan.disable)] {
+            for (id, shown) in list {
+                if let Err(e) = install::set_enabled(&addons, &folders(id), enable) {
+                    failed.push(format!("{shown}: {e}"));
+                }
+            }
+        }
+        core.rescan();
+        core.profiles.active = Some(name.clone());
+        let _ = core.profiles.save(&core.data_dir);
+        if failed.is_empty() {
+            core.notify(format!("Profile {name} applied"), Kind::Success);
+        } else {
+            core.notify(format!("Profile {name} applied, except: {}", failed.join(" | ")), Kind::Error);
+        }
+        fill_profiles(ui, &core);
+    }
+    refresh(ui, shared);
+    // What this computer lacks installs as one run, with its results in the dialog.
+    if !plan.install.is_empty() {
+        install_updates(ui, shared, plan.install.into_iter().map(|(id, _)| id).collect(), Vec::new());
+    }
+}
+
+fn on_profile_delete(ui: &AppWindow, shared: &Shared, index: usize) {
+    let Some(name) = lock(shared).profiles.profiles.get(index).map(|p| p.name.clone()) else { return };
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    ask(ui, &format!("Delete the profile {name}?"), "The addons stay as they are; only the profile goes.", "Delete", true, move || {
+        let Some(ui) = weak.upgrade() else { return };
+        let mut core = lock(&shared);
+        core.profiles.remove(&name);
+        let _ = core.profiles.save(&core.data_dir);
+        fill_profiles(&ui, &core);
+    });
 }
 
 /// The backups of the addon settings in the settings, newest first.
@@ -3032,6 +3155,9 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_toast_action, |ui, shared, id| on_undo_remove(&ui, shared, id));
     on!(on_row_toggle, |ui, shared, id| on_row_toggle(&ui, shared, id.to_string()));
     on!(on_backup_restore, |ui, shared, index| on_backup_restore(&ui, shared, index.max(0) as usize));
+    on!(on_profile_save, |ui, shared| on_profile_save(&ui, shared));
+    on!(on_profile_apply, |ui, shared, index| on_profile_apply(&ui, shared, index.max(0) as usize));
+    on!(on_profile_delete, |ui, shared, index| on_profile_delete(&ui, shared, index.max(0) as usize));
     on!(on_category_changed, |ui, shared, index| {
         {
             let mut core = lock(shared);
@@ -4625,6 +4751,32 @@ mod layout_tests {
                 find("Enable Plates").expect("a disabled one enabled").mock_single_click(PointerEventButton::Left);
             }
             assert_eq!(*toggled.borrow(), ["lucky", "plates", "lucky", "plates"]);
+        }
+
+        #[test]
+        fn the_settings_save_apply_and_delete_profiles() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let calls = Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+            let (a, b, c) = (calls.clone(), calls.clone(), calls.clone());
+            ui.on_profile_save(move || a.borrow_mut().push("save".into()));
+            ui.on_profile_apply(move |i| b.borrow_mut().push(format!("apply {i}")));
+            ui.on_profile_delete(move |i| c.borrow_mut().push(format!("delete {i}")));
+            let line = |name: &str, active: bool, modified: bool| crate::ProfileLine { name: name.into(), count: "3 of 4 addons on".into(), active, modified };
+            ui.set_settings_profiles(slint::ModelRc::new(slint::VecModel::from(vec![line("Raid", true, true), line("Solo", false, false)])));
+            ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2600.0));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("Raid  (applied, changed since)").is_some(), "the applied one, changed since");
+            find("Save current addons").expect("a way to save").invoke_accessible_default_action();
+            find("Apply the profile Solo").expect("apply").invoke_accessible_default_action();
+            find("Delete the profile Raid").expect("delete").invoke_accessible_default_action();
+            assert_eq!(*calls.borrow(), ["save", "apply 1", "delete 0"]);
         }
 
         #[test]

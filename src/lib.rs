@@ -11,6 +11,7 @@ pub mod install;
 pub mod local_scan;
 pub mod login;
 pub mod pictures;
+pub mod profile;
 pub mod registry;
 pub mod repo_detect;
 pub mod scan;

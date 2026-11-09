@@ -131,6 +131,15 @@ export struct CommentRow {
     body: string,
 }
 
+// One profile in the settings: its name, how many addons it has, and whether it is the one
+// applied last (and changed since).
+export struct ProfileLine {
+    name: string,
+    count: string,
+    active: bool,
+    modified: bool,
+}
+
 // One backup of the addon settings in the settings.
 export struct BackupLine {
     when: string,
