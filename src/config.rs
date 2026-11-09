@@ -37,6 +37,51 @@ pub struct Config {
     /// newest is installed again by hand.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held: Vec<String>,
+    /// Where the window was when the launcher closed; not used in Game Mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowPlace>,
+    /// The page open when the launcher closed: 0 installed, 1 browse, 2 settings.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub last_page: u8,
+}
+
+fn is_zero(n: &u8) -> bool {
+    *n == 0
+}
+
+/// The window in physical pixels, as the system places it. Maximized keeps the size from before.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WindowPlace {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    #[serde(default)]
+    pub maximized: bool,
+}
+
+/// A screen's area in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Screen {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl WindowPlace {
+    /// Whether enough of the window's top shows on one of `screens` to grab it there: a screen
+    /// unplugged since, and the window would open where no one sees it.
+    pub fn on_a_screen(&self, screens: &[Screen]) -> bool {
+        const GRIP: i64 = 64;
+        let (left, top, right) = (self.x as i64, self.y as i64, self.x as i64 + self.width as i64);
+        screens.iter().any(|s| {
+            let (sl, st) = (s.x as i64, s.y as i64);
+            let (sr, sb) = (sl + s.width as i64, st + s.height as i64);
+            let wide = right.min(sr) - left.max(sl);
+            wide >= GRIP && top >= st && top + GRIP <= sb
+        })
+    }
 }
 
 fn yes() -> bool {
@@ -61,6 +106,8 @@ impl Default for Config {
             auto_update_all: false,
             auto_update: Vec::new(),
             held: Vec::new(),
+            window: None,
+            last_page: 0,
         }
     }
 }
@@ -501,6 +548,29 @@ mod tests {
         assert_eq!(validate_addons_dir(&addons), Ok(None));
         assert_eq!(validate_addons_dir(&foo), Ok(Some(DirWarning::NotNamedAddOns)));
         assert_eq!(std::fs::read_dir(&addons).unwrap().count(), 0, "probe file is removed");
+    }
+
+    #[test]
+    fn window_place_and_page_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let place = WindowPlace { x: -1200, y: 40, width: 1300, height: 900, maximized: true };
+        let config = Config { addons_dir: PathBuf::from(r"P:\AddOns"), window: Some(place), last_page: 1, ..Default::default() };
+        config.save(dir.path()).unwrap();
+        assert_eq!(Config::load(dir.path()), Some(config));
+        std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
+        let old = Config::load(dir.path()).unwrap();
+        assert_eq!((old.window, old.last_page), (None, 0), "old config files still load");
+    }
+
+    #[test]
+    fn a_window_shows_only_where_a_screen_is() {
+        let screens = [Screen { x: 0, y: 0, width: 1920, height: 1080 }, Screen { x: 1920, y: 0, width: 1920, height: 1080 }];
+        let at = |x, y| WindowPlace { x, y, width: 1180, height: 800, maximized: false };
+        assert!(at(100, 100).on_a_screen(&screens));
+        assert!(at(3000, 200).on_a_screen(&screens), "the second screen");
+        assert!(!at(-2500, 100).on_a_screen(&screens), "a screen that is gone");
+        assert!(!at(100, 1070).on_a_screen(&screens), "only its last pixels show");
+        assert!(!at(100, 100).on_a_screen(&[]));
     }
 
     #[test]

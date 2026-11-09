@@ -2317,6 +2317,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let result = start(loading, link, game_mode);
         if let Ok(ui) = &result {
             let _ = ui.show();
+            keep_window_on_screen(ui);
         }
         let _ = splash.hide();
         if result.is_err() {
@@ -2329,6 +2330,58 @@ fn main() -> Result<(), slint::PlatformError> {
         Some(Err(e)) => Err(e),
         _ => Ok(()),
     }
+}
+
+/// Puts the window and the page back where they were at the last close (before the window shows).
+fn restore_window(ui: &AppWindow, config: &Config) {
+    if let Some(place) = config.window {
+        ui.window().set_size(slint::PhysicalSize::new(place.width, place.height));
+        ui.window().set_position(slint::PhysicalPosition::new(place.x, place.y));
+        ui.window().set_maximized(place.maximized);
+    }
+    ui.set_page(i32::from(config.last_page.min(2)));
+}
+
+/// A window saved on a screen that is gone since opens in the middle of the main screen.
+fn keep_window_on_screen(ui: &AppWindow) {
+    ui.window().with_winit_window(|w| {
+        let (Ok(at), size) = (w.outer_position(), w.outer_size()) else { return };
+        let place = config::WindowPlace { x: at.x, y: at.y, width: size.width, height: size.height, maximized: false };
+        let screens: Vec<config::Screen> = w
+            .available_monitors()
+            .map(|m| config::Screen { x: m.position().x, y: m.position().y, width: m.size().width, height: m.size().height })
+            .collect();
+        if screens.is_empty() || place.on_a_screen(&screens) {
+            return;
+        }
+        if let Some(main) = w.primary_monitor().or_else(|| w.available_monitors().next()) {
+            let (m, ms) = (main.position(), main.size());
+            let x = m.x + (ms.width.saturating_sub(size.width) / 2) as i32;
+            let y = m.y + (ms.height.saturating_sub(size.height) / 2) as i32;
+            w.set_outer_position(slint::winit_030::winit::dpi::PhysicalPosition::new(x, y));
+        }
+    });
+}
+
+/// Saves where the window is and the open page, for the next start. Not in Game Mode or setup.
+fn remember_window(ui: &AppWindow, shared: &Shared) {
+    if ui.get_game_mode() || ui.get_needs_setup() {
+        return;
+    }
+    let mut core = lock(shared);
+    let maximized = ui.window().is_maximized();
+    let before = core.config.window;
+    let place = match (maximized, before) {
+        // The system reports the maximized size; the one to come back to is the one from before.
+        (true, Some(before)) => config::WindowPlace { maximized: true, ..before },
+        _ => {
+            let (at, size) = (ui.window().position(), ui.window().size());
+            config::WindowPlace { x: at.x, y: at.y, width: size.width, height: size.height, maximized }
+        }
+    };
+    core.config.window = Some(place);
+    core.config.last_page = ui.get_page().clamp(0, 2) as u8;
+    let _ = core.config.save(&core.data_dir);
 }
 
 /// Builds the window and wires it up while the splash shows; `loading` brings the Core.
@@ -2619,13 +2672,18 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
             let core = lock(shared);
             controller::quit_warning(core.game_updating, ui.get_self_update_busy(), core.busy.len())
         };
-        match warning {
-            Some(text) => ask(&ui, "Quit SurvivorsForge?", &text, "Quit anyway", true, || {
-                let _ = slint::quit_event_loop();
-            }),
-            None => {
+        let quit = {
+            let (weak, shared) = (ui.as_weak(), shared.clone());
+            move || {
+                if let Some(ui) = weak.upgrade() {
+                    remember_window(&ui, &shared);
+                }
                 let _ = slint::quit_event_loop();
             }
+        };
+        match warning {
+            Some(text) => ask(&ui, "Quit SurvivorsForge?", &text, "Quit anyway", true, quit),
+            None => quit(),
         }
     });
     // Alt+F4 and the system's close go the same way, so they also save and ask.
@@ -2639,6 +2697,9 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
         });
     }
 
+    if !game_mode && !needs_setup {
+        restore_window(&ui, &lock(&shared).config);
+    }
     refresh(&ui, &shared);
     if !needs_setup {
         check_updates(&ui, &shared);
