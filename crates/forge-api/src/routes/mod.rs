@@ -15,6 +15,7 @@ pub mod issues;
 pub mod me;
 pub mod members;
 pub mod packs;
+pub mod profiles;
 pub mod refresh;
 pub mod registry;
 pub mod reports;
