@@ -328,6 +328,7 @@ component SettingsView inherits VerticalLayout {
         label: "GitHub account";
         if root.account-login != "" : HorizontalLayout {
             spacing: 10px;
+            alignment: start;
             AddonIcon {
                 width: 32px;
                 height: 32px;
@@ -347,6 +348,7 @@ component SettingsView inherits VerticalLayout {
         }
         if root.account-login == "" && !root.account-busy && root.account-github-only != "" : HorizontalLayout {
             spacing: 10px;
+            alignment: start;
             Text {
                 text: root.account-github-only + " (GitHub only)";
                 font-size: Theme.body;
