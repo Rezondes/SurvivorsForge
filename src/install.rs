@@ -153,6 +153,12 @@ pub fn uninstall(addons_dir: &Path, state: &mut State, id: &str, delete: &mut dy
 /// Moves `folders` out of the AddOns folder into `scan::disabled_dir` (`enable` false), or back.
 /// Refuses, moving nothing, when one of them is already where it should go.
 pub fn set_enabled(addons_dir: &Path, folders: &[String], enable: bool) -> Result<()> {
+    set_enabled_with(addons_dir, folders, enable, &mut |from, to| std::fs::rename(from, to))
+}
+
+/// `set_enabled` with `mv` for the moves. A move that fails puts the folders moved before it back,
+/// so an addon never ends up half on, half off.
+pub fn set_enabled_with(addons_dir: &Path, folders: &[String], enable: bool, mv: MoveFn) -> Result<()> {
     let disabled = crate::scan::disabled_dir(addons_dir);
     let (from, to) = if enable { (disabled.as_path(), addons_dir) } else { (addons_dir, disabled.as_path()) };
     if let Some(both) = folders.iter().find(|f| existing_folder(to, f).is_some()) {
@@ -160,10 +166,23 @@ pub fn set_enabled(addons_dir: &Path, folders: &[String], enable: bool) -> Resul
         return Err(Error::Io(format!("{both} is in {place} already, so nothing was moved")));
     }
     std::fs::create_dir_all(to)?;
+    let mut moved: Vec<String> = Vec::new();
     for folder in folders {
-        if let Some(actual) = existing_folder(from, folder) {
-            std::fs::rename(from.join(&actual), to.join(&actual))?;
+        let Some(actual) = existing_folder(from, folder) else { continue };
+        if let Err(e) = mv(&from.join(&actual), &to.join(&actual)) {
+            for back in moved.iter().rev() {
+                let _ = mv(&to.join(back), &from.join(back));
+            }
+            // Windows refuses to move a folder another program holds open, even with no file of
+            // it open: an Explorer window on it, an editor, a file watcher, the game.
+            let why = if e.kind() == std::io::ErrorKind::PermissionDenied {
+                format!("{actual} is open in another program (an Explorer window, an editor or the game), so it cannot be moved. Close it there and try again")
+            } else {
+                format!("{actual} could not be moved: {e}")
+            };
+            return Err(Error::Io(format!("{why}; nothing was changed")));
         }
+        moved.push(actual);
     }
     Ok(())
 }
@@ -264,6 +283,22 @@ mod tests {
         let e = set_enabled(&addons, &both, false).unwrap_err();
         assert!(e.to_string().contains("Lucky_Options is in AddOns.disabled already"), "{e}");
         assert_eq!(folders(&addons), ["Lucky", "Lucky_Options", "Other"], "nothing moved");
+    }
+
+    #[test]
+    fn a_folder_held_open_elsewhere_moves_nothing() {
+        let (_dir, addons, _state) = setup();
+        let both = ["Lucky".to_string(), "Lucky_Options".to_string()];
+        let mut mv = |from: &Path, to: &Path| {
+            if from.ends_with("Lucky_Options") {
+                return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+            }
+            std::fs::rename(from, to)
+        };
+        let e = set_enabled_with(&addons, &both, false, &mut mv).unwrap_err();
+        assert!(e.to_string().contains("Lucky_Options is open in another program"), "{e}");
+        assert!(e.to_string().contains("nothing was changed"), "{e}");
+        assert_eq!(folders(&addons), ["Lucky", "Lucky_Options", "Other"], "Lucky came back");
     }
 
     #[test]
