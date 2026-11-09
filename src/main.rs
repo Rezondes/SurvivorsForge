@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use survivorsforge::config::{self, Config};
 use survivorsforge::controller::{self, Badge, Row, RowState, UNMANAGED_PREFIX};
 use survivorsforge::account::{Account, Keyring, TokenSource};
+use survivorsforge::backup;
 use survivorsforge::deep_link;
 use survivorsforge::login;
 use survivorsforge::game_update::{self, ExeSeen, WebServer};
@@ -49,6 +50,8 @@ struct Core {
     update_results: Vec<controller::UpdateOutcome>,
     /// Removed addons whose toast still offers Undo.
     parked: Vec<Parked>,
+    /// When the addon settings were last backed up: one backup serves a whole run of changes.
+    backed_up: Option<std::time::Instant>,
     search: String,
     /// Running work and how things ended, bottom right.
     toasts: Toasts,
@@ -187,6 +190,21 @@ struct Parked {
 }
 
 impl Core {
+    /// Backs up the addon settings before addons change, at most once a minute. An error stops
+    /// the change: no addon changes without its settings saved.
+    fn back_up_settings(&mut self) -> survivorsforge::Result<()> {
+        if self.backed_up.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
+            return Ok(());
+        }
+        let Some(dir) = backup::game_config_dir(self.addons_dir()).map(Path::to_path_buf) else { return Ok(()) };
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+        backup::create(&dir, &stamp)
+            .and_then(|_| backup::prune(&dir, usize::from(self.config.backups_kept)))
+            .map_err(|e| Error::Io(format!("Could not back up the addon settings, so nothing changed: {e}")))?;
+        self.backed_up = Some(std::time::Instant::now());
+        Ok(())
+    }
+
     /// Undo is over for every removal: what waits goes to the recycle bin.
     fn flush_parked(&mut self) {
         self.parked.clear();
@@ -211,6 +229,7 @@ impl Core {
             last_check: None,
             update_results: Vec::new(),
             parked: Vec::new(),
+            backed_up: None,
             search: String::new(),
             toasts: Toasts::default(),
             work: None,
@@ -1062,6 +1081,9 @@ fn install_remote(
 ) -> survivorsforge::Result<String> {
     let addon = telemetry::reported_addon(&source).map(str::to_string);
     let update = lock(shared).state.get(id).is_some();
+    if update {
+        lock(shared).back_up_settings()?;
+    }
     let mut version = remote.as_ref().map(|r| r.id.clone());
     let result = download_and_install(shared, id, name, repo, spec, source, remote, &mut version);
     let outcome = match &result {
@@ -1779,7 +1801,7 @@ fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
         }
     };
     let mut text = format!(
-        "These folders are moved to the recycle bin: {}.\n\nYour addon settings (SavedVariables in the WTF folder) stay untouched.",
+        "These folders are moved to the recycle bin: {}.\n\nYour addon settings (saved/ in the game's config folder) stay untouched and are backed up first.",
         folders.join(", ")
     );
     if !needed_by.is_empty() {
@@ -1796,6 +1818,7 @@ fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
             let safe: String = id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
             let dir = install::parking_root(&addons).join(format!("{safe}-{stamp}"));
             let entry = core.state.get(&id).cloned();
+            core.back_up_settings()?;
             if id.starts_with(UNMANAGED_PREFIX) {
                 install::remove_folders(&addons, &folders, &mut install::park_into(&dir))?;
             } else {
@@ -2044,6 +2067,7 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
             after_launch: config::AfterLaunch::from_index(ui.get_settings_after_launch_index()),
             periodic_check: ui.get_settings_periodic_check(),
             check_minutes: config::CHECK_MINUTES.get(ui.get_settings_check_index().max(0) as usize).copied().unwrap_or(30),
+            backups_kept: backup::KEPT_CHOICES.get(ui.get_settings_backups_kept_index().max(0) as usize).copied().unwrap_or(10),
         };
         // A bad field keeps its saved value and its text in the field; the others still save.
         let (config, field_errors, warning) = config::apply_settings(&core.config, input);
@@ -2312,10 +2336,54 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_auto_update(core.config.auto_update_all);
     ui.set_settings_after_launch_index(core.config.after_launch.index());
     ui.set_settings_periodic_check(core.config.periodic_check);
+    ui.set_settings_backups_kept_index(backup::KEPT_CHOICES.iter().position(|k| *k == core.config.backups_kept).unwrap_or(2) as i32);
+    fill_backups(ui, &core);
     ui.set_settings_check_index(config::CHECK_MINUTES.iter().position(|m| *m == core.config.check_minutes).unwrap_or(3) as i32);
     ui.set_installed_tiles(core.config.tiles("installed"));
     ui.set_browse_tiles(core.config.tiles("browse"));
     fill_game_versions(ui, &core);
+}
+
+/// The backups of the addon settings in the settings, newest first.
+fn fill_backups(ui: &AppWindow, core: &Core) {
+    let rows: Vec<BackupLine> = backup::game_config_dir(core.addons_dir())
+        .map(backup::list)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|b| BackupLine { when: b.when.into(), size: format!("{:.1} MB", b.bytes as f64 / 1_048_576.0).into() })
+        .collect();
+    ui.set_settings_backups(ModelRc::new(VecModel::from(rows)));
+}
+
+/// Puts the backup `index` (of the settings list) back, after asking.
+fn on_backup_restore(ui: &AppWindow, shared: &Shared, index: usize) {
+    let picked = {
+        let core = lock(shared);
+        if core.game_running {
+            drop(core);
+            lock(shared).notify("Close the game first: it writes the addon settings when it ends.".into(), Kind::Warning);
+            return refresh(ui, shared);
+        }
+        backup::game_config_dir(core.addons_dir()).map(Path::to_path_buf).and_then(|dir| backup::list(&dir).into_iter().nth(index).map(|b| (dir, b)))
+    };
+    let Some((dir, picked)) = picked else { return };
+    let text = format!(
+        "The addon settings from {} replace the current ones. The current ones are backed up first, so this can be undone the same way.",
+        picked.when
+    );
+    let (weak, shared) = (ui.as_weak(), shared.clone());
+    ask(ui, "Restore addon settings?", &text, "Restore", true, move || {
+        let w = weak.clone();
+        run_bg(weak, shared, None, move |shared| {
+            let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            backup::restore(&dir, &picked.path, &stamp)?;
+            let keep = usize::from(lock(shared).config.backups_kept);
+            let _ = backup::prune(&dir, keep.max(1) + 1);
+            let s = shared.clone();
+            let _ = w.upgrade_in_event_loop(move |ui| fill_backups(&ui, &lock(&s)));
+            Ok(format!("Addon settings from {} restored", picked.when))
+        });
+    });
 }
 
 fn fill_game_versions(ui: &AppWindow, core: &Core) {
@@ -2631,6 +2699,8 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     ui.set_safety_labels(labels(&controller::SAFETY_LABELS));
     ui.set_sort_labels(labels(&controller::SORT_LABELS));
     ui.set_settings_after_launch_labels(labels(&config::AfterLaunch::LABELS));
+    let kept: Vec<String> = backup::KEPT_CHOICES.iter().map(|k| format!("Keep the last {k}")).collect();
+    ui.set_settings_backups_kept_labels(labels(&kept.iter().map(String::as_str).collect::<Vec<_>>()));
     let every: Vec<String> = config::CHECK_MINUTES.iter().map(|m| format!("every {m} minutes")).collect();
     ui.set_settings_check_labels(labels(&every.iter().map(String::as_str).collect::<Vec<_>>()));
     ui.set_self_update_in_place(self_update::can_replace_self());
@@ -2838,6 +2908,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
         refresh(&ui, shared);
     });
     on!(on_toast_action, |ui, shared, id| on_undo_remove(&ui, shared, id));
+    on!(on_backup_restore, |ui, shared, index| on_backup_restore(&ui, shared, index.max(0) as usize));
     on!(on_category_changed, |ui, shared, index| {
         {
             let mut core = lock(shared);
@@ -4281,6 +4352,29 @@ mod layout_tests {
             find("Undo").expect("the button").invoke_accessible_default_action();
             assert_eq!(undone.get(), 5);
             assert!(find("Close message").is_some(), "and it can still be closed");
+        }
+
+        #[test]
+        fn the_settings_list_the_backups_to_restore() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let restored = Rc::new(Cell::new(-1));
+            let r = restored.clone();
+            ui.on_backup_restore(move |i| r.set(i));
+            ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2400.0));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Installed (0)").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            assert!(find("No backups yet.").is_some());
+            let line = |when: &str| crate::BackupLine { when: when.into(), size: "0.2 MB".into() };
+            ui.set_settings_backups(slint::ModelRc::new(slint::VecModel::from(vec![line("2026-11-09 14:03:12"), line("2026-11-08 09:00:00")])));
+            assert!(find("No backups yet.").is_none());
+            find("Restore the backup of 2026-11-08 09:00:00").expect("each backup can be restored").invoke_accessible_default_action();
+            assert_eq!(restored.get(), 1);
         }
 
         #[test]

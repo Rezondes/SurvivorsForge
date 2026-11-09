@@ -4,11 +4,11 @@ import {
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
     IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea,
-    UpdateResult, UpdateResultsDialog
+    UpdateResult, UpdateResultsDialog, BackupLine
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
-export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine, UpdateResult }
+export { AddonRow, AddonDetail, AboutBlock, Shot, Theme, CommentRow, Toast, IssueLine, IssueReplyRow, VersionLine, UpdateResult, BackupLine }
 export { Splash } from "splash.slint";
 
 // An AddOns folder found on this machine: short label for the button, full path to use.
@@ -218,6 +218,11 @@ component SettingsView inherits VerticalLayout {
     in-out property <bool> periodic-check;
     in property <[string]> check-labels;
     in-out property <int> check-index;
+    // The backups of the addon settings, newest first, and how many stay.
+    in property <[BackupLine]> backups;
+    in property <[string]> backups-kept-labels;
+    in-out property <int> backups-kept-index;
+    callback backup-restore(int);
     // The GitHub login on the platform: the login name while logged in, else empty.
     in property <string> account-login;
     in property <string> account-initial;
@@ -584,6 +589,56 @@ component SettingsView inherits VerticalLayout {
             }
         }
     }
+    SettingRow {
+        label: "Backups";
+        VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    horizontal-stretch: 1;
+                    text: "Before an update or a removal, the addon settings (saved/ in the game's config folder) are backed up to backups/ there.";
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                }
+                Dropdown {
+                    width: 200px;
+                    label: "Backups to keep";
+                    model: root.backups-kept-labels;
+                    current-index <=> root.backups-kept-index;
+                    selected => { root.save(); }
+                }
+            }
+            if root.backups.length == 0 : Text {
+                text: "No backups yet.";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
+            for line[index] in root.backups : HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: line.when;
+                    font-size: Theme.body;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: line.size;
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+                LinkButton {
+                    text: "Restore";
+                    accessible-label: "Restore the backup of " + line.when;
+                    clicked => { root.backup-restore(index); }
+                }
+            }
+        }
+    }
     if !root.game-mode : SettingRow {
         label: "After launching the game";
         Dropdown {
@@ -868,6 +923,10 @@ export component AppWindow inherits Window {
     in property <[string]> settings-after-launch-labels;
     in-out property <int> settings-after-launch-index;
     in-out property <bool> settings-periodic-check: true;
+    in property <[BackupLine]> settings-backups;
+    in property <[string]> settings-backups-kept-labels;
+    in-out property <int> settings-backups-kept-index: 2;
+    callback backup-restore(int);
     in property <[string]> settings-check-labels;
     in-out property <int> settings-check-index: 3;
     in property <string> account-login;
@@ -1489,6 +1548,10 @@ export component AppWindow inherits Window {
                             periodic-check <=> root.settings-periodic-check;
                             check-labels: root.settings-check-labels;
                             check-index <=> root.settings-check-index;
+                            backups: root.settings-backups;
+                            backups-kept-labels: root.settings-backups-kept-labels;
+                            backups-kept-index <=> root.settings-backups-kept-index;
+                            backup-restore(index) => { root.backup-restore(index); }
                             account-login: root.account-login;
                             account-initial: root.account-initial;
                             account-avatar: root.account-avatar;

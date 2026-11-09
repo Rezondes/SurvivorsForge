@@ -1,4 +1,5 @@
 pub mod account;
+pub mod backup;
 pub mod config;
 pub mod controller;
 pub mod deep_link;

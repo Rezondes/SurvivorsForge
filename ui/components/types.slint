@@ -126,6 +126,12 @@ export struct CommentRow {
     body: string,
 }
 
+// One backup of the addon settings in the settings.
+export struct BackupLine {
+    when: string,
+    size: string,
+}
+
 // One addon in the results of "Update all": updated (`line` says from which version to which) or
 // not (`line` says why, `fix` names what helps, empty when nothing does).
 export struct UpdateResult {

@@ -202,7 +202,7 @@ Addons found on disk that match an entry of the addon list are adopted on startu
 3. The new folders move into AddOns.
 4. On any error, everything is moved back. On success, backup and staging are deleted.
 
-An install never overwrites folders that belong to another managed addon (`FolderOwnedBy`). Uninstalling moves folders to the recycle bin. They first wait in `AddOns/.survivorsforge/removed/` while the toast offers *Undo* (10 seconds); Undo puts the folders and the addon's entry back, unless a folder of the same name was installed meanwhile. Once the toast is gone, or when the launcher closes or starts again after a crash, they go to the recycle bin. SavedVariables in `WTF` are never touched.
+An install never overwrites folders that belong to another managed addon (`FolderOwnedBy`). Uninstalling moves folders to the recycle bin. They first wait in `AddOns/.survivorsforge/removed/` while the toast offers *Undo* (10 seconds); Undo puts the folders and the addon's entry back, unless a folder of the same name was installed meanwhile. Once the toast is gone, or when the launcher closes or starts again after a crash, they go to the recycle bin. The addon settings (`saved/` and `saved-variables.lua` in the game's config folder, the parent of the AddOns folder) are never touched by an install or removal. Before an update or a removal they are backed up as `backups/saved-<date>-<time>.zip` there, at most once a minute, so a run of *Update all* makes one backup; if that backup fails, nothing changes. The newest 10 stay (*Settings > Backups*, 3 to 50), and each one can be restored there; a restore backs up the current settings first and waits until the game is closed.
 
 ### Adding a GitHub repo
 

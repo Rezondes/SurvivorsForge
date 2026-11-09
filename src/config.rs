@@ -52,6 +52,13 @@ pub struct Config {
     /// 15 to 60 in steps of 5 (`snap_check_minutes`).
     #[serde(default = "default_check_minutes")]
     pub check_minutes: u8,
+    /// How many backups of the addon settings stay (`crate::backup`).
+    #[serde(default = "default_backups_kept")]
+    pub backups_kept: u8,
+}
+
+fn default_backups_kept() -> u8 {
+    10
 }
 
 fn default_check_minutes() -> u8 {
@@ -165,6 +172,7 @@ impl Default for Config {
             after_launch: AfterLaunch::Nothing,
             periodic_check: true,
             check_minutes: default_check_minutes(),
+            backups_kept: default_backups_kept(),
         }
     }
 }
@@ -195,6 +203,7 @@ pub struct SettingsInput {
     pub after_launch: AfterLaunch,
     pub periodic_check: bool,
     pub check_minutes: u8,
+    pub backups_kept: u8,
 }
 
 /// The settings with every valid field of `input` taken over; an invalid field keeps the saved
@@ -210,6 +219,7 @@ pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Settings
         after_launch: input.after_launch,
         periodic_check: input.periodic_check,
         check_minutes: snap_check_minutes(input.check_minutes),
+        backups_kept: input.backups_kept.clamp(1, 50),
         ..saved.clone()
     };
     let mut warning = None;
@@ -502,10 +512,13 @@ mod tests {
             after_launch: AfterLaunch::Minimize,
             periodic_check: true,
             check_minutes: 45,
+            backups_kept: 0,
         };
         let (config, errors, _) = apply_settings(&saved, input);
         assert_eq!(config.after_launch, AfterLaunch::Minimize);
         assert_eq!(config.check_minutes, 45);
+        assert_eq!(config.backups_kept, 1, "at least one backup stays");
+        assert_eq!(Config::default().backups_kept, 10);
         assert!(!config.telemetry, "the privacy toggle is taken over");
         assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));
         assert_eq!(config.addons_dir, addons, "the bad path keeps the saved one");
