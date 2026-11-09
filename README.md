@@ -202,7 +202,7 @@ Addons found on disk that match an entry of the addon list are adopted on startu
 3. The new folders move into AddOns.
 4. On any error, everything is moved back. On success, backup and staging are deleted.
 
-An install never overwrites folders that belong to another managed addon (`FolderOwnedBy`). Uninstalling moves folders to the recycle bin. SavedVariables in `WTF` are never touched.
+An install never overwrites folders that belong to another managed addon (`FolderOwnedBy`). Uninstalling moves folders to the recycle bin. They first wait in `AddOns/.survivorsforge/removed/` while the toast offers *Undo* (10 seconds); Undo puts the folders and the addon's entry back, unless a folder of the same name was installed meanwhile. Once the toast is gone, or when the launcher closes or starts again after a crash, they go to the recycle bin. SavedVariables in `WTF` are never touched.
 
 ### Adding a GitHub repo
 

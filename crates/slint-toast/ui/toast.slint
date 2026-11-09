@@ -5,6 +5,8 @@ export struct Toast {
     id: int,
     text: string,
     kind: int,
+    // A button in the toast ("Undo"); empty without one.
+    action: string,
 }
 
 // Colours and sizes of the toasts; the defaults are a plain dark look.
@@ -66,17 +68,48 @@ component CloseButton inherits Rectangle {
     }
 }
 
+component ToastAction inherits Rectangle {
+    in property <string> text;
+    in property <color> tint;
+    in property <length> font-size;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+    width: label.preferred-width + 16px;
+    height: max(label.preferred-height + 8px, 26px);
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: touch.has-hover ? root.tint : transparent;
+    label := Text {
+        text: root.text;
+        color: root.tint;
+        font-size: root.font-size;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 // One toast. Info and success go after `done-time`, a warning or an error stays until it is closed,
 // a busy one shows a running bar until its work finishes.
 component ToastCard inherits Rectangle {
     in property <Toast> toast;
     in property <ToastStyle> style;
     in property <duration> done-time;
+    // How long a toast with a button stays: long enough to press it.
+    in property <duration> action-time;
     in property <bool> busy-closable;
     callback dismiss(int);
+    callback action(int);
 
     property <bool> closable: root.toast.kind != 4 || root.busy-closable;
-    property <length> close-room: root.closable ? root.style.close-size : 0px;
+    property <length> close-room: (root.closable ? root.style.close-size : 0px) + (root.toast.action != "" ? button.width + 8px : 0px);
     property <color> accent: [root.style.info, root.style.success, root.style.warning, root.style.error, root.style.busy][root.toast.kind];
 
     accessible-role: text;
@@ -93,7 +126,7 @@ component ToastCard inherits Rectangle {
 
     // Starts when a busy toast turns into info or success: its time starts with its result.
     Timer {
-        interval: root.done-time;
+        interval: root.toast.action != "" ? max(root.done-time, root.action-time) : root.done-time;
         running: root.toast.kind <= 1;
         triggered => { root.dismiss(root.toast.id); }
     }
@@ -114,6 +147,15 @@ component ToastCard inherits Rectangle {
         font-size: root.style.font-size;
         color: root.style.text;
         wrap: word-wrap;
+    }
+    button := ToastAction {
+        x: parent.width - 10px - (root.closable ? root.style.close-size + 4px : 0px) - self.width;
+        y: (parent.height - self.height) / 2;
+        visible: root.toast.action != "";
+        text: root.toast.action;
+        tint: root.accent;
+        font-size: root.style.font-size;
+        clicked => { root.action(root.toast.id); }
     }
     if root.closable : CloseButton {
         x: parent.width - self.width - 10px;
@@ -152,9 +194,12 @@ export component ToastStack inherits VerticalLayout {
         close-size: 26px,
     };
     in property <duration> done-time: 4s;
+    in property <duration> action-time: 10s;
     // False: a busy toast has no X, so running work cannot be closed.
     in property <bool> busy-closable: true;
     callback dismiss(int);
+    // The button of the toast `id` was pressed.
+    callback action(int);
 
     spacing: 8px;
     alignment: end;
@@ -162,7 +207,9 @@ export component ToastStack inherits VerticalLayout {
         toast: toast;
         style: root.style;
         done-time: root.done-time;
+        action-time: root.action-time;
         busy-closable: root.busy-closable;
         dismiss(id) => { root.dismiss(id); }
+        action(id) => { root.action(id); }
     }
 }

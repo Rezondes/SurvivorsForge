@@ -837,6 +837,7 @@ export component AppWindow inherits Window {
     // Running work and how it ended, bottom right (crates/slint-toast).
     in property <[Toast]> toasts;
     callback toast-dismiss(int);
+    callback toast-action(int);
 
     // The results of "Update all" and of updates that installed on their own; empty: closed.
     in property <[UpdateResult]> update-results;
@@ -1560,6 +1561,7 @@ export component AppWindow inherits Window {
                 close-size: Theme.touch ? 44px : 26px,
             };
             dismiss(id) => { root.toast-dismiss(id); }
+            action(id) => { root.toast-action(id); }
         }
 
         if root.repo-open : Overlay {

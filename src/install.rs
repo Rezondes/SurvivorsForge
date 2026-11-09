@@ -150,6 +150,130 @@ pub fn uninstall(addons_dir: &Path, state: &mut State, id: &str, delete: &mut dy
     Ok(())
 }
 
+/// Where removed folders wait for Undo, one folder per removal: in the work folder, so moving
+/// there and back is a rename on the same file system, and the game does not load them.
+pub fn parking_root(addons_dir: &Path) -> PathBuf {
+    work_dir(addons_dir).join("removed")
+}
+
+/// A delete for `uninstall` and `remove_folders` that moves each folder into `dir` instead.
+pub fn park_into(dir: &Path) -> impl FnMut(&Path) -> Result<()> + '_ {
+    move |path| {
+        std::fs::create_dir_all(dir)?;
+        let name = path.file_name().ok_or_else(|| Error::Io(format!("{} has no name", path.display())))?;
+        std::fs::rename(path, dir.join(name)).map_err(Into::into)
+    }
+}
+
+/// Moves the folders parked in `dir` back into the AddOns folder. Refuses, moving nothing, when
+/// one of them is there again (installed anew meanwhile).
+pub fn unpark(addons_dir: &Path, dir: &Path) -> Result<Vec<String>> {
+    let names: Vec<String> = std::fs::read_dir(dir)?.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    if let Some(back) = names.iter().find(|n| existing_folder(addons_dir, n).is_some()) {
+        return Err(Error::Io(format!("{back} is in the AddOns folder again, so it stays removed")));
+    }
+    for name in &names {
+        std::fs::rename(dir.join(name), addons_dir.join(name))?;
+    }
+    std::fs::remove_dir(dir)?;
+    Ok(names)
+}
+
+/// Sends what waits in `dir` (one removal, or the whole `parking_root`) to `delete`, the recycle
+/// bin in the app: Undo is over for it.
+pub fn flush_parked(dir: &Path, delete: &mut dyn FnMut(&Path) -> Result<()>) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()) };
+    for entry in entries.flatten() {
+        delete(&entry.path())?;
+    }
+    let _ = std::fs::remove_dir(dir);
+    Ok(())
+}
+
 pub fn to_recycle_bin(path: &Path) -> Result<()> {
     trash::delete(path).map_err(|e| Error::Io(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{Entry, Source};
+
+    fn folders(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .map(|r| r.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| !n.starts_with('.')).collect())
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    fn setup() -> (tempfile::TempDir, PathBuf, State) {
+        let dir = tempfile::tempdir().unwrap();
+        let addons = dir.path().join("Addons");
+        for f in ["Lucky", "Lucky_Options", "Other"] {
+            std::fs::create_dir_all(addons.join(f)).unwrap();
+            std::fs::write(addons.join(f).join(format!("{f}.toc")), "## Title: x").unwrap();
+        }
+        let mut state = State::default();
+        state.upsert(Entry {
+            id: "lucky".into(),
+            name: "Lucky".into(),
+            source: Source::Zip { file_name: "lucky.zip".into() },
+            folders: vec!["Lucky".into(), "Lucky_Options".into()],
+            version: "zip:lucky.zip".into(),
+            installed_at: 0,
+        });
+        (dir, addons, state)
+    }
+
+    #[test]
+    fn a_removed_addon_waits_in_the_work_folder() {
+        let (_dir, addons, mut state) = setup();
+        let parked = parking_root(&addons).join("lucky-1");
+        uninstall(&addons, &mut state, "lucky", &mut park_into(&parked)).unwrap();
+        assert_eq!(folders(&addons), ["Other"]);
+        assert_eq!(folders(&parked), ["Lucky", "Lucky_Options"]);
+        assert!(state.get("lucky").is_none());
+    }
+
+    #[test]
+    fn undo_puts_the_folders_back() {
+        let (_dir, addons, mut state) = setup();
+        let parked = parking_root(&addons).join("lucky-1");
+        uninstall(&addons, &mut state, "lucky", &mut park_into(&parked)).unwrap();
+        assert_eq!(unpark(&addons, &parked).unwrap(), ["Lucky", "Lucky_Options"]);
+        assert_eq!(folders(&addons), ["Lucky", "Lucky_Options", "Other"]);
+        assert!(!parked.exists());
+        assert!(addons.join("Lucky").join("Lucky.toc").exists(), "with their files");
+    }
+
+    #[test]
+    fn undo_refuses_when_a_folder_came_back() {
+        let (_dir, addons, mut state) = setup();
+        let parked = parking_root(&addons).join("lucky-1");
+        uninstall(&addons, &mut state, "lucky", &mut park_into(&parked)).unwrap();
+        std::fs::create_dir(addons.join("lucky_options")).unwrap();
+        let e = unpark(&addons, &parked).unwrap_err();
+        assert!(e.to_string().contains("Lucky_Options is in the AddOns folder again"), "{e}");
+        assert_eq!(folders(&parked), ["Lucky", "Lucky_Options"], "nothing moved");
+        assert!(!addons.join("Lucky").exists());
+    }
+
+    #[test]
+    fn what_waits_goes_to_the_bin_at_last() {
+        let (_dir, addons, mut state) = setup();
+        let root = parking_root(&addons);
+        uninstall(&addons, &mut state, "lucky", &mut park_into(&root.join("lucky-1"))).unwrap();
+        remove_folders(&addons, &["Other".into()], &mut park_into(&root.join("other-2"))).unwrap();
+        let mut binned = Vec::new();
+        flush_parked(&root, &mut |p| {
+            binned.push(p.file_name().unwrap().to_string_lossy().into_owned());
+            std::fs::remove_dir_all(p).map_err(Into::into)
+        })
+        .unwrap();
+        binned.sort();
+        assert_eq!(binned, ["lucky-1", "other-2"]);
+        assert!(!root.exists());
+        assert!(flush_parked(&root, &mut |_| panic!("nothing left")).is_ok());
+    }
 }

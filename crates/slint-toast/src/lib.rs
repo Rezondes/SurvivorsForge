@@ -32,6 +32,8 @@ pub struct Toast {
     pub id: i32,
     pub text: String,
     pub kind: Kind,
+    /// A button in the toast ("Undo"), empty without one. The stack's `action(id)` reports a click.
+    pub action: String,
 }
 
 /// The toasts on screen, oldest first.
@@ -69,7 +71,19 @@ impl Toasts {
             return t.id;
         }
         self.next += 1;
-        self.items.push(Toast { id: self.next, text, kind });
+        self.items.push(Toast { id: self.next, text, kind, action: String::new() });
+        while self.items.len() > self.limit {
+            let oldest = self.items.iter().position(|t| t.kind != Kind::Busy).unwrap_or(0);
+            self.items.remove(oldest);
+        }
+        self.next
+    }
+
+    /// A toast with a button (`action`, "Undo"); it stays longer than one without, so there is time
+    /// to press it. Always a new toast, so each one's button acts on its own thing.
+    pub fn with_action(&mut self, text: impl Into<String>, kind: Kind, action: impl Into<String>) -> i32 {
+        self.next += 1;
+        self.items.push(Toast { id: self.next, text: text.into(), kind, action: action.into() });
         while self.items.len() > self.limit {
             let oldest = self.items.iter().position(|t| t.kind != Kind::Busy).unwrap_or(0);
             self.items.remove(oldest);
@@ -166,7 +180,7 @@ mod tests {
         assert_eq!(toasts.get(id).unwrap().kind, Kind::Busy);
         toasts.set_text(id, "Checking 2 of 5...");
         assert_eq!(toasts.finish(id, "All addons are up to date", Kind::Success), id);
-        assert_eq!(toasts.items(), [Toast { id, text: "All addons are up to date".into(), kind: Kind::Success }]);
+        assert_eq!(toasts.items(), [Toast { id, text: "All addons are up to date".into(), kind: Kind::Success, action: String::new() }]);
     }
 
     #[test]
@@ -197,6 +211,17 @@ mod tests {
             toasts.success(format!("Done {n}"));
         }
         assert_eq!(texts(&toasts), ["Checking for updates...", "Done 2", "Done 3"]);
+    }
+
+    #[test]
+    fn a_toast_can_carry_a_button() {
+        let mut toasts = Toasts::default();
+        let first = toasts.with_action("Lucky removed", Kind::Success, "Undo");
+        let second = toasts.with_action("Lucky removed", Kind::Success, "Undo");
+        assert_ne!(first, second, "each removal its own button");
+        assert_eq!(toasts.get(first).unwrap().action, "Undo");
+        let info = toasts.info("Opening the browser...");
+        assert_eq!(toasts.get(info).unwrap().action, "");
     }
 
     #[test]

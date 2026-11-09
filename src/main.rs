@@ -47,6 +47,8 @@ struct Core {
     last_check: Option<std::time::Instant>,
     /// How the last run of updates ended, per addon; shown until closed.
     update_results: Vec<controller::UpdateOutcome>,
+    /// Removed addons whose toast still offers Undo.
+    parked: Vec<Parked>,
     search: String,
     /// Running work and how things ended, bottom right.
     toasts: Toasts,
@@ -175,7 +177,24 @@ fn lock(shared: &Shared) -> MutexGuard<'_, Core> {
     shared.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// A removed addon whose folders wait in `install::parking_root` while its toast offers Undo.
+struct Parked {
+    toast: i32,
+    dir: PathBuf,
+    name: String,
+    /// What `state.json` knew of it; none for an unmanaged folder.
+    entry: Option<survivorsforge::state::Entry>,
+}
+
 impl Core {
+    /// Undo is over for every removal: what waits goes to the recycle bin.
+    fn flush_parked(&mut self) {
+        self.parked.clear();
+        if !self.addons_dir().as_os_str().is_empty() {
+            let _ = install::flush_parked(&install::parking_root(self.addons_dir()), &mut install::to_recycle_bin);
+        }
+    }
+
     fn new(data_dir: PathBuf, config: Option<Config>) -> Core {
         let registry = registry::load(None, &data_dir.join("cache")).0;
         let platform = controller::PlatformCache::load(&data_dir.join("cache"));
@@ -191,6 +210,7 @@ impl Core {
             checking: false,
             last_check: None,
             update_results: Vec::new(),
+            parked: Vec::new(),
             search: String::new(),
             toasts: Toasts::default(),
             work: None,
@@ -240,6 +260,8 @@ impl Core {
 
     /// Applies a (new) config: loads the state of its AddOns folder and scans it.
     fn switch_config(&mut self, config: Config) {
+        // Undo works in the old AddOns folder only.
+        self.flush_parked();
         self.config = config;
         let (state, note) = State::load(&self.data_dir, &self.config.addons_dir);
         self.state = state;
@@ -875,7 +897,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
     ui.set_game_step(step.into());
     ui.set_game_progress(bar);
     // Row by row into the same model: a toast that stays keeps its timer.
-    let toasts: Vec<Toast> = core.toasts.items().iter().map(|t| Toast { id: t.id, text: t.text.as_str().into(), kind: t.kind as i32 }).collect();
+    let toasts: Vec<Toast> = core.toasts.items().iter().map(|t| Toast { id: t.id, text: t.text.as_str().into(), kind: t.kind as i32, action: t.action.as_str().into() }).collect();
     let model = ui.get_toasts();
     match slint::Model::as_any(&model).downcast_ref::<VecModel<Toast>>() {
         Some(rows) => slint_toast::sync(rows, toasts, |t| t.id),
@@ -900,16 +922,17 @@ fn run_bg(
                 core.busy.remove(id);
             }
             match result {
-                // A job for one addon changed its folders.
-                Ok(message) if busy_id.is_some() => {
-                    let message = controller::note_running_game(message, core.game_running);
-                    core.notify(message, Kind::Success)
-                }
-                // Nothing worth a word (the quiet update check found no news, a dialog says it).
+                // Nothing worth a word (the quiet update check found no news, a dialog or the job's
+                // own toast says it).
                 Ok(message) if message.is_empty() => {
                     if let Some(id) = core.work.take() {
                         core.toasts.dismiss(id);
                     }
+                }
+                // A job for one addon changed its folders.
+                Ok(message) if busy_id.is_some() => {
+                    let message = controller::note_running_game(message, core.game_running);
+                    core.notify(message, Kind::Success)
                 }
                 Ok(message) => core.notify(message, Kind::Success),
                 Err(e) => core.notify(e.to_string(), Kind::Error),
@@ -1768,17 +1791,51 @@ fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
         run_bg(weak, shared, Some(id.clone()), move |shared| {
             let mut core = lock(shared);
             let addons = core.addons_dir().to_path_buf();
+            // The folders wait for Undo while the toast shows, then go to the recycle bin.
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
+            let safe: String = id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+            let dir = install::parking_root(&addons).join(format!("{safe}-{stamp}"));
+            let entry = core.state.get(&id).cloned();
             if id.starts_with(UNMANAGED_PREFIX) {
-                install::remove_folders(&addons, &folders, &mut install::to_recycle_bin)?;
+                install::remove_folders(&addons, &folders, &mut install::park_into(&dir))?;
             } else {
-                install::uninstall(&addons, &mut core.state, &id, &mut install::to_recycle_bin)?;
+                install::uninstall(&addons, &mut core.state, &id, &mut install::park_into(&dir))?;
                 core.statuses.remove(&id);
                 core.save_state();
             }
             core.rescan();
-            Ok(format!("{name} removed"))
+            let text = controller::note_running_game(format!("{name} removed"), core.game_running);
+            let toast = core.toasts.with_action(text, Kind::Success, "Undo");
+            core.parked.push(Parked { toast, dir, name, entry });
+            Ok(String::new())
         });
     });
+}
+
+/// Undo in the toast of a removal: the folders and what `state.json` knew come back.
+fn on_undo_remove(ui: &AppWindow, shared: &Shared, toast: i32) {
+    {
+        let mut core = lock(shared);
+        core.toasts.dismiss(toast);
+        let Some(at) = core.parked.iter().position(|p| p.toast == toast) else { return };
+        let parked = core.parked.remove(at);
+        let addons = core.addons_dir().to_path_buf();
+        match install::unpark(&addons, &parked.dir) {
+            Ok(_) => {
+                if let Some(entry) = parked.entry {
+                    core.state.upsert(entry);
+                    core.save_state();
+                }
+                core.rescan();
+                core.notify(format!("{} is back", parked.name), Kind::Success);
+            }
+            Err(e) => {
+                core.notify(e.to_string(), Kind::Error);
+                let _ = install::flush_parked(&parked.dir, &mut install::to_recycle_bin);
+            }
+        }
+    }
+    refresh(ui, shared);
 }
 
 fn on_install_zip(ui: &AppWindow, shared: &Shared) {
@@ -2455,7 +2512,10 @@ fn main() -> Result<(), slint::PlatformError> {
         let data_dir = config::data_dir();
         let config = Config::load(&data_dir);
         let needs_setup = config.is_none();
-        (Core::new(data_dir, config), needs_setup)
+        let mut core = Core::new(data_dir, config);
+        // Removals of a launcher that did not close properly: their Undo is over.
+        core.flush_parked();
+        (core, needs_setup)
     });
     // ponytail: a short delay so the splash is painted before the window is built on this thread;
     // a zero timer can run before the first frame.
@@ -2763,9 +2823,21 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     });
     on!(on_logout, |ui, shared| on_logout(&ui, shared));
     on!(on_toast_dismiss, |ui, shared, id| {
-        lock(shared).toasts.dismiss_by_user(id);
+        let over = {
+            let mut core = lock(shared);
+            core.toasts.dismiss_by_user(id);
+            let at = core.parked.iter().position(|p| p.toast == id);
+            at.map(|at| core.parked.remove(at))
+        };
+        // Its toast is gone, and with it Undo: the folders go to the recycle bin.
+        if let Some(parked) = over {
+            std::thread::spawn(move || {
+                let _ = install::flush_parked(&parked.dir, &mut install::to_recycle_bin);
+            });
+        }
         refresh(&ui, shared);
     });
+    on!(on_toast_action, |ui, shared, id| on_undo_remove(&ui, shared, id));
     on!(on_category_changed, |ui, shared, index| {
         {
             let mut core = lock(shared);
@@ -2843,6 +2915,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
                 if let Some(ui) = weak.upgrade() {
                     remember_window(&ui, &shared);
                 }
+                lock(&shared).flush_parked();
                 let _ = slint::quit_event_loop();
             }
         };
@@ -3476,7 +3549,7 @@ mod card_tests {
         let id = core.set_status("Updating 2 addons...".into());
         assert_eq!(core.set_status("Updating 1 of 2: Lucky".into()), id, "the next step changes the same toast");
         core.notify("2 addons updated".into(), Kind::Success);
-        assert_eq!(core.toasts.items(), [slint_toast::Toast { id, text: "2 addons updated".into(), kind: Kind::Success }]);
+        assert_eq!(core.toasts.items(), [slint_toast::Toast { id, text: "2 addons updated".into(), kind: Kind::Success, action: String::new() }]);
         core.notify("Azeroth Survivors was closed.".into(), Kind::Info);
         assert_eq!(core.toasts.items().len(), 2, "without running work a result comes as its own toast");
     }
@@ -4080,7 +4153,7 @@ mod layout_tests {
             let closed = Rc::new(Cell::new(0));
             let counter = closed.clone();
             ui.on_toast_dismiss(move |id| counter.set(id));
-            let toast = crate::Toast { id: 7, text: "Lucky installed".into(), kind: slint_toast::Kind::Success as i32 };
+            let toast = crate::Toast { id: 7, text: "Lucky installed".into(), kind: slint_toast::Kind::Success as i32, action: "".into() };
             ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(vec![toast])));
             ui.show().unwrap();
             let Some(card) = ElementHandle::find_by_accessible_label(&ui, "Lucky installed").next() else {
@@ -4191,10 +4264,30 @@ mod layout_tests {
         }
 
         #[test]
+        fn a_removal_toast_offers_undo() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let undone = Rc::new(Cell::new(0));
+            let u = undone.clone();
+            ui.on_toast_action(move |id| u.set(id));
+            let toast = crate::Toast { id: 5, text: "Lucky removed".into(), kind: slint_toast::Kind::Success as i32, action: "Undo".into() };
+            ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(vec![toast])));
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            if find("Lucky removed").is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            find("Undo").expect("the button").invoke_accessible_default_action();
+            assert_eq!(undone.get(), 5);
+            assert!(find("Close message").is_some(), "and it can still be closed");
+        }
+
+        #[test]
         fn a_status_toast_has_no_close_button() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
-            let toast = crate::Toast { id: 3, text: "Checking for updates...".into(), kind: slint_toast::Kind::Busy as i32 };
+            let toast = crate::Toast { id: 3, text: "Checking for updates...".into(), kind: slint_toast::Kind::Busy as i32, action: "".into() };
             ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(vec![toast])));
             ui.show().unwrap();
             if ElementHandle::find_by_accessible_label(&ui, "Checking for updates...").next().is_none() {
