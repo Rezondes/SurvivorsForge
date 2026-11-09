@@ -4918,8 +4918,10 @@ mod layout_tests {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             }
-            assert!(find("Raid  (applied, changed since)").is_some(), "the applied one, changed since");
-            find("Save current addons").expect("a way to save").invoke_accessible_default_action();
+            assert!(find("Applied, changed since. 3 of 4 addons on").is_some(), "the applied one, changed since");
+            let column = |label: &str| find(label).expect(label).size().width;
+            assert!(column("Profile string") > 400.0, "the fields take the width of the page, not of a word: {}", column("Profile string"));
+            find("Save as profile").expect("a way to save").invoke_accessible_default_action();
             find("Apply the profile Solo").expect("apply").invoke_accessible_default_action();
             find("Delete the profile Raid").expect("delete").invoke_accessible_default_action();
             assert_eq!(*calls.borrow(), ["save", "apply 1", "delete 0"]);

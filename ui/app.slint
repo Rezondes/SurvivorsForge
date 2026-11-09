@@ -632,79 +632,31 @@ component SettingsView inherits VerticalLayout {
     SettingRow {
         label: "Profiles";
         VerticalLayout {
-            spacing: 6px;
+            spacing: 8px;
             Text {
                 text: "A profile is a set of addons, each on or off. Applying one installs the platform addons it has, enables them and disables all others. Nothing is deleted.";
                 font-size: Theme.meta;
                 color: Theme.text-muted;
                 wrap: word-wrap;
             }
-            HorizontalLayout {
-                spacing: 10px;
-                Field {
-                    text <=> root.profile-name;
-                    label: "Profile name";
-                    placeholder: "Name of a new profile";
-                    invalid: root.profile-error != "";
-                    accepted => { root.profile-save(); }
-                }
-                ActionButton {
-                    text: "Save current addons";
-                    clicked => { root.profile-save(); }
-                }
-            }
-            if root.profile-error != "" : FieldError { text: root.profile-error; }
-            if root.account-login != "" : HorizontalLayout {
-                spacing: 10px;
-                PickBox {
-                    label: "Keep the profiles in my account";
-                    checked: root.sync-profiles;
-                    toggled => {
-                        root.sync-profiles = !root.sync-profiles;
-                        root.save();
-                    }
-                }
-                TickLabel {
-                    text: "Keep the profiles in my account, for my other computers";
-                    clicked => {
-                        root.sync-profiles = !root.sync-profiles;
-                        root.save();
-                    }
-                }
-            }
-            HorizontalLayout {
-                spacing: 10px;
-                Field {
-                    text <=> root.profile-import-text;
-                    label: "Profile string";
-                    placeholder: "Paste a profile string (SFP1:...)";
-                    accepted => { root.profile-import(root.profile-import-text); }
-                }
-                ActionButton {
-                    text: "Import";
-                    enabled: root.profile-import-text != "";
-                    clicked => { root.profile-import(root.profile-import-text); }
-                }
-            }
-            // Holds the string while it is copied; never seen.
-            export-text := TextInput {
-                width: 0;
-                height: 0;
-                read-only: true;
-                accessible-role: none;
+            if root.profiles.length == 0 : Text {
+                text: "No profiles yet. Save the addons you have now as the first one.";
+                font-size: Theme.body;
+                color: Theme.text-muted;
+                wrap: word-wrap;
             }
             for line[index] in root.profiles : HorizontalLayout {
-                spacing: 10px;
+                spacing: 12px;
                 Text {
-                    text: line.name + (line.active ? (line.modified ? "  (applied, changed since)" : "  (applied)") : "");
+                    horizontal-stretch: 1;
+                    text: line.name;
                     font-size: Theme.body;
                     color: line.active ? Theme.gold-heading : Theme.text;
                     vertical-alignment: center;
                     overflow: elide;
                 }
                 Text {
-                    horizontal-stretch: 1;
-                    text: line.count;
+                    text: (line.active ? (line.modified ? "Applied, changed since. " : "Applied. ") : "") + line.count;
                     font-size: Theme.meta;
                     color: Theme.text-muted;
                     vertical-alignment: center;
@@ -729,6 +681,78 @@ component SettingsView inherits VerticalLayout {
                     text: "Delete";
                     accessible-label: "Delete the profile " + line.name;
                     clicked => { root.profile-delete(index); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Field {
+                    text <=> root.profile-name;
+                    label: "Profile name";
+                    placeholder: "Name for the addons you have now";
+                    invalid: root.profile-error != "";
+                    accepted => { root.profile-save(); }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    ActionButton {
+                        text: "Save as profile";
+                        clicked => { root.profile-save(); }
+                    }
+                }
+            }
+            if root.profile-error != "" : Text {
+                text: "Error: " + root.profile-error;
+                font-size: Theme.meta;
+                color: Theme.danger;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Field {
+                    text <=> root.profile-import-text;
+                    label: "Profile string";
+                    placeholder: "Paste a profile string someone sent you (SFP1:...)";
+                    accepted => { root.profile-import(root.profile-import-text); }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    ActionButton {
+                        text: "Import";
+                        enabled: root.profile-import-text != "";
+                        clicked => { root.profile-import(root.profile-import-text); }
+                    }
+                }
+            }
+            if root.account-login != "" : HorizontalLayout {
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    PickBox {
+                        label: "Keep the profiles in my account";
+                        checked: root.sync-profiles;
+                        toggled => {
+                            root.sync-profiles = !root.sync-profiles;
+                            root.save();
+                        }
+                    }
+                }
+                TickLabel {
+                    text: "Keep the profiles in my account, for my other computers";
+                    clicked => {
+                        root.sync-profiles = !root.sync-profiles;
+                        root.save();
+                    }
+                }
+            }
+            // Holds a profile string while it is copied; never seen. Outside the layout's columns:
+            // a zero-wide element in a layout would make the whole column zero-wide.
+            Rectangle {
+                height: 0px;
+                export-text := TextInput {
+                    width: 0px;
+                    height: 0px;
+                    read-only: true;
+                    accessible-role: none;
                 }
             }
         }
