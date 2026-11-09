@@ -1956,6 +1956,13 @@ fn on_row_toggle(ui: &AppWindow, shared: &Shared, id: String) {
                 match install::set_enabled(&addons, &folders, enable) {
                     Ok(()) => {
                         core.rescan();
+                        // The applied profile keeps up: its string and the next apply have this switch.
+                        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+                        let addons = profile::snapshot(&rows, &core.state, &core.config.held);
+                        if core.profiles.follow(addons, now_secs()) {
+                            let _ = core.profiles.save(&core.data_dir);
+                            fill_profiles(&ui, &core);
+                        }
                         let with = if also.is_empty() { String::new() } else { format!(" with {}", also.join(", ")) };
                         let message = format!("{name} {}{with}", if enable { "enabled" } else { "disabled" });
                         let message = controller::note_running_game(message, core.game_running);
@@ -1965,6 +1972,7 @@ fn on_row_toggle(ui: &AppWindow, shared: &Shared, id: String) {
                 }
             }
             refresh(&ui, &shared);
+            sync_profiles(&ui, &shared);
         }
     };
     if warning.is_empty() {

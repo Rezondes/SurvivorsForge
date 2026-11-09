@@ -82,6 +82,19 @@ impl Profiles {
         self.deleted.push(name.to_string());
     }
 
+    /// The applied profile takes over `addons` (the addons as they are now, from `snapshot`).
+    /// True when it changed; false without an applied profile or when nothing differs.
+    pub fn follow(&mut self, addons: Vec<ProfileAddon>, now: u64) -> bool {
+        let Some(active) = self.active.clone() else { return false };
+        let Some(profile) = self.profiles.iter_mut().find(|p| p.name.eq_ignore_ascii_case(&active)) else { return false };
+        if profile.addons == addons {
+            return false;
+        }
+        profile.addons = addons;
+        profile.updated_at = now;
+        true
+    }
+
     /// `name`, or with " (2)", " (3)"... when a profile has it already.
     pub fn free_name(&self, name: &str) -> String {
         if self.get(name).is_none() {
@@ -472,6 +485,22 @@ mod tests {
         let json = r#"{"profiles":[{"name":"Raid","updated_at":9,"data":{"name":"x","addons":[]}},{"name":"Bad","updated_at":1,"data":7}]}"#;
         assert_eq!(parse_remote(json), [Profile { name: "Raid".into(), addons: Vec::new(), updated_at: 9 }]);
         assert!(parse_remote("not json").is_empty());
+    }
+
+    #[test]
+    fn the_applied_profile_follows_what_is_switched() {
+        let rows = vec![row("lucky", false), row("plates", false)];
+        let mut profiles = Profiles::default();
+        assert!(!profiles.follow(snapshot(&rows, &state(), &[]), 5), "nothing applied: nothing to follow");
+        profiles.put(Profile { name: "Raid".into(), addons: snapshot(&rows, &state(), &[]), updated_at: 1 });
+        profiles.put(Profile { name: "Solo".into(), addons: snapshot(&rows, &state(), &[]), updated_at: 1 });
+        profiles.active = Some("raid".into());
+        let switched = vec![row("lucky", false), row("plates", true)];
+        assert!(profiles.follow(snapshot(&switched, &state(), &[]), 5));
+        let raid = profiles.get("Raid").unwrap();
+        assert!(!raid.addons[1].enabled && raid.updated_at == 5, "plates is off in it now");
+        assert!(profiles.get("Solo").unwrap().addons[1].enabled, "the others stay as saved");
+        assert!(!profiles.follow(snapshot(&switched, &state(), &[]), 6), "the same again changes nothing");
     }
 
     #[test]
