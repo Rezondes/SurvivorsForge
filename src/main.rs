@@ -43,6 +43,8 @@ struct Core {
     /// Entry ids with an install, update or removal running.
     busy: HashSet<String>,
     checking: bool,
+    /// When the last update check started, by hand or on its own.
+    last_check: Option<std::time::Instant>,
     search: String,
     /// Running work and how things ended, bottom right.
     toasts: Toasts,
@@ -185,6 +187,7 @@ impl Core {
             statuses: HashMap::new(),
             busy: HashSet::new(),
             checking: false,
+            last_check: None,
             search: String::new(),
             toasts: Toasts::default(),
             work: None,
@@ -899,6 +902,8 @@ fn run_bg(
                     let message = controller::note_running_game(message, core.game_running);
                     core.notify(message, Kind::Success)
                 }
+                // Nothing worth a word: the quiet update check found no news.
+                Ok(message) if message.is_empty() => {}
                 Ok(message) => core.notify(message, Kind::Success),
                 Err(e) => core.notify(e.to_string(), Kind::Error),
             }
@@ -1464,19 +1469,42 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
 }
 
 fn check_updates(ui: &AppWindow, shared: &Shared) {
-    {
+    run_check(ui, shared, false);
+}
+
+/// The check that runs on its own while the launcher is open (`controller::check_due`).
+fn check_updates_quietly(ui: &AppWindow, shared: &Shared) {
+    let due = {
+        let core = lock(shared);
+        let block = controller::CheckBlock { checking: core.checking, busy: !core.busy.is_empty() || core.game_updating, offline: core.offline };
+        controller::check_due(core.config.periodic_check, core.config.check_minutes, core.last_check, std::time::Instant::now(), block)
+    };
+    if due {
+        run_check(ui, shared, true);
+    }
+}
+
+/// Checks every addon, the game and the launcher. `quiet`: the rows keep what they show and no
+/// toast comes, unless updates were found that the last check did not know.
+fn run_check(ui: &AppWindow, shared: &Shared, quiet: bool) {
+    let known_updates = {
         let mut core = lock(shared);
         if core.checking || core.addons_dir().as_os_str().is_empty() {
             return;
         }
         core.checking = true;
-        // Each addon shows "Checking..." until its own answer arrives.
-        core.statuses.clear();
-        core.outcomes.clear();
-        core.game_note.clear();
-        core.rescan();
-        core.set_status("Checking for updates...".into());
-    }
+        core.last_check = Some(std::time::Instant::now());
+        let known = controller::update_all_ids(&core.statuses, &core.config.held);
+        if !quiet {
+            // Each addon shows "Checking..." until its own answer arrives.
+            core.statuses.clear();
+            core.outcomes.clear();
+            core.game_note.clear();
+            core.rescan();
+            core.set_status("Checking for updates...".into());
+        }
+        known
+    };
     refresh(ui, shared);
     let weak = ui.as_weak();
     run_bg(ui.as_weak(), shared.clone(), None, move |shared| {
@@ -1507,6 +1535,9 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         // against the stored list; what the server did not scan is marked as unchecked.
         let github: Box<dyn GitHub + Send> = if offline { Box::new(WebGitHub::new(client.clone())) } else { github };
         let results = updates::check_each(&*github, &mut state, &registry, offline, &mut |id, status| {
+            if quiet {
+                return;
+            }
             show_progress(shared, false, |core| {
                 core.statuses.insert(id.to_string(), status.clone());
             });
@@ -1546,6 +1577,10 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
         }
         core.checking = false;
         core.rescan();
+        // The quiet check says nothing about the platform: the next check by hand does.
+        if offline && quiet {
+            return Ok(String::new());
+        }
         if offline {
             let age = registry::cache_age(&cache, std::time::SystemTime::now())
                 .filter(|_| origin == Origin::Cache)
@@ -1573,7 +1608,15 @@ fn check_updates(ui: &AppWindow, shared: &Shared) {
             let _ = weak.upgrade_in_event_loop(move |ui| install_updates(&ui, &s, auto, Vec::new()));
         }
 
-        let updates = controller::update_all_ids(&core.statuses, &core.config.held).len();
+        let found = controller::update_all_ids(&core.statuses, &core.config.held);
+        if quiet {
+            return Ok(match controller::new_updates(&known_updates, &found) {
+                0 => String::new(),
+                _ if found.len() == 1 => "1 update available".into(),
+                _ => format!("{} updates available", found.len()),
+            });
+        }
+        let updates = found.len();
         let failed = core.statuses.values().filter(|s| matches!(s, UpdateStatus::CheckFailed(_))).count();
         let mut message = match updates {
             0 => "All addons are up to date".to_string(),
@@ -1852,6 +1895,8 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
             send_install_id: ui.get_settings_send_install_id(),
             auto_update_all: ui.get_settings_auto_update(),
             after_launch: config::AfterLaunch::from_index(ui.get_settings_after_launch_index()),
+            periodic_check: ui.get_settings_periodic_check(),
+            check_minutes: config::CHECK_MINUTES.get(ui.get_settings_check_index().max(0) as usize).copied().unwrap_or(30),
         };
         // A bad field keeps its saved value and its text in the field; the others still save.
         let (config, field_errors, warning) = config::apply_settings(&core.config, input);
@@ -2119,6 +2164,8 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_send_install_id(core.config.send_install_id);
     ui.set_settings_auto_update(core.config.auto_update_all);
     ui.set_settings_after_launch_index(core.config.after_launch.index());
+    ui.set_settings_periodic_check(core.config.periodic_check);
+    ui.set_settings_check_index(config::CHECK_MINUTES.iter().position(|m| *m == core.config.check_minutes).unwrap_or(3) as i32);
     ui.set_installed_tiles(core.config.tiles("installed"));
     ui.set_browse_tiles(core.config.tiles("browse"));
     fill_game_versions(ui, &core);
@@ -2434,6 +2481,8 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     ui.set_safety_labels(labels(&controller::SAFETY_LABELS));
     ui.set_sort_labels(labels(&controller::SORT_LABELS));
     ui.set_settings_after_launch_labels(labels(&config::AfterLaunch::LABELS));
+    let every: Vec<String> = config::CHECK_MINUTES.iter().map(|m| format!("every {m} minutes")).collect();
+    ui.set_settings_check_labels(labels(&every.iter().map(String::as_str).collect::<Vec<_>>()));
     ui.set_self_update_in_place(self_update::can_replace_self());
 
     ui.set_game_mode(game_mode);
@@ -2716,6 +2765,18 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     if !needs_setup {
         check_updates(&ui, &shared);
         fetch_icons(&ui, &shared);
+    }
+    // The quiet update check: it looks once a minute whether its time has come.
+    {
+        let (weak, s) = (ui.as_weak(), shared.clone());
+        let timer = slint::Timer::default();
+        timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(60), move || {
+            if let Some(ui) = weak.upgrade() {
+                check_updates_quietly(&ui, &s);
+            }
+        });
+        // It runs as long as the app does.
+        std::mem::forget(timer);
     }
     load_account(&ui, &shared);
     let (weak, linked) = (ui.as_weak(), shared.clone());
@@ -3942,6 +4003,29 @@ mod layout_tests {
             assert_eq!(choice.accessible_value().as_deref(), Some("Minimize"));
             ui.set_game_mode(true);
             assert!(find("After launching the game").is_none(), "Game Mode stays open");
+        }
+
+        #[test]
+        fn how_often_to_look_shows_while_looking_is_on() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let every: Vec<slint::SharedString> = crate::config::CHECK_MINUTES.iter().map(|m| format!("every {m} minutes").into()).collect();
+            ui.set_settings_check_labels(slint::ModelRc::new(slint::VecModel::from(every)));
+            ui.set_page(2);
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2000.0));
+            ui.show().unwrap();
+            let often = || ElementHandle::find_by_accessible_label(&ui, "How often to look for updates").next();
+            let Some(choice) = often() else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            assert_eq!(choice.accessible_value().as_deref(), Some("every 30 minutes"), "the default");
+            ElementHandle::find_by_accessible_label(&ui, "Look for updates while the launcher is open")
+                .find(|e| e.accessible_role() == Some(AccessibleRole::Checkbox))
+                .expect("the switch")
+                .mock_single_click(PointerEventButton::Left);
+            assert!(!ui.get_settings_periodic_check());
+            assert!(often().is_none(), "off: no time to choose");
         }
 
         #[test]

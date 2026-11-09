@@ -187,7 +187,7 @@ For platform addons the platform already knows the newest version it scanned, so
 
 The launcher also asks first when a version has no checked file (no SHA-256) or does not support the chosen game version. "Update all" skips the updates that ask first; they install one by one.
 
-Auto-update installs checked updates on its own after each update check, for every addon (*Settings > Update all addons automatically*) or for single platform addons (the box in their details). It only takes versions the platform scanned or verified and found nothing in; a flagged version waits for the user, and a later version that is not flagged installs again.
+While the launcher is open it looks for updates again on its own, every 30 minutes by default (*Settings > Look for updates while the launcher is open*, 15 to 60 minutes in steps of 5). That check keeps the rows as they are and only shows a toast when it found updates the last check did not know; it waits while installs run or the platform does not answer. Auto-update installs checked updates on its own after each update check, for every addon (*Settings > Update all addons automatically*) or for single platform addons (the box in their details). It only takes versions the platform scanned or verified and found nothing in; a flagged version waits for the user, and a later version that is not flagged installs again.
 
 Required dependencies of a platform addon are installed before it, in dependency order; a failing dependency stops before the addon. Optional ones that are not installed are named in the confirmation.
 

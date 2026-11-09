@@ -46,6 +46,26 @@ pub struct Config {
     /// What the launcher does once the game it started runs; chosen in the settings.
     #[serde(default, skip_serializing_if = "AfterLaunch::is_nothing")]
     pub after_launch: AfterLaunch,
+    /// Look for updates on its own while the launcher is open, every `check_minutes`.
+    #[serde(default = "yes")]
+    pub periodic_check: bool,
+    /// 15 to 60 in steps of 5 (`snap_check_minutes`).
+    #[serde(default = "default_check_minutes")]
+    pub check_minutes: u8,
+}
+
+fn default_check_minutes() -> u8 {
+    30
+}
+
+/// The choices for the time between update checks, in minutes.
+pub const CHECK_MINUTES: [u8; 10] = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+
+/// `minutes` as one of `CHECK_MINUTES`: the nearest, a tie to the shorter one.
+pub fn snap_check_minutes(minutes: u8) -> u8 {
+    let m = minutes.clamp(15, 60);
+    let down = m - (m - 15) % 5;
+    if m - down > 2 { down + 5 } else { down }
 }
 
 /// What the launcher does after it started the game.
@@ -143,6 +163,8 @@ impl Default for Config {
             window: None,
             last_page: 0,
             after_launch: AfterLaunch::Nothing,
+            periodic_check: true,
+            check_minutes: default_check_minutes(),
         }
     }
 }
@@ -171,6 +193,8 @@ pub struct SettingsInput {
     pub send_install_id: bool,
     pub auto_update_all: bool,
     pub after_launch: AfterLaunch,
+    pub periodic_check: bool,
+    pub check_minutes: u8,
 }
 
 /// The settings with every valid field of `input` taken over; an invalid field keeps the saved
@@ -184,6 +208,8 @@ pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Settings
         send_install_id: input.send_install_id,
         auto_update_all: input.auto_update_all,
         after_launch: input.after_launch,
+        periodic_check: input.periodic_check,
+        check_minutes: snap_check_minutes(input.check_minutes),
         ..saved.clone()
     };
     let mut warning = None;
@@ -271,7 +297,8 @@ impl Config {
     /// The saved settings. A file from before `install_id` gets one now and keeps it.
     pub fn load(dir: &Path) -> Option<Config> {
         let text = std::fs::read_to_string(dir.join(FILE)).ok()?;
-        let config: Config = serde_json::from_str(&text).ok()?;
+        let mut config: Config = serde_json::from_str(&text).ok()?;
+        config.check_minutes = snap_check_minutes(config.check_minutes);
         let raw: serde_json::Value = serde_json::from_str(&text).ok()?;
         if raw.get("install_id").is_none() {
             let _ = config.save(dir);
@@ -473,9 +500,12 @@ mod tests {
             send_install_id: true,
             auto_update_all: false,
             after_launch: AfterLaunch::Minimize,
+            periodic_check: true,
+            check_minutes: 45,
         };
         let (config, errors, _) = apply_settings(&saved, input);
         assert_eq!(config.after_launch, AfterLaunch::Minimize);
+        assert_eq!(config.check_minutes, 45);
         assert!(!config.telemetry, "the privacy toggle is taken over");
         assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));
         assert_eq!(config.addons_dir, addons, "the bad path keeps the saved one");
@@ -621,6 +651,20 @@ mod tests {
         assert_eq!(AfterLaunch::from_index(1), AfterLaunch::Minimize);
         assert_eq!(AfterLaunch::from_index(9), AfterLaunch::Nothing);
         assert_eq!(AfterLaunch::Close.index(), 2);
+    }
+
+    #[test]
+    fn the_update_check_runs_every_30_minutes_unless_set() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
+        let old = Config::load(dir.path()).unwrap();
+        assert!(old.periodic_check, "on for old config files");
+        assert_eq!(old.check_minutes, 30);
+        std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x","periodic_check":false,"check_minutes":33}"#).unwrap();
+        let typed = Config::load(dir.path()).unwrap();
+        assert!(!typed.periodic_check);
+        assert_eq!(typed.check_minutes, 35, "to the nearest step");
+        assert_eq!([7, 15, 17, 18, 60, 90].map(snap_check_minutes), [15, 15, 15, 20, 60, 60]);
     }
 
     #[test]

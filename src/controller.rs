@@ -940,6 +940,28 @@ pub fn auto_update_ids(
     split_confirmations(ids, registry, state, game, games).0
 }
 
+/// What keeps the quiet update check from starting now.
+#[derive(Debug, Clone, Copy)]
+pub struct CheckBlock {
+    /// A check runs already.
+    pub checking: bool,
+    /// Installs or a game update run: a check would mark their rows "Checking...".
+    pub busy: bool,
+    pub offline: bool,
+}
+
+/// Whether the update check that runs on its own while the launcher is open is due: switched on,
+/// `minutes` since the `last` check (by hand or on its own), and nothing in its way.
+pub fn check_due(on: bool, minutes: u8, last: Option<std::time::Instant>, now: std::time::Instant, block: CheckBlock) -> bool {
+    let Some(last) = last else { return false };
+    on && !block.checking && !block.busy && !block.offline && now.duration_since(last) >= std::time::Duration::from_secs(u64::from(minutes) * 60)
+}
+
+/// How many of the updates `after` a check were not there `before` it.
+pub fn new_updates(before: &[String], after: &[String]) -> usize {
+    after.iter().filter(|id| !before.contains(id)).count()
+}
+
 /// The addons "Update all" installs: those with an update, except the ones `held` at an older
 /// version on purpose (they update only by hand).
 pub fn update_all_ids(statuses: &HashMap<String, UpdateStatus>, held: &[String]) -> Vec<String> {
@@ -1068,6 +1090,28 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_quiet_check_waits_for_its_time_and_for_quiet() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let later = |min: u64| start + Duration::from_secs(min * 60);
+        let free = CheckBlock { checking: false, busy: false, offline: false };
+        assert!(!check_due(true, 30, Some(start), later(29), free), "not yet");
+        assert!(check_due(true, 30, Some(start), later(30), free));
+        assert!(!check_due(false, 30, Some(start), later(90), free), "switched off");
+        assert!(!check_due(true, 30, None, later(90), free), "the first check is the one at the start");
+        for block in [CheckBlock { checking: true, ..free }, CheckBlock { busy: true, ..free }, CheckBlock { offline: true, ..free }] {
+            assert!(!check_due(true, 30, Some(start), later(90), block), "{block:?}");
+        }
+    }
+
+    #[test]
+    fn only_updates_found_since_the_last_check_are_news() {
+        let before = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(new_updates(&before, &["b".to_string(), "c".to_string()]), 1);
+        assert_eq!(new_updates(&before, &before), 0);
+    }
 
     #[test]
     fn icon_urls_come_from_a_page_of_the_addon_list() {

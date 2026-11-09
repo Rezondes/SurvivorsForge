@@ -213,6 +213,10 @@ component SettingsView inherits VerticalLayout {
     // What the launcher does once the game runs: stay open, minimize, close.
     in property <[string]> after-launch-labels;
     in-out property <int> after-launch-index;
+    // Look for updates on their own while the launcher is open, and how often.
+    in-out property <bool> periodic-check;
+    in property <[string]> check-labels;
+    in-out property <int> check-index;
     // The GitHub login on the platform: the login name while logged in, else empty.
     in property <string> account-login;
     in property <string> account-initial;
@@ -552,6 +556,31 @@ component SettingsView inherits VerticalLayout {
                 color: Theme.text-muted;
                 wrap: word-wrap;
             }
+            HorizontalLayout {
+                spacing: 10px;
+                PickBox {
+                    label: "Look for updates while the launcher is open";
+                    checked: root.periodic-check;
+                    toggled => {
+                        root.periodic-check = !root.periodic-check;
+                        root.save();
+                    }
+                }
+                TickLabel {
+                    text: "Look for updates while the launcher is open";
+                    clicked => {
+                        root.periodic-check = !root.periodic-check;
+                        root.save();
+                    }
+                }
+                if root.periodic-check : Dropdown {
+                    width: 200px;
+                    label: "How often to look for updates";
+                    model: root.check-labels;
+                    current-index <=> root.check-index;
+                    selected => { root.save(); }
+                }
+            }
         }
     }
     if !root.game-mode : SettingRow {
@@ -826,6 +855,9 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-auto-update;
     in property <[string]> settings-after-launch-labels;
     in-out property <int> settings-after-launch-index;
+    in-out property <bool> settings-periodic-check: true;
+    in property <[string]> settings-check-labels;
+    in-out property <int> settings-check-index: 3;
     in property <string> account-login;
     in property <string> account-initial;
     in property <image> account-avatar;
@@ -1440,6 +1472,9 @@ export component AppWindow inherits Window {
                             auto-update <=> root.settings-auto-update;
                             after-launch-labels: root.settings-after-launch-labels;
                             after-launch-index <=> root.settings-after-launch-index;
+                            periodic-check <=> root.settings-periodic-check;
+                            check-labels: root.settings-check-labels;
+                            check-index <=> root.settings-check-index;
                             account-login: root.account-login;
                             account-initial: root.account-initial;
                             account-avatar: root.account-avatar;
