@@ -235,9 +235,9 @@ component SettingsView inherits VerticalLayout {
     callback profile-save();
     callback profile-apply(int);
     callback profile-delete(int);
-    // The profile string of a profile, to copy; and one pasted to import.
-    pure callback profile-string(int) -> string;
-    callback profile-copied();
+    // Copies the string of a profile (the window does it, outside this scrolling page); and one
+    // pasted to import.
+    callback profile-copy(int);
     in-out property <string> profile-import-text;
     callback profile-import(string);
     // Keep the profiles in the platform account too (only while logged in).
@@ -686,13 +686,7 @@ component SettingsView inherits VerticalLayout {
                 LinkButton {
                     text: "Copy string";
                     accessible-label: "Copy the string of the profile " + line.name;
-                    clicked => {
-                        export-text.text = root.profile-string(index);
-                        export-text.select-all();
-                        export-text.copy();
-                        export-text.clear-selection();
-                        root.profile-copied();
-                    }
+                    clicked => { root.profile-copy(index); }
                 }
                 LinkButton {
                     text: "Delete";
@@ -759,17 +753,6 @@ component SettingsView inherits VerticalLayout {
                         root.sync-profiles = !root.sync-profiles;
                         root.save();
                     }
-                }
-            }
-            // Holds a profile string while it is copied; never seen. Outside the layout's columns:
-            // a zero-wide element in a layout would make the whole column zero-wide.
-            Rectangle {
-                height: 0px;
-                export-text := TextInput {
-                    width: 0px;
-                    height: 0px;
-                    read-only: true;
-                    accessible-role: none;
                 }
             }
         }
@@ -1771,8 +1754,14 @@ export component AppWindow inherits Window {
                             profile-save => { root.profile-save(); }
                             profile-apply(index) => { root.profile-apply(index); }
                             profile-delete(index) => { root.profile-delete(index); }
-                            profile-string(index) => { return root.profile-string(index); }
-                            profile-copied => { root.profile-copied(); }
+                            profile-copy(index) => {
+                                clipboard.text = root.profile-string(index);
+                                clipboard.select-all();
+                                clipboard.copy();
+                                clipboard.clear-selection();
+                                clipboard.text = "";
+                                root.profile-copied();
+                            }
                             profile-import-text <=> root.settings-profile-import;
                             sync-profiles <=> root.settings-sync-profiles;
                             profile-import(text) => { root.profile-import(text); }
@@ -2050,6 +2039,17 @@ export component AppWindow inherits Window {
             width: parent.width;
             height: parent.height;
             start-resize(direction) => { root.start-resize(direction); }
+        }
+
+        // Holds a text while it goes to the clipboard; never seen. Outside every scrolling page:
+        // selecting text there scrolled the page to it.
+        clipboard := TextInput {
+            x: 0;
+            y: 0;
+            width: 0px;
+            height: 0px;
+            read-only: true;
+            accessible-role: none;
         }
 
         // Last, so a tooltip shows above everything; it takes no input.
