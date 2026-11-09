@@ -347,7 +347,9 @@ helps to find the requests of one installation when something goes wrong. *Setti
 turns off the events (and with them the ID) or only the ID.
 
 Every request names the launcher version and operating system in its User-Agent
-(`SurvivorsForge/0.6.4 (windows)`). A request with an installation ID marks that launcher active for the
+(`SurvivorsForge/0.6.4 (windows)`). Only release builds, which compile in the secret build token,
+send `SurvivorsForge`; every other build sends `SurvivorsForge-unofficial/<version>`
+(see [docs/self-hosting.md](docs/self-hosting.md#official-launcher-builds)). A request with an installation ID marks that launcher active for the
 hour (`launcher_active`, forgotten with the IDs after 90 days); Grafana's *Launcher and downloads* shows
 the active launchers of this hour and of today (Europe/Berlin) by platform and version.
 
@@ -358,8 +360,8 @@ the active launchers of this hour and of today (Europe/Berlin) by platform and v
 `.github/workflows/release.yml` runs on tags `v*` and on its *Run workflow* button:
 
 1. The button only: sets the typed version in `Cargo.toml` and `Cargo.lock`, commits `chore(release): bump version to <version>`, tags `v<version>` and pushes both. The jobs below build from that tag in the same run.
-2. Fails if the tag does not match the version in `Cargo.toml` and `Cargo.lock`.
-3. Builds the launcher for Windows, Linux and Apple Silicon macOS in parallel.
+2. Fails if the tag does not match the version in `Cargo.toml` and `Cargo.lock`, or if the repository secret `SURVIVORSFORGE_BUILD_TOKEN` is missing.
+3. Builds the launcher for Windows, Linux and Apple Silicon macOS in parallel, with the build token compiled in (see [Official launcher builds](docs/self-hosting.md#official-launcher-builds)).
 4. Pushes the platform images (`survivorsforge-api`, `-web`, `-grafana`) to ghcr.io once the Windows and Linux builds succeed.
 5. Publishes the GitHub release with `compose.yaml`, `env.example`, and the Windows and Linux launchers under fixed names:
    - `SurvivorsForge-windows-x86_64.zip`

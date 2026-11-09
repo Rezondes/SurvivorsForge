@@ -32,7 +32,7 @@ pub struct AppState {
 
 pub fn router(state: AppState) -> Router {
     let config = state.config.clone();
-    let recorder = Recorder { stats: state.request_stats.clone(), clock: state.clock.clone(), website: config.website_ip };
+    let recorder = Recorder { stats: state.request_stats.clone(), clock: state.clock.clone(), website: config.website_ip, launcher_token: config.launcher_token.clone() };
     let routes = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/auth/github/start", get(oauth::start))

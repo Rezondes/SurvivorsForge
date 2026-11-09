@@ -39,6 +39,8 @@ pub struct Config {
     pub public_image_url: String,
     /// Secret of the GitHub App webhook, checked against `X-Hub-Signature-256`.
     pub github_webhook_secret: String,
+    /// The official launchers' build token; without it any client may send `SurvivorsForge/...`.
+    pub launcher_token: Option<crate::request_stats::LauncherToken>,
     /// `owner/name` of the launcher's own repository, whose release downloads `/stats` shows.
     pub launcher_repo: String,
     /// Password of the read-only database role `grafana_reader`; without it the role cannot log in.
@@ -158,6 +160,13 @@ impl Config {
                 .collect::<Result<_, _>>()?,
             public_image_url: required("PUBLIC_IMAGE_URL")?.trim_end_matches('/').to_string(),
             github_webhook_secret: required("GITHUB_WEBHOOK_SECRET")?,
+            launcher_token: get("LAUNCHER_BUILD_TOKEN")
+                .map(|token| {
+                    let from = parse("LAUNCHER_TOKEN_FROM", "0.0.0")?;
+                    let from = from.parse().map_err(|_| invalid("LAUNCHER_TOKEN_FROM", &from))?;
+                    Ok(crate::request_stats::LauncherToken { token: token.to_string(), from })
+                })
+                .transpose()?,
             launcher_repo: parse("LAUNCHER_REPO", "Rezondes/SurvivorsForge")?,
             grafana_db_password: get("GRAFANA_DB_PASSWORD").map(str::to_string),
             source_check_batch: {
@@ -202,6 +211,7 @@ impl Config {
             stats_roles: vec![forge_core::roles::Role::Admin, forge_core::roles::Role::Moderator],
             public_image_url: "https://web.test/img".into(),
             github_webhook_secret: "webhook-secret".into(),
+            launcher_token: None,
             launcher_repo: "Rezondes/SurvivorsForge".into(),
             grafana_db_password: None,
             source_check_batch: 200,

@@ -140,10 +140,30 @@ impl Default for Client {
     }
 }
 
-/// `SurvivorsForge/<version> (<platform>)`: the platform counts the active launchers by both
-/// (`forge-api` request_stats::launcher_build).
+/// Header of the build token; only requests to the platform carry it.
+pub const BUILD_HEADER: &str = "X-SurvivorsForge-Build";
+
+/// The token the release build compiles in (`SURVIVORSFORGE_BUILD_TOKEN`, a secret of the release
+/// workflow). The platform takes `SurvivorsForge/<version>` only with it (`forge-api`
+/// request_stats::LauncherToken); every other build names itself `SurvivorsForge-unofficial`.
+pub fn build_token() -> Option<&'static str> {
+    option_env!("SURVIVORSFORGE_BUILD_TOKEN").filter(|t| !t.is_empty())
+}
+
+/// `request` to the platform with the build token of an official build.
+pub fn with_build_token(request: ureq::Request) -> ureq::Request {
+    match build_token() {
+        Some(token) => request.set(BUILD_HEADER, token),
+        None => request,
+    }
+}
+
+/// `SurvivorsForge/<version> (<platform>)` for an official build: the platform counts the active
+/// launchers by both (`forge-api` request_stats::launcher_build). Other builds send
+/// `SurvivorsForge-unofficial/<version> (<platform>)`, so they never pose as the official launcher.
 pub fn user_agent() -> String {
-    format!("{}/{} ({})", crate::APP_NAME, crate::APP_VERSION, std::env::consts::OS)
+    let name = if build_token().is_some() { crate::APP_NAME } else { "SurvivorsForge-unofficial" };
+    format!("{name}/{} ({})", crate::APP_VERSION, std::env::consts::OS)
 }
 
 impl Client {
@@ -207,7 +227,7 @@ impl Client {
         if let Some(id) = &self.install_id {
             request = request.set(crate::telemetry::INSTALL_HEADER, id);
         }
-        Self::call(request)?.into_string().map_err(|e| Error::Network(e.to_string()))
+        Self::call(with_build_token(request))?.into_string().map_err(|e| Error::Network(e.to_string()))
     }
 
     /// A platform GET as the logged-in user (`bearer`).
@@ -240,6 +260,7 @@ impl Client {
         for (name, value) in headers {
             request = request.set(name, value);
         }
+        let request = with_build_token(request);
         let answer = match body {
             Some(body) => request.set("Content-Type", "application/json").send_string(&body.to_string()),
             None => request.call(),
@@ -675,7 +696,8 @@ mod tests {
         assert_eq!(request.line, "GET /repos/o/r HTTP/1.1");
         assert_eq!(request.header("authorization"), Some("Bearer ghu_t"));
         assert_eq!(request.header("accept"), Some("application/vnd.github+json"));
-        assert!(request.header("user-agent").is_some_and(|ua| ua.starts_with("SurvivorsForge/")));
+        assert_eq!(request.header("user-agent"), Some(user_agent().as_str()));
+        assert_eq!(request.header("x-survivorsforge-build"), None, "the build token never goes to GitHub");
     }
 
     #[test]
@@ -693,7 +715,8 @@ mod tests {
 
     #[test]
     fn names_version_and_platform_for_the_active_launcher_counts() {
-        assert_eq!(user_agent(), format!("SurvivorsForge/{} ({})", crate::APP_VERSION, std::env::consts::OS));
+        let name = if build_token().is_some() { "SurvivorsForge" } else { "SurvivorsForge-unofficial" };
+        assert_eq!(user_agent(), format!("{name}/{} ({})", crate::APP_VERSION, std::env::consts::OS));
     }
 
     /// Talks to github.com: `cargo test -- --ignored web_github_live`.

@@ -183,3 +183,34 @@ async fn metrics_not_on_public_router(pool: PgPool) {
     let app = TestApp::new(pool);
     assert_eq!(app.get("/metrics", None).await.status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test]
+async fn only_official_builds_may_name_themselves_survivorsforge(pool: PgPool) {
+    let token = forge_api::request_stats::LauncherToken { token: "build-secret".into(), from: "0.7.3".parse().unwrap() };
+    let app = TestApp::with_config(pool, |c| c.launcher_token = Some(token));
+    let call = |uri: &str, user_agent: &str, sent: Option<&str>| {
+        let mut request = Request::get(uri).header("user-agent", user_agent);
+        if let Some(sent) = sent {
+            request = request.header("x-survivorsforge-build", sent);
+        }
+        request.body(Body::empty()).unwrap()
+    };
+    let official = send(&app.router, call("/v1/categories", "SurvivorsForge/0.7.3 (windows)", Some("build-secret"))).await;
+    assert_eq!(official.status, StatusCode::OK);
+    let spoofed = send(&app.router, call("/v1/categories", "SurvivorsForge/0.7.3 (windows)", None)).await;
+    assert_eq!(spoofed.status, StatusCode::FORBIDDEN);
+    assert!(spoofed.body.contains("unofficial_client"), "{}", spoofed.body);
+    let wrong = send(&app.router, call("/v1/categories", "SurvivorsForge/1.0.0", Some("guess"))).await;
+    assert_eq!(wrong.status, StatusCode::FORBIDDEN);
+    // Launchers from before the token, other clients and unofficial builds pass.
+    for user_agent in ["SurvivorsForge/0.7.2 (windows)", "MyLauncher/1.2", "SurvivorsForge-unofficial/0.7.3 (windows)"] {
+        assert_eq!(send(&app.router, call("/v1/categories", user_agent, None)).await.status, StatusCode::OK, "{user_agent}");
+    }
+    // The self-update stays open, so a launcher can always reach the build with the token.
+    let update = send(&app.router, call("/v1/github/Rezondes/SurvivorsForge/releases/latest", "SurvivorsForge/0.7.3", None)).await;
+    assert_ne!(update.status, StatusCode::FORBIDDEN);
+    // A spoofed request counts as another client, not as the launcher.
+    let counted: Vec<(String, i16, String)> = rows(&app).await.into_iter().filter(|r| r.0 == "/v1/categories").map(|r| (r.0, r.2, r.3)).collect();
+    assert!(counted.contains(&("/v1/categories".into(), 403, "other".into())), "{counted:?}");
+    assert!(!counted.iter().any(|r| r.1 == 403 && r.2 == "launcher"), "{counted:?}");
+}

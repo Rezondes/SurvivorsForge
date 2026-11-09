@@ -39,7 +39,7 @@ Anyone may use this API on these conditions:
 2. **Respect the trust level.** Never install `blocked` or `source_changed`. Ask the user before installing `flagged` or `unscanned`. Show the trust level next to the addon.
 3. **Follow removals.** An addon that disappears from `/v1/registry` was deleted or blocked. Stop offering it and do not keep installing it from an older copy of the list.
 4. **Link, do not rehost.** Download from `asset_url` and do not mirror the zips.
-5. **Do not pose as SurvivorsForge.** Saying that your launcher reads the SurvivorsForge index is fine; looking like the official launcher is not.
+5. **Do not pose as SurvivorsForge.** Saying that your launcher reads the SurvivorsForge index is fine; looking like the official launcher is not. The User-Agent name `SurvivorsForge` belongs to the official builds alone, also for these public endpoints and also for forks of the launcher. A request that names itself `SurvivorsForge/<version>` without being an official build gets `403 unofficial_client`. A fork built from the source sends `SurvivorsForge-unofficial/<version>` by itself; give it a name of its own.
 6. **Name your client.** Trying the API by hand (curl, a browser, the playground) is fine. A tool that calls it regularly sends its own User-Agent, as under "How often", and meets the conditions above.
 
 ## Stability
@@ -245,6 +245,7 @@ Errors are JSON with a stable code and a readable message:
 | `404` | `not_found` | Unknown or deleted addon, unknown tag. |
 | `422` | `unknown_game_version` | `?game=` names a game version that does not exist. |
 | `422` | `invalid_sort` | `/v1/addons?sort=` is not `relevance`, `downloads`, `updated` or `name`. |
+| `403` | `unofficial_client` | The User-Agent names the official launcher (`SurvivorsForge/<version>`), but the request does not come from an official build (rule 5). |
 | `429` | `rate_limited` | More than 120 requests in a minute. |
 
 ## Values

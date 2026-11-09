@@ -8,7 +8,7 @@ use axum::body::HttpBody;
 use axum::extract::{MatchedPath, Request, State};
 use axum::http::{header, Method};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use sqlx::PgPool;
@@ -55,6 +55,34 @@ pub fn launcher_build(user_agent: &str) -> Option<(String, &'static str)> {
         _ => "unknown",
     };
     version_ok.then(|| (version.to_string(), os))
+}
+
+/// Header the official launcher sends its build token in (launcher `github::BUILD_HEADER`).
+pub const BUILD_HEADER: &str = "x-survivorsforge-build";
+
+/// The self-update's question; it stays open without the token, so a launcher from before the
+/// token can always reach the version that sends it.
+pub const SELF_UPDATE_ROUTE: &str = "/v1/github/{owner}/{repo}/releases/latest";
+
+/// The token official launcher builds send (`LAUNCHER_BUILD_TOKEN`), required from version `from`
+/// on (`LAUNCHER_TOKEN_FROM`); older launchers did not have it yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LauncherToken {
+    pub token: String,
+    pub from: semver::Version,
+}
+
+impl LauncherToken {
+    /// A request that names itself the official launcher (`SurvivorsForge/<version>`) without the
+    /// token: another client posing as SurvivorsForge (docs/public-api.md, rule 5). Launchers
+    /// before `from` pass; an odd version counts as new, so it needs the token too.
+    pub fn spoofed(&self, user_agent: Option<&str>, sent: Option<&str>) -> bool {
+        let Some(rest) = user_agent.and_then(|ua| ua.strip_prefix("SurvivorsForge/")) else { return false };
+        let version = rest.split_whitespace().next().unwrap_or_default();
+        let older = semver::Version::parse(version).is_ok_and(|v| v < self.from);
+        // ponytail: plain comparison; the token is in every official binary, so timing hides nothing
+        !older && sent != Some(self.token.as_str())
+    }
 }
 
 /// The routes of the public API for other launchers (docs/public-api.md).
@@ -279,6 +307,8 @@ pub struct Recorder {
     pub stats: Arc<RequestStats>,
     pub clock: crate::github::Clock,
     pub website: Option<IpAddr>,
+    /// Off without `LAUNCHER_BUILD_TOKEN`.
+    pub launcher_token: Option<LauncherToken>,
 }
 
 /// The method as a label and stats key. An extension method is any token the client picks, so
@@ -298,7 +328,9 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     }
     let method = method_label(request.method()).to_string();
     let user_agent = request.headers().get(header::USER_AGENT).and_then(|v| v.to_str().ok());
-    let client = classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website);
+    let sent = request.headers().get(BUILD_HEADER).and_then(|v| v.to_str().ok());
+    let spoofed = route != SELF_UPDATE_ROUTE && recorder.launcher_token.as_ref().is_some_and(|t| t.spoofed(user_agent, sent));
+    let client = if spoofed { Client::Other } else { classify(user_agent, crate::rate_limit::peer_ip(&request), recorder.website) };
     if client == Client::Other && PUBLIC_ROUTES.contains(&route.as_str()) {
         recorder.stats.record_public((recorder.clock)(), &route, public_client(user_agent), country(request.headers()));
     }
@@ -313,7 +345,12 @@ pub async fn middleware(State(recorder): State<Recorder>, request: Request, next
     forge_trace::continue_trace(&span, request.headers());
     // GitHub requests this request causes count for its route (`github::usage`).
     let origin = format!("{method} {route}");
-    let response = crate::github::usage::ORIGIN.scope(origin, next.run(request)).instrument(span.clone()).await;
+    let response = if spoofed {
+        let message = "Only official SurvivorsForge builds may name themselves SurvivorsForge; send your own User-Agent (see /docs/public-api.md)";
+        crate::error::ApiError::new(axum::http::StatusCode::FORBIDDEN, "unofficial_client", message).into_response()
+    } else {
+        crate::github::usage::ORIGIN.scope(origin, next.run(request)).instrument(span.clone()).await
+    };
     span.record("status", response.status().as_u16());
     let elapsed = started.elapsed();
     let status = response.status().as_u16();

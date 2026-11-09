@@ -118,6 +118,8 @@ Your own GitHub user ID for `ADMIN_GITHUB_IDS` is the `id` field of
 | `TRUSTED_PROXIES` | no, set by Compose | Proxies whose `X-Forwarded-For` counts | API: `FORGE_CADDY_IP` and `FORGE_WEB_IP`; website: `FORGE_CADDY_IP` |
 | `WEBSITE_IP` | no, set by Compose | The website's address; it limits each visitor itself, so the API does not count its requests again | `FORGE_WEB_IP` |
 | `SOURCE_CHECK_BATCH` | no | Versions compared with GitHub per 6-hourly run | `200` |
+| `LAUNCHER_BUILD_TOKEN` | no | Build token of the official launcher; with it a client that names itself `SurvivorsForge/<version>` without the token gets `403` (see [Official launcher builds](#official-launcher-builds)) | - |
+| `LAUNCHER_TOKEN_FROM` | no | First launcher version that has to send `LAUNCHER_BUILD_TOKEN`; older ones pass | `0.0.0` |
 | `LAUNCHER_REPO` | no | GitHub repository of the launcher; `/stats` shows its release downloads, and `/v1/github/*` serves it for the launcher's self-update besides the registry's repos | `Rezondes/SurvivorsForge` |
 | `GRAFANA_DB_PASSWORD` | with monitoring | Password of the read-only database role Grafana reads with | random |
 | `GRAFANA_ADMIN_PASSWORD` | with monitoring | Grafana's own admin account, for emergencies | random |
@@ -237,6 +239,30 @@ Players of a launcher built for another platform point it at yours in *Settings 
 and *Platform website*. The order is: the environment variables at run time, then these settings,
 then the addresses built in. When the API cannot be reached, the launcher shows its cached list and
 installs nothing.
+
+### Official launcher builds
+
+Only official builds may name themselves `SurvivorsForge/<version>` in their User-Agent. The release
+workflow compiles the repository secret `SURVIVORSFORGE_BUILD_TOKEN` into the launcher, which sends
+it as `X-SurvivorsForge-Build` to the API only, never to GitHub. A build without it (a fork, your own
+`cargo build`, a debug build) sends `SurvivorsForge-unofficial/<version>` and counts as another client.
+To see a local build as the launcher, build it with any `SURVIVORSFORGE_BUILD_TOKEN` against a platform
+without `LAUNCHER_BUILD_TOKEN`.
+
+With `LAUNCHER_BUILD_TOKEN` set to the same value, the API answers `403 unofficial_client` to a
+request that names itself `SurvivorsForge/<version>` without the token, for versions from
+`LAUNCHER_TOKEN_FROM` on. The self-update's `/v1/github/{owner}/{repo}/releases/latest` stays open,
+so every launcher can still reach the newest release. Roll it out in this order:
+
+1. Create a random token, e.g. `openssl rand -hex 32`, and save it as the repository secret
+   `SURVIVORSFORGE_BUILD_TOKEN`. The release workflow stops without it.
+2. Release the first launcher version that sends it.
+3. Set `LAUNCHER_BUILD_TOKEN` and `LAUNCHER_TOKEN_FROM=<that version>` on the server.
+4. Once the active launchers in Grafana run that version or newer, set `LAUNCHER_TOKEN_FROM=0.0.0`
+   (or leave it out): from then on older version numbers need the token too.
+
+The token is part of every official binary, so it stops forks that pose as SurvivorsForge, not
+someone who copies it out of the binary on purpose.
 
 ## 7. Addon packs
 

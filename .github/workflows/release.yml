@@ -23,6 +23,12 @@ jobs:
       prerelease: ${{ steps.check.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
+      # The platform rejects `SurvivorsForge/<version>` without this token (docs/self-hosting.md,
+      # "Official launcher builds"); a build without it names itself SurvivorsForge-unofficial.
+      - name: Check the build token secret
+        env:
+          TOKEN: ${{ secrets.SURVIVORSFORGE_BUILD_TOKEN }}
+        run: test -n "$TOKEN" || { echo "::error::Set the repository secret SURVIVORSFORGE_BUILD_TOKEN"; exit 1; }
       - name: Set the version, commit, tag and push
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -74,6 +80,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
       - run: cargo build --release
+        env:
+          SURVIVORSFORGE_BUILD_TOKEN: ${{ secrets.SURVIVORSFORGE_BUILD_TOKEN }}
       - name: Package
         shell: pwsh
         run: Compress-Archive -Path target/release/SurvivorsForge.exe -DestinationPath "SurvivorsForge-${{ needs.version.outputs.version }}-x86_64-pc-windows-msvc.zip"
@@ -100,6 +108,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
       - run: cargo build --release
+        env:
+          SURVIVORSFORGE_BUILD_TOKEN: ${{ secrets.SURVIVORSFORGE_BUILD_TOKEN }}
       - name: Package AppImage
         run: bash packaging/linux/build-appimage.sh target/release/SurvivorsForge "${{ needs.version.outputs.version }}" dist
       - uses: actions/upload-artifact@v4
@@ -121,6 +131,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release -p survivorsforge
+        env:
+          SURVIVORSFORGE_BUILD_TOKEN: ${{ secrets.SURVIVORSFORGE_BUILD_TOKEN }}
       - name: Package app
         env:
           VERSION: ${{ needs.version.outputs.version }}

@@ -115,7 +115,7 @@ impl Sender for ApiSender {
             if let Some(id) = &install_id {
                 request = request.set(INSTALL_HEADER, id);
             }
-            let _ = request.send_string(&body.to_string());
+            let _ = crate::github::with_build_token(request).send_string(&body.to_string());
         });
     }
 }
