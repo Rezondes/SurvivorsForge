@@ -4985,6 +4985,7 @@ mod layout_tests {
                 return;
             }
             assert!(find("Applied, changed since. 3 of 4 addons on").is_some(), "the applied one, changed since");
+            assert!(find("New profile").is_some() && find("Import a profile").is_some(), "each field says what it is for");
             let column = |label: &str| find(label).expect(label).size().width;
             assert!(column("Profile string") > 400.0, "the fields take the width of the page, not of a word: {}", column("Profile string"));
             find("Save as profile").expect("a way to save").invoke_accessible_default_action();

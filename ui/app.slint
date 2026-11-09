@@ -474,6 +474,11 @@ component SettingsView inherits VerticalLayout {
                     clicked => { root.profile-delete(index); }
                 }
             }
+            Text {
+                text: "New profile";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
+            }
             HorizontalLayout {
                 spacing: 10px;
                 Field {
@@ -496,6 +501,11 @@ component SettingsView inherits VerticalLayout {
                 font-size: Theme.meta;
                 color: Theme.danger;
                 wrap: word-wrap;
+            }
+            Text {
+                text: "Import a profile";
+                font-size: Theme.meta;
+                color: Theme.text-muted;
             }
             HorizontalLayout {
                 spacing: 10px;
