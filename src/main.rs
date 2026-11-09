@@ -426,7 +426,20 @@ impl Core {
         self.settings_saved = Some(self.toasts.push(text, kind));
     }
 
+    /// A message of its own: the busy toast of running work stays as it is.
     fn notify(&mut self, text: String, kind: Kind) {
+        self.toasts.push(text, kind);
+    }
+
+    /// The running work ended with nothing to say in its toast (a dialog says it): the toast goes.
+    fn end_work(&mut self) {
+        if let Some(id) = self.work.take() {
+            self.toasts.dismiss(id);
+        }
+    }
+
+    /// How the running work ended: its busy toast turns into it, else it comes as a new toast.
+    fn finish(&mut self, text: String, kind: Kind) {
         match self.work.take() {
             Some(id) => self.toasts.finish(id, text, kind),
             None => self.toasts.push(text, kind),
@@ -977,20 +990,16 @@ fn run_bg(
                 core.busy.remove(id);
             }
             match result {
-                // Nothing worth a word (the quiet update check found no news, a dialog or the job's
-                // own toast says it).
-                Ok(message) if message.is_empty() => {
-                    if let Some(id) = core.work.take() {
-                        core.toasts.dismiss(id);
-                    }
-                }
+                // Nothing worth a word: the quiet update check found no news, or a dialog or the
+                // job's own toast says it (and the job closed its busy toast itself).
+                Ok(message) if message.is_empty() => {}
                 // A job for one addon changed its folders.
                 Ok(message) if busy_id.is_some() => {
                     let message = controller::note_running_game(message, core.game_running);
-                    core.notify(message, Kind::Success)
+                    core.finish(message, Kind::Success)
                 }
-                Ok(message) => core.notify(message, Kind::Success),
-                Err(e) => core.notify(e.to_string(), Kind::Error),
+                Ok(message) => core.finish(message, Kind::Success),
+                Err(e) => core.finish(e.to_string(), Kind::Error),
             }
         }
         let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &shared));
@@ -1045,10 +1054,10 @@ fn scan_then<T: Send + 'static>(
         let _ = weak.upgrade_in_event_loop(move |ui| {
             match result {
                 Ok(report) => {
-                    lock(&shared).notify(format!("{name} scanned locally"), Kind::Success);
+                    lock(&shared).finish(format!("{name} scanned locally"), Kind::Success);
                     then(&ui, &shared, report);
                 }
-                Err(e) => lock(&shared).notify(format!("Could not scan {name}: {e}"), Kind::Error),
+                Err(e) => lock(&shared).finish(format!("Could not scan {name}: {e}"), Kind::Error),
             }
             refresh(&ui, &shared);
         });
@@ -1592,6 +1601,9 @@ fn install_updates(ui: &AppWindow, shared: &Shared, ids: Vec<String>, skipped: V
             let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &s));
         }
         done.append(&mut results);
+        if total > 0 {
+            lock(shared).end_work();
+        }
         if done.is_empty() {
             return Ok(String::new());
         }
@@ -3573,7 +3585,7 @@ fn open_url(ui: &AppWindow, shared: &Shared, url: String) {
         let _ = weak.upgrade_in_event_loop(move |ui| {
             let mut core = lock(&shared);
             if failed {
-                core.notify(format!("Could not open the browser. The page is {url}"), Kind::Error);
+                core.finish(format!("Could not open the browser. The page is {url}"), Kind::Error);
             } else if core.work == Some(opening) {
                 core.work = None;
                 core.toasts.dismiss(opening);
@@ -4032,10 +4044,12 @@ mod card_tests {
         core.toasts = Toasts::default();
         let id = core.set_status("Updating 2 addons...".into());
         assert_eq!(core.set_status("Updating 1 of 2: Lucky".into()), id, "the next step changes the same toast");
-        core.notify("2 addons updated".into(), Kind::Success);
-        assert_eq!(core.toasts.items(), [slint_toast::Toast { id, text: "2 addons updated".into(), kind: Kind::Success, action: String::new() }]);
+        core.notify("Profile string copied".into(), Kind::Success);
+        assert_eq!(core.toasts.get(id).map(|t| t.kind), Some(Kind::Busy), "a message of its own leaves the running work as it is");
+        core.finish("2 addons updated".into(), Kind::Success);
+        assert_eq!(core.toasts.get(id).map(|t| t.text.as_str()), Some("2 addons updated"), "its result turns the busy toast into it");
         core.notify("Azeroth Survivors was closed.".into(), Kind::Info);
-        assert_eq!(core.toasts.items().len(), 2, "without running work a result comes as its own toast");
+        assert_eq!(core.toasts.items().len(), 3, "without running work a result comes as its own toast");
     }
 
     #[test]

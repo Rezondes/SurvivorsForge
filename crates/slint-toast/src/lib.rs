@@ -1,7 +1,8 @@
 //! Toasts for Slint apps.
 //!
 //! [`Toasts`] keeps what the stack shows; `ui/toast.slint` draws it. A busy toast ("Checking for
-//! updates...") shows a running bar and turns into its result with [`Toasts::finish`]. Info and
+//! updates...") shows a running bar and turns into its result with [`Toasts::finish`]. A fixed toast
+//! ([`Toasts::fixed`], every busy one, every one with a button) is never pushed out by a new one. Info and
 //! success go after a few seconds, a warning or an error stays until it is closed.
 //!
 //! In the app:
@@ -35,6 +36,9 @@ pub struct Toast {
     pub kind: Kind,
     /// A button in the toast ("Undo"), empty without one. The stack's `action(id)` reports a click.
     pub action: String,
+    /// Keeps its place: a new toast never pushes it out, only the app or its X closes it. Busy
+    /// toasts and toasts with a button are fixed.
+    pub fixed: bool,
 }
 
 /// The toasts on screen, oldest first.
@@ -52,7 +56,8 @@ impl Default for Toasts {
 }
 
 impl Toasts {
-    /// At most `limit` toasts show; a new one pushes out the oldest that is not busy.
+    /// At most `limit` toasts show; a new one pushes out the oldest that is not fixed. With only
+    /// fixed ones left, the stack grows past `limit` rather than drop one.
     pub fn new(limit: usize) -> Self {
         Toasts { items: Vec::new(), next: 0, limit: limit.max(1) }
     }
@@ -67,29 +72,41 @@ impl Toasts {
 
     /// Shows `text`; the same text of the same kind shows once and keeps its id.
     pub fn push(&mut self, text: impl Into<String>, kind: Kind) -> i32 {
-        let text = text.into();
-        if let Some(t) = self.items.iter().find(|t| t.text == text && t.kind == kind) {
+        self.add(text.into(), kind, String::new(), kind == Kind::Busy)
+    }
+
+    /// Shows `text` and keeps it until the app or its X closes it (see [`Toast::fixed`]).
+    pub fn fixed(&mut self, text: impl Into<String>, kind: Kind) -> i32 {
+        self.add(text.into(), kind, String::new(), true)
+    }
+
+    fn add(&mut self, text: String, kind: Kind, action: String, fixed: bool) -> i32 {
+        if action.is_empty()
+            && let Some(t) = self.items.iter_mut().find(|t| t.text == text && t.kind == kind && t.action.is_empty())
+        {
+            t.fixed |= fixed;
             return t.id;
         }
         self.next += 1;
-        self.items.push(Toast { id: self.next, text, kind, action: String::new() });
+        self.items.push(Toast { id: self.next, text, kind, action, fixed });
+        self.make_room();
+        self.next
+    }
+
+    /// Drops the oldest toasts that are not fixed until at most `limit` show. The newest always
+    /// stays: with every other place fixed, the stack grows instead.
+    fn make_room(&mut self) {
         while self.items.len() > self.limit {
-            let oldest = self.items.iter().position(|t| t.kind != Kind::Busy).unwrap_or(0);
+            let older = &self.items[..self.items.len() - 1];
+            let Some(oldest) = older.iter().position(|t| !t.fixed) else { return };
             self.items.remove(oldest);
         }
-        self.next
     }
 
     /// A toast with a button (`action`, "Undo"); it stays longer than one without, so there is time
     /// to press it. Always a new toast, so each one's button acts on its own thing.
     pub fn with_action(&mut self, text: impl Into<String>, kind: Kind, action: impl Into<String>) -> i32 {
-        self.next += 1;
-        self.items.push(Toast { id: self.next, text: text.into(), kind, action: action.into() });
-        while self.items.len() > self.limit {
-            let oldest = self.items.iter().position(|t| t.kind != Kind::Busy).unwrap_or(0);
-            self.items.remove(oldest);
-        }
-        self.next
+        self.add(text.into(), kind, action.into(), true)
     }
 
     pub fn busy(&mut self, text: impl Into<String>) -> i32 {
@@ -119,13 +136,16 @@ impl Toasts {
         }
     }
 
-    /// Turns the busy toast `id` into its result. Closed meanwhile, the result comes as a new toast.
+    /// Turns the busy toast `id` into its result, which is no longer fixed. Closed meanwhile, the
+    /// result comes as a new toast.
     pub fn finish(&mut self, id: i32, text: impl Into<String>, kind: Kind) -> i32 {
         let text = text.into();
         match self.items.iter_mut().find(|t| t.id == id) {
             Some(t) => {
                 t.text = text;
                 t.kind = kind;
+                t.fixed = false;
+                self.make_room();
                 id
             }
             None => self.push(text, kind),
@@ -181,7 +201,7 @@ mod tests {
         assert_eq!(toasts.get(id).unwrap().kind, Kind::Busy);
         toasts.set_text(id, "Checking 2 of 5...");
         assert_eq!(toasts.finish(id, "All addons are up to date", Kind::Success), id);
-        assert_eq!(toasts.items(), [Toast { id, text: "All addons are up to date".into(), kind: Kind::Success, action: String::new() }]);
+        assert_eq!(toasts.items(), [Toast { id, text: "All addons are up to date".into(), kind: Kind::Success, action: String::new(), fixed: false }]);
     }
 
     #[test]
@@ -212,6 +232,22 @@ mod tests {
             toasts.success(format!("Done {n}"));
         }
         assert_eq!(texts(&toasts), ["Checking for updates...", "Done 2", "Done 3"]);
+    }
+
+    #[test]
+    fn a_fixed_toast_keeps_its_place_until_it_is_closed() {
+        let mut toasts = Toasts::new(3);
+        let checking = toasts.busy("Checking for updates...");
+        let undo = toasts.with_action("Lucky removed", Kind::Success, "Undo");
+        let error = toasts.fixed("The platform cannot be reached", Kind::Error);
+        let info = toasts.info("Profile string copied");
+        assert_eq!(texts(&toasts), ["Checking for updates...", "Lucky removed", "The platform cannot be reached", "Profile string copied"], "all fixed: the stack grows");
+        toasts.info("Opening the browser...");
+        assert!(toasts.get(info).is_none(), "the oldest one that is not fixed makes room");
+        assert!(toasts.get(checking).is_some() && toasts.get(undo).is_some() && toasts.get(error).is_some());
+        toasts.dismiss_by_user(error);
+        toasts.finish(checking, "All addons are up to date", Kind::Success);
+        assert!(!toasts.get(checking).unwrap().fixed, "its result can make room again");
     }
 
     #[test]
