@@ -475,8 +475,7 @@ component SettingsView inherits VerticalLayout {
                     color: Theme.text-muted;
                     vertical-alignment: center;
                 }
-                // Apply is what a profile is for; Copy string next to it; Delete is the bin, as on
-                // the addon cards.
+                // Apply and Copy string as buttons; Delete is the bin, as on the addon cards.
                 VerticalLayout {
                     alignment: center;
                     ActionButton {
@@ -487,7 +486,7 @@ component SettingsView inherits VerticalLayout {
                 }
                 VerticalLayout {
                     alignment: center;
-                    LinkButton {
+                    ActionButton {
                         text: "Copy string";
                         accessible-label: "Copy the string of the profile " + line.name;
                         clicked => { root.profile-copy(index); }
