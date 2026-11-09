@@ -4,7 +4,7 @@ import {
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
     IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea,
-    UpdateResult, UpdateResultsDialog, BackupLine, ProfileLine, RemoveButton
+    UpdateResult, UpdateResultsDialog, BackupLine, ProfileLine, RemoveButton, Pill
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
@@ -445,15 +445,24 @@ component SettingsView inherits VerticalLayout {
             for line[index] in root.profiles : HorizontalLayout {
                 spacing: 12px;
                 Text {
-                    horizontal-stretch: 1;
                     text: line.name;
                     font-size: Theme.body;
                     color: line.active ? Theme.gold-heading : Theme.text;
                     vertical-alignment: center;
                     overflow: elide;
                 }
+                // Which profile is applied, at a glance.
+                if line.active : VerticalLayout {
+                    alignment: center;
+                    Pill { text: "Applied"; tone: 1; }
+                }
+                if line.modified : VerticalLayout {
+                    alignment: center;
+                    Pill { text: "Changed since"; tone: 2; }
+                }
+                Rectangle { horizontal-stretch: 1; }
                 Text {
-                    text: (line.active ? (line.modified ? "Applied, changed since. " : "Applied. ") : "") + line.count;
+                    text: line.count;
                     font-size: Theme.meta;
                     color: Theme.text-muted;
                     vertical-alignment: center;

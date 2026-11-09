@@ -4984,7 +4984,8 @@ mod layout_tests {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                 return;
             }
-            assert!(find("Applied, changed since. 3 of 4 addons on").is_some(), "the applied one, changed since");
+            assert_eq!(ElementHandle::find_by_accessible_label(&ui, "Applied").count(), 1, "the applied one says so");
+            assert_eq!(ElementHandle::find_by_accessible_label(&ui, "Changed since").count(), 1, "and that it changed since");
             assert!(find("New profile").is_some() && find("Import a profile").is_some(), "each field says what it is for");
             let column = |label: &str| find(label).expect(label).size().width;
             assert!(column("Profile string") > 400.0, "the fields take the width of the page, not of a word: {}", column("Profile string"));
