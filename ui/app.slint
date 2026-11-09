@@ -214,6 +214,8 @@ component SettingsView inherits VerticalLayout {
     // What the launcher does once the game runs: stay open, minimize, close.
     in property <[string]> after-launch-labels;
     in-out property <int> after-launch-index;
+    // Disabled addons get their updates too.
+    in-out property <bool> update-disabled;
     // Look for updates on their own while the launcher is open, and how often.
     in-out property <bool> periodic-check;
     in property <[string]> check-labels;
@@ -561,6 +563,24 @@ component SettingsView inherits VerticalLayout {
                 font-size: Theme.meta;
                 color: Theme.text-muted;
                 wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                PickBox {
+                    label: "Update disabled addons too";
+                    checked: root.update-disabled;
+                    toggled => {
+                        root.update-disabled = !root.update-disabled;
+                        root.save();
+                    }
+                }
+                TickLabel {
+                    text: "Update disabled addons too";
+                    clicked => {
+                        root.update-disabled = !root.update-disabled;
+                        root.save();
+                    }
+                }
             }
             HorizontalLayout {
                 spacing: 10px;
@@ -924,6 +944,7 @@ export component AppWindow inherits Window {
     in property <[string]> settings-after-launch-labels;
     in-out property <int> settings-after-launch-index;
     in-out property <bool> settings-periodic-check: true;
+    in-out property <bool> settings-update-disabled: true;
     in property <[BackupLine]> settings-backups;
     in property <[string]> settings-backups-kept-labels;
     in-out property <int> settings-backups-kept-index: 2;
@@ -1551,6 +1572,7 @@ export component AppWindow inherits Window {
                             after-launch-labels: root.settings-after-launch-labels;
                             after-launch-index <=> root.settings-after-launch-index;
                             periodic-check <=> root.settings-periodic-check;
+                            update-disabled <=> root.settings-update-disabled;
                             check-labels: root.settings-check-labels;
                             check-index <=> root.settings-check-index;
                             backups: root.settings-backups;

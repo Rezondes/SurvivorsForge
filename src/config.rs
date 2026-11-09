@@ -55,6 +55,10 @@ pub struct Config {
     /// How many backups of the addon settings stay (`crate::backup`).
     #[serde(default = "default_backups_kept")]
     pub backups_kept: u8,
+    /// Disabled addons get their updates too, where they wait; off, an update waits until the
+    /// addon is enabled again.
+    #[serde(default = "yes")]
+    pub update_disabled: bool,
 }
 
 fn default_backups_kept() -> u8 {
@@ -173,6 +177,7 @@ impl Default for Config {
             periodic_check: true,
             check_minutes: default_check_minutes(),
             backups_kept: default_backups_kept(),
+            update_disabled: true,
         }
     }
 }
@@ -204,6 +209,7 @@ pub struct SettingsInput {
     pub periodic_check: bool,
     pub check_minutes: u8,
     pub backups_kept: u8,
+    pub update_disabled: bool,
 }
 
 /// The settings with every valid field of `input` taken over; an invalid field keeps the saved
@@ -220,6 +226,7 @@ pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Settings
         periodic_check: input.periodic_check,
         check_minutes: snap_check_minutes(input.check_minutes),
         backups_kept: input.backups_kept.clamp(1, 50),
+        update_disabled: input.update_disabled,
         ..saved.clone()
     };
     let mut warning = None;
@@ -513,12 +520,15 @@ mod tests {
             periodic_check: true,
             check_minutes: 45,
             backups_kept: 0,
+            update_disabled: false,
         };
         let (config, errors, _) = apply_settings(&saved, input);
         assert_eq!(config.after_launch, AfterLaunch::Minimize);
         assert_eq!(config.check_minutes, 45);
         assert_eq!(config.backups_kept, 1, "at least one backup stays");
         assert_eq!(Config::default().backups_kept, 10);
+        assert!(!config.update_disabled);
+        assert!(Config::default().update_disabled, "disabled addons update unless switched off");
         assert!(!config.telemetry, "the privacy toggle is taken over");
         assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));
         assert_eq!(config.addons_dir, addons, "the bad path keeps the saved one");

@@ -1030,6 +1030,15 @@ pub fn check_due(on: bool, minutes: u8, last: Option<std::time::Instant>, now: s
     on && !block.checking && !block.busy && !block.offline && now.duration_since(last) >= std::time::Duration::from_secs(u64::from(minutes) * 60)
 }
 
+/// The updates to install or count: all of `updates` but the ones of `disabled` addons while
+/// their updates wait (`update_disabled` off).
+pub fn without_waiting(updates: Vec<String>, disabled: &[String], update_disabled: bool) -> Vec<String> {
+    if update_disabled {
+        return updates;
+    }
+    updates.into_iter().filter(|id| !disabled.contains(id)).collect()
+}
+
 /// How many of the updates `after` a check were not there `before` it.
 pub fn new_updates(before: &[String], after: &[String]) -> usize {
     after.iter().filter(|id| !before.contains(id)).count()
@@ -1163,6 +1172,14 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn updates_of_disabled_addons_wait_when_switched_off() {
+        let ids = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let disabled = ids(&["plates"]);
+        assert_eq!(without_waiting(ids(&["lucky", "plates"]), &disabled, true), ids(&["lucky", "plates"]));
+        assert_eq!(without_waiting(ids(&["lucky", "plates"]), &disabled, false), ids(&["lucky"]));
+    }
 
     #[test]
     fn a_disabled_addon_says_so_in_its_row() {

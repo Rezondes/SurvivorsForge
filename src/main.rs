@@ -199,6 +199,13 @@ impl Core {
         folders.iter().any(|f| self.scan.iter().any(|s| s.disabled && s.folder.eq_ignore_ascii_case(f)))
     }
 
+    /// The addons with an update to install or count (`controller::update_all_ids`), without the
+    /// disabled ones while their updates wait.
+    fn update_ids(&self) -> Vec<String> {
+        let disabled: Vec<String> = self.state.entries.iter().filter(|e| self.is_disabled(&e.id)).map(|e| e.id.clone()).collect();
+        controller::without_waiting(controller::update_all_ids(&self.statuses, &self.config.held), &disabled, self.config.update_disabled)
+    }
+
     /// Where the addon `id` is installed or updated: beside the others, or with the disabled ones.
     fn folder_of(&self, id: &str) -> PathBuf {
         if self.is_disabled(id) { survivorsforge::scan::disabled_dir(self.addons_dir()) } else { self.addons_dir().to_path_buf() }
@@ -461,6 +468,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         RowState::UpToDate => ("Up to date".into(), 1, ""),
         // Kept at an older version on purpose: the update is offered, not pushed.
         RowState::UpdateAvailable(label) if core.config.held.contains(&row.id) => (format!("Kept at this version, {label} available"), 0, "Update"),
+        RowState::UpdateAvailable(label) if row.disabled && !core.config.update_disabled => (format!("Update {label} waits until it is enabled"), 0, ""),
         RowState::UpdateAvailable(label) => (format!("Update: {label}"), 2, "Update"),
         RowState::Manual => ("Installed from zip".into(), 0, ""),
         RowState::CheckFailed(_) => ("Check failed".into(), 3, ""),
@@ -909,7 +917,7 @@ fn refresh(ui: &AppWindow, shared: &Shared) {
         ui.set_comments_send_error(c.send_error.as_str().into());
         ui.set_comments_needs_login(c.needs_login);
     }
-    ui.set_update_count(controller::update_all_ids(&core.statuses, &core.config.held).len() as i32);
+    ui.set_update_count(core.update_ids().len() as i32);
     ui.set_checking(core.checking);
     let game_missing = match config::game_executable(core.addons_dir(), USE_WINDOWS_GAME) {
         Some(_) => "",
@@ -1478,7 +1486,7 @@ fn on_update_all(ui: &AppWindow, shared: &Shared) {
     let (ids, skipped) = {
         let core = lock(shared);
         let ids: Vec<String> =
-            controller::update_all_ids(&core.statuses, &core.config.held).into_iter().filter(|id| !core.busy.contains(id)).collect();
+            core.update_ids().into_iter().filter(|id| !core.busy.contains(id)).collect();
         // Updates that need a confirmation are left for the user to install one by one.
         let (ids, mut skipped) =
             controller::split_confirmations(ids, &core.registry, &core.state, core.config.game_version.as_deref(), &core.game_versions);
@@ -1649,7 +1657,7 @@ fn run_check(ui: &AppWindow, shared: &Shared, quiet: bool) {
         }
         core.checking = true;
         core.last_check = Some(std::time::Instant::now());
-        let known = controller::update_all_ids(&core.statuses, &core.config.held);
+        let known = core.update_ids();
         if !quiet {
             // Each addon shows "Checking..." until its own answer arrives.
             core.statuses.clear();
@@ -1756,14 +1764,14 @@ fn run_check(ui: &AppWindow, shared: &Shared, quiet: bool) {
         let picked: Vec<String> = core.state.entries.iter().map(|e| e.id.clone()).filter(|id| core.config.auto_updates(id)).collect();
         let auto: Vec<String> = controller::auto_update_ids(&core.statuses, &core.registry, &core.state, false, &picked, core.config.game_version.as_deref(), &core.game_versions)
             .into_iter()
-            .filter(|id| !core.busy.contains(id))
+            .filter(|id| !core.busy.contains(id) && (core.config.update_disabled || !core.is_disabled(id)))
             .collect();
         if !auto.is_empty() {
             let s = shared.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| install_updates(&ui, &s, auto, Vec::new()));
         }
 
-        let found = controller::update_all_ids(&core.statuses, &core.config.held);
+        let found = core.update_ids();
         if quiet {
             return Ok(match controller::new_updates(&known_updates, &found) {
                 0 => String::new(),
@@ -2158,6 +2166,7 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
             after_launch: config::AfterLaunch::from_index(ui.get_settings_after_launch_index()),
             periodic_check: ui.get_settings_periodic_check(),
             check_minutes: config::CHECK_MINUTES.get(ui.get_settings_check_index().max(0) as usize).copied().unwrap_or(30),
+            update_disabled: ui.get_settings_update_disabled(),
             backups_kept: backup::KEPT_CHOICES.get(ui.get_settings_backups_kept_index().max(0) as usize).copied().unwrap_or(10),
         };
         // A bad field keeps its saved value and its text in the field; the others still save.
@@ -2427,6 +2436,7 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_auto_update(core.config.auto_update_all);
     ui.set_settings_after_launch_index(core.config.after_launch.index());
     ui.set_settings_periodic_check(core.config.periodic_check);
+    ui.set_settings_update_disabled(core.config.update_disabled);
     ui.set_settings_backups_kept_index(backup::KEPT_CHOICES.iter().position(|k| *k == core.config.backups_kept).unwrap_or(2) as i32);
     fill_backups(ui, &core);
     ui.set_settings_check_index(config::CHECK_MINUTES.iter().position(|m| *m == core.config.check_minutes).unwrap_or(3) as i32);
