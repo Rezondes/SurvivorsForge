@@ -24,6 +24,9 @@ export struct AddonRow {
     // Browse only: the row can go into an addon pack, and is picked for one.
     can-pick: bool,
     picked: bool,
+    // It waits in AddOns.disabled, so the game does not load it; and it can be switched.
+    disabled: bool,
+    can-toggle: bool,
 }
 
 // One block of a description: 0 paragraph, 1 heading, 2 list item, 3 code, 4 quote, 5 image.

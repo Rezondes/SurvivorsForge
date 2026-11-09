@@ -150,6 +150,24 @@ pub fn uninstall(addons_dir: &Path, state: &mut State, id: &str, delete: &mut dy
     Ok(())
 }
 
+/// Moves `folders` out of the AddOns folder into `scan::disabled_dir` (`enable` false), or back.
+/// Refuses, moving nothing, when one of them is already where it should go.
+pub fn set_enabled(addons_dir: &Path, folders: &[String], enable: bool) -> Result<()> {
+    let disabled = crate::scan::disabled_dir(addons_dir);
+    let (from, to) = if enable { (disabled.as_path(), addons_dir) } else { (addons_dir, disabled.as_path()) };
+    if let Some(both) = folders.iter().find(|f| existing_folder(to, f).is_some()) {
+        let place = if enable { "the AddOns folder" } else { "AddOns.disabled" };
+        return Err(Error::Io(format!("{both} is in {place} already, so nothing was moved")));
+    }
+    std::fs::create_dir_all(to)?;
+    for folder in folders {
+        if let Some(actual) = existing_folder(from, folder) {
+            std::fs::rename(from.join(&actual), to.join(&actual))?;
+        }
+    }
+    Ok(())
+}
+
 /// Where removed folders wait for Undo, one folder per removal: in the work folder, so moving
 /// there and back is a rename on the same file system, and the game does not load them.
 pub fn parking_root(addons_dir: &Path) -> PathBuf {
@@ -224,6 +242,28 @@ mod tests {
             installed_at: 0,
         });
         (dir, addons, state)
+    }
+
+    #[test]
+    fn a_disabled_addon_moves_beside_the_addons_folder_and_back() {
+        let (dir, addons, _state) = setup();
+        let both = ["Lucky".to_string(), "Lucky_Options".to_string()];
+        set_enabled(&addons, &both, false).unwrap();
+        assert_eq!(folders(&addons), ["Other"]);
+        assert_eq!(folders(&dir.path().join("AddOns.disabled")), ["Lucky", "Lucky_Options"]);
+        set_enabled(&addons, &both, true).unwrap();
+        assert_eq!(folders(&addons), ["Lucky", "Lucky_Options", "Other"]);
+        assert!(addons.join("Lucky").join("Lucky.toc").exists(), "with their files");
+    }
+
+    #[test]
+    fn a_toggle_never_overwrites() {
+        let (dir, addons, _state) = setup();
+        std::fs::create_dir_all(dir.path().join("AddOns.disabled").join("lucky_options")).unwrap();
+        let both = ["Lucky".to_string(), "Lucky_Options".to_string()];
+        let e = set_enabled(&addons, &both, false).unwrap_err();
+        assert!(e.to_string().contains("Lucky_Options is in AddOns.disabled already"), "{e}");
+        assert_eq!(folders(&addons), ["Lucky", "Lucky_Options", "Other"], "nothing moved");
     }
 
     #[test]

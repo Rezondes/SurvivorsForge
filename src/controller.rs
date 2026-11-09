@@ -51,6 +51,8 @@ pub struct Row {
     pub repo: Option<String>,
     pub out_of_date: bool,
     pub folders: Vec<String>,
+    /// Its folders wait in `scan::disabled_dir`: the game does not load it.
+    pub disabled: bool,
 }
 
 pub const UNMANAGED_PREFIX: &str = "folder:";
@@ -147,6 +149,7 @@ pub fn installed_rows(
                 repo,
                 out_of_date: toc.is_some_and(|t| t.is_out_of_date()),
                 folders: entry.folders.clone(),
+                disabled: entry.folders.iter().any(|f| scan.iter().any(|s| s.disabled && s.folder.eq_ignore_ascii_case(f))),
             }
         })
         .collect();
@@ -161,6 +164,7 @@ pub fn installed_rows(
         repo: None,
         out_of_date: addon.toc.is_out_of_date(),
         folders: vec![addon.folder.clone()],
+        disabled: addon.disabled,
     }));
     rows.sort_by_key(|r| r.name.to_lowercase());
     rows
@@ -257,6 +261,13 @@ fn is_installed(registry_id: &str, registry: &Registry, state: &State) -> bool {
     state.get(registry_id).is_some()
         || state.entries.iter().any(|e| matches!(&e.source, Source::Verified { registry_id: r } if r == registry_id))
         || registry.get(registry_id).is_some_and(|a| a.folders.iter().any(|f| state.owner_of(f).is_some()))
+}
+
+/// Every addon `id` needs, the ones it needs first; without `id` itself.
+pub fn required_addons(id: &str, registry: &Registry) -> Vec<String> {
+    let edges: HashMap<String, Vec<String>> =
+        registry.addons.iter().map(|a| (a.id.clone(), a.dependencies.iter().filter(|d| d.required).map(|d| d.id.clone()).collect())).collect();
+    forge_core::deps::install_order(&id.to_string(), &edges).into_iter().filter(|d| d != id).collect()
 }
 
 pub fn dependency_plan(id: &str, registry: &Registry, state: &State) -> DependencyPlan {
@@ -1154,6 +1165,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_disabled_addon_says_so_in_its_row() {
+        let state = State { entries: vec![crate::state::Entry {
+            id: "lucky".into(),
+            name: "Lucky".into(),
+            source: Source::Zip { file_name: "l.zip".into() },
+            folders: vec!["Lucky".into()],
+            version: "zip:l.zip".into(),
+            installed_at: 0,
+        }] };
+        let off = |folder: &str| InstalledAddon { folder: folder.into(), disabled: true, ..Default::default() };
+        let scan = vec![off("Lucky"), off("Loose")];
+        let reconciled = state.reconcile(&scan);
+        assert!(reconciled.missing.is_empty(), "a disabled addon is not missing");
+        let rows = installed_rows(&state, &reconciled, &scan, &crate::registry::embedded(), &HashMap::new());
+        assert_eq!(rows.iter().map(|r| (r.id.as_str(), r.disabled)).collect::<Vec<_>>(), [("folder:Loose", true), ("lucky", true)]);
+    }
+
+    #[test]
+    fn an_addon_needs_its_dependencies_first() {
+        let registry = dep_registry();
+        assert_eq!(required_addons("ui", &registry), ["core", "lib", "media"], "only required ones, deepest first");
+        assert!(required_addons("core", &registry).is_empty());
+    }
+
+    #[test]
     fn a_failed_update_says_why_and_what_helps() {
         use crate::Error;
         let fix = |e: Error| fix_for(&e, false).1;
@@ -1258,7 +1294,7 @@ mod tests {
     use crate::updates::RemoteVersion;
 
     fn scanned(folder: &str) -> InstalledAddon {
-        InstalledAddon { folder: folder.into(), toc: Toc { title: folder.into(), ..Toc::default() } }
+        InstalledAddon { folder: folder.into(), toc: Toc { title: folder.into(), ..Toc::default() }, disabled: false }
     }
 
     fn detected(name: &str) -> DetectedAddon {
@@ -1664,6 +1700,7 @@ mod tests {
             repo: None,
             out_of_date: false,
             folders: Vec::new(),
+            disabled: false,
         };
         let mut rows = [
             row("a", RowState::UpToDate),

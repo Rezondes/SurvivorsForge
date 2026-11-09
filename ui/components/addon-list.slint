@@ -9,6 +9,7 @@ export component AddonRowView inherits Rectangle {
     in property <AddonRow> addon;
     callback action();
     callback remove();
+    callback toggle();
     callback open();
     callback pick();
     // The row itself was clicked: open the detail view.
@@ -152,6 +153,13 @@ export component AddonRowView inherits Rectangle {
                     clicked => { root.open(); }
                 }
                 Rectangle { horizontal-stretch: 1; }
+                if root.addon.can-toggle && !root.addon.busy : GlyphButton {
+                    label: (root.addon.disabled ? "Enable " : "Disable ") + root.addon.name;
+                    primary: root.addon.disabled;
+                    // A power sign.
+                    glyph: "M 8 1.5 L 8 7.5 M 4.6 3.6 A 5.5 5.5 0 1 0 11.4 3.6";
+                    clicked => { root.toggle(); }
+                }
                 if root.addon.can-remove && !root.addon.busy : RemoveButton {
                     label: "Remove " + root.addon.name;
                     clicked => { root.remove(); }
@@ -166,6 +174,7 @@ export component AddonTileView inherits Rectangle {
     in property <AddonRow> addon;
     callback action();
     callback remove();
+    callback toggle();
     callback open();
     callback pick();
     callback details();
@@ -296,6 +305,13 @@ export component AddonTileView inherits Rectangle {
                 clicked => { root.open(); }
             }
             Rectangle { horizontal-stretch: 1; }
+            if root.addon.can-toggle && !root.addon.busy : GlyphButton {
+                label: (root.addon.disabled ? "Enable " : "Disable ") + root.addon.name;
+                primary: root.addon.disabled;
+                // A power sign.
+                glyph: "M 8 1.5 L 8 7.5 M 4.6 3.6 A 5.5 5.5 0 1 0 11.4 3.6";
+                clicked => { root.toggle(); }
+            }
             if root.addon.can-remove && !root.addon.busy : RemoveButton {
                 label: "Remove " + root.addon.name;
                 clicked => { root.remove(); }
@@ -310,6 +326,7 @@ export component AddonTiles inherits Rectangle {
     in property <[AddonRow]> rows;
     callback action(string);
     callback remove(string);
+    callback toggle(string);
     callback open(string);
     callback pick(string);
     callback details(string);
@@ -328,6 +345,7 @@ export component AddonTiles inherits Rectangle {
         addon: row;
         action => { root.action(row.id); }
         remove => { root.remove(row.id); }
+        toggle => { root.toggle(row.id); }
         open => { root.open(row.id); }
         pick => { root.pick(row.id); }
         details => { root.details(row.id); }

@@ -190,6 +190,20 @@ struct Parked {
 }
 
 impl Core {
+    /// Whether the addon `id` (an entry id or `folder:<name>`) waits in `scan::disabled_dir`.
+    fn is_disabled(&self, id: &str) -> bool {
+        let folders: Vec<String> = match id.strip_prefix(UNMANAGED_PREFIX) {
+            Some(folder) => vec![folder.to_string()],
+            None => self.state.get(id).map(|e| e.folders.clone()).unwrap_or_default(),
+        };
+        folders.iter().any(|f| self.scan.iter().any(|s| s.disabled && s.folder.eq_ignore_ascii_case(f)))
+    }
+
+    /// Where the addon `id` is installed or updated: beside the others, or with the disabled ones.
+    fn folder_of(&self, id: &str) -> PathBuf {
+        if self.is_disabled(id) { survivorsforge::scan::disabled_dir(self.addons_dir()) } else { self.addons_dir().to_path_buf() }
+    }
+
     /// Backs up the addon settings before addons change, at most once a minute. An error stops
     /// the change: no addon changes without its settings saved.
     fn back_up_settings(&mut self) -> survivorsforge::Result<()> {
@@ -458,6 +472,8 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         _ if row.out_of_date => "Interface is not 11200: enable \"Load out of date AddOns\" in the game".into(),
         _ => String::new(),
     };
+    // Disabled says so first; an update still shows, it installs where the addon waits.
+    let (status, kind) = if row.disabled { (format!("Disabled. {status}"), if kind == 2 { 2 } else { 0 }) } else { (status, kind) };
     let (status, kind, progress) = row_progress(core, &row.id).unwrap_or((status, kind, -1.0));
     AddonRow {
         id: row.id.clone().into(),
@@ -480,6 +496,8 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         warning: warning.into(),
         can_pick: false,
         picked: false,
+        disabled: row.disabled,
+        can_toggle: row.state != RowState::Missing,
     }
 }
 
@@ -537,6 +555,8 @@ fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
         can_pick,
         picked,
         warning: SharedString::new(),
+        disabled: false,
+        can_toggle: false,
     }
 }
 
@@ -1119,7 +1139,7 @@ fn download_and_install(
 ) -> survivorsforge::Result<String> {
     let (client, github, downloads, addons) = {
         let core = lock(shared);
-        (core.client(), core.github(), core.downloads(), core.addons_dir().to_path_buf())
+        (core.client(), core.github(), core.downloads(), core.folder_of(id))
     };
     let remote = match remote {
         Some(remote) => remote,
@@ -1812,7 +1832,7 @@ fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
         lock(&shared).busy.insert(id.clone());
         run_bg(weak, shared, Some(id.clone()), move |shared| {
             let mut core = lock(shared);
-            let addons = core.addons_dir().to_path_buf();
+            let addons = core.folder_of(&id);
             // The folders wait for Undo while the toast shows, then go to the recycle bin.
             let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default();
             let safe: String = id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
@@ -1833,6 +1853,76 @@ fn on_row_remove(ui: &AppWindow, shared: &Shared, id: String) {
             Ok(String::new())
         });
     });
+}
+
+/// Disables an addon (its folders go to `AddOns.disabled`) or enables it again, with the addons it
+/// needs. Asks first when installed addons need one that is about to be disabled.
+fn on_row_toggle(ui: &AppWindow, shared: &Shared, id: String) {
+    let plan = {
+        let core = lock(shared);
+        if core.game_running {
+            drop(core);
+            lock(shared).notify("Close the game first: it reads the AddOns folder while it runs.".into(), Kind::Warning);
+            return refresh(ui, shared);
+        }
+        let rows = controller::installed_rows(&core.state, &core.reconciled, &core.scan, &core.registry, &core.statuses);
+        let Some(row) = rows.iter().find(|r| r.id == id) else { return };
+        let enable = row.disabled;
+        let registry_id = match core.state.get(&id).map(|e| &e.source) {
+            Some(Source::Verified { registry_id }) => Some(registry_id.clone()),
+            _ => None,
+        };
+        let mut folders = row.folders.clone();
+        let mut also = Vec::new();
+        let mut warning = Vec::new();
+        if let Some(rid) = &registry_id {
+            if enable {
+                // What it needs comes back with it.
+                for need in controller::required_addons(rid, &core.registry) {
+                    let dep = rows.iter().find(|r| {
+                        r.disabled
+                            && core.state.get(&r.id).is_some_and(|e| matches!(&e.source, Source::Verified { registry_id } if *registry_id == need))
+                    });
+                    if let Some(dep) = dep {
+                        folders.extend(dep.folders.clone());
+                        also.push(dep.name.clone());
+                    }
+                }
+            } else {
+                warning = controller::dependents(rid, &core.registry, &core.state);
+            }
+        }
+        (row.name.clone(), folders, enable, also, warning)
+    };
+    let (name, folders, enable, also, warning) = plan;
+    let title = format!("Disable {name}?");
+    let text = format!("{} need {name} and stop working while it is disabled.", warning.join(", "));
+    let toggle = {
+        let (weak, shared) = (ui.as_weak(), shared.clone());
+        move || {
+            let Some(ui) = weak.upgrade() else { return };
+            {
+                let mut core = lock(&shared);
+                let addons = core.addons_dir().to_path_buf();
+                match install::set_enabled(&addons, &folders, enable) {
+                    Ok(()) => {
+                        core.rescan();
+                        let with = if also.is_empty() { String::new() } else { format!(" with {}", also.join(", ")) };
+                        let message = format!("{name} {}{with}", if enable { "enabled" } else { "disabled" });
+                        let message = controller::note_running_game(message, core.game_running);
+                        core.notify(message, Kind::Success);
+                    }
+                    Err(e) => core.notify(e.to_string(), Kind::Error),
+                }
+            }
+            refresh(&ui, &shared);
+        }
+    };
+    if warning.is_empty() {
+        toggle();
+    } else {
+        ask(ui, &title, &text, "Disable", true, toggle);
+    }
 }
 
 /// Undo in the toast of a removal: the folders and what `state.json` knew come back.
@@ -1922,6 +2012,7 @@ fn install_zip_file(weak: slint::Weak<AppWindow>, shared: Shared, plan: controll
                 version: format!("zip:{file_name}"),
                 expected_sha256: None,
             };
+            let addons = if core.is_disabled(&plan.id) { survivorsforge::scan::disabled_dir(&addons) } else { addons };
             install::install_zip(&addons, &mut state, request)?;
             core.state = state;
             for (id, _) in &plan.takes_over {
@@ -2908,6 +2999,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
         refresh(&ui, shared);
     });
     on!(on_toast_action, |ui, shared, id| on_undo_remove(&ui, shared, id));
+    on!(on_row_toggle, |ui, shared, id| on_row_toggle(&ui, shared, id.to_string()));
     on!(on_backup_restore, |ui, shared, index| on_backup_restore(&ui, shared, index.max(0) as usize));
     on!(on_category_changed, |ui, shared, index| {
         {
@@ -4375,6 +4467,32 @@ mod layout_tests {
             assert!(find("No backups yet.").is_none());
             find("Restore the backup of 2026-11-08 09:00:00").expect("each backup can be restored").invoke_accessible_default_action();
             assert_eq!(restored.get(), 1);
+        }
+
+        #[test]
+        fn an_addon_can_be_switched_off_and_on_in_rows_and_tiles() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let toggled = Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+            let t = toggled.clone();
+            ui.on_row_toggle(move |id| t.borrow_mut().push(id.to_string()));
+            let rows = vec![
+                crate::AddonRow { id: "lucky".into(), name: "Lucky".into(), can_toggle: true, can_remove: true, ..Default::default() },
+                crate::AddonRow { id: "plates".into(), name: "Plates".into(), can_toggle: true, disabled: true, status: "Disabled. Up to date".into(), ..Default::default() },
+            ];
+            ui.set_installed_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            for tiles in [false, true] {
+                ui.set_installed_tiles(tiles);
+                ui.show().unwrap();
+                let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+                if find("Installed (0)").is_none() && find("Lucky").is_none() {
+                    eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                    return;
+                }
+                find("Disable Lucky").expect("an enabled addon can be disabled").mock_single_click(PointerEventButton::Left);
+                find("Enable Plates").expect("a disabled one enabled").mock_single_click(PointerEventButton::Left);
+            }
+            assert_eq!(*toggled.borrow(), ["lucky", "plates", "lucky", "plates"]);
         }
 
         #[test]

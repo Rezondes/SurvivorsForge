@@ -153,6 +153,7 @@ mod tests {
         InstalledAddon {
             folder: folder.into(),
             toc: Toc { title: folder.into(), version: Some(version.into()), ..Toc::default() },
+            disabled: false,
         }
     }
 
