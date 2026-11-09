@@ -43,6 +43,40 @@ pub struct Config {
     /// The page open when the launcher closed: 0 installed, 1 browse, 2 settings.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub last_page: u8,
+    /// What the launcher does once the game it started runs; chosen in the settings.
+    #[serde(default, skip_serializing_if = "AfterLaunch::is_nothing")]
+    pub after_launch: AfterLaunch,
+}
+
+/// What the launcher does after it started the game.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AfterLaunch {
+    #[default]
+    Nothing,
+    Minimize,
+    Close,
+}
+
+impl AfterLaunch {
+    /// The choices in the order of the settings dropdown.
+    pub const LABELS: [&str; 3] = ["Stay open", "Minimize", "Close"];
+
+    fn is_nothing(&self) -> bool {
+        *self == AfterLaunch::Nothing
+    }
+
+    pub fn index(self) -> i32 {
+        self as i32
+    }
+
+    pub fn from_index(i: i32) -> AfterLaunch {
+        match i {
+            1 => AfterLaunch::Minimize,
+            2 => AfterLaunch::Close,
+            _ => AfterLaunch::Nothing,
+        }
+    }
 }
 
 fn is_zero(n: &u8) -> bool {
@@ -108,6 +142,7 @@ impl Default for Config {
             held: Vec::new(),
             window: None,
             last_page: 0,
+            after_launch: AfterLaunch::Nothing,
         }
     }
 }
@@ -135,6 +170,7 @@ pub struct SettingsInput {
     pub telemetry: bool,
     pub send_install_id: bool,
     pub auto_update_all: bool,
+    pub after_launch: AfterLaunch,
 }
 
 /// The settings with every valid field of `input` taken over; an invalid field keeps the saved
@@ -147,6 +183,7 @@ pub fn apply_settings(saved: &Config, input: SettingsInput) -> (Config, Settings
         telemetry: input.telemetry,
         send_install_id: input.send_install_id,
         auto_update_all: input.auto_update_all,
+        after_launch: input.after_launch,
         ..saved.clone()
     };
     let mut warning = None;
@@ -211,6 +248,11 @@ impl Config {
         if on {
             self.tile_pages.push(page.to_string());
         }
+    }
+
+    /// What to do once the game runs. Game Mode stays: the Steam overlay is the way back there.
+    pub fn after_launch(&self, game_mode: bool) -> AfterLaunch {
+        if game_mode { AfterLaunch::Nothing } else { self.after_launch }
     }
 
     /// Whether the installed addon `id` updates on its own.
@@ -430,8 +472,10 @@ mod tests {
             telemetry: false,
             send_install_id: true,
             auto_update_all: false,
+            after_launch: AfterLaunch::Minimize,
         };
         let (config, errors, _) = apply_settings(&saved, input);
+        assert_eq!(config.after_launch, AfterLaunch::Minimize);
         assert!(!config.telemetry, "the privacy toggle is taken over");
         assert_eq!(config.web_url.as_deref(), Some("https://forge.example"));
         assert_eq!(config.addons_dir, addons, "the bad path keeps the saved one");
@@ -560,6 +604,23 @@ mod tests {
         std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
         let old = Config::load(dir.path()).unwrap();
         assert_eq!((old.window, old.last_page), (None, 0), "old config files still load");
+    }
+
+    #[test]
+    fn after_launch_does_nothing_unless_chosen() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), r#"{"addons_dir":"C:/x"}"#).unwrap();
+        let old = Config::load(dir.path()).unwrap();
+        assert_eq!(old.after_launch, AfterLaunch::Nothing, "old config files still load");
+        assert_eq!(old.after_launch(false), AfterLaunch::Nothing);
+        let close = Config { after_launch: AfterLaunch::Close, ..old };
+        assert_eq!(close.after_launch(false), AfterLaunch::Close);
+        assert_eq!(close.after_launch(true), AfterLaunch::Nothing, "Game Mode has its own way back");
+        close.save(dir.path()).unwrap();
+        assert_eq!(Config::load(dir.path()).unwrap().after_launch, AfterLaunch::Close);
+        assert_eq!(AfterLaunch::from_index(1), AfterLaunch::Minimize);
+        assert_eq!(AfterLaunch::from_index(9), AfterLaunch::Nothing);
+        assert_eq!(AfterLaunch::Close.index(), 2);
     }
 
     #[test]

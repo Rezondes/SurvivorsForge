@@ -210,6 +210,9 @@ component SettingsView inherits VerticalLayout {
     in-out property <bool> send-install-id;
     // Install checked updates of every addon on their own.
     in-out property <bool> auto-update;
+    // What the launcher does once the game runs: stay open, minimize, close.
+    in property <[string]> after-launch-labels;
+    in-out property <int> after-launch-index;
     // The GitHub login on the platform: the login name while logged in, else empty.
     in property <string> account-login;
     in property <string> account-initial;
@@ -551,6 +554,15 @@ component SettingsView inherits VerticalLayout {
             }
         }
     }
+    if !root.game-mode : SettingRow {
+        label: "After launching the game";
+        Dropdown {
+            label: "After launching the game";
+            model: root.after-launch-labels;
+            current-index <=> root.after-launch-index;
+            selected => { root.save(); }
+        }
+    }
     SettingRow {
         label: "Version";
         Text {
@@ -812,6 +824,8 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-telemetry;
     in-out property <bool> settings-send-install-id;
     in-out property <bool> settings-auto-update;
+    in property <[string]> settings-after-launch-labels;
+    in-out property <int> settings-after-launch-index;
     in property <string> account-login;
     in property <string> account-initial;
     in property <image> account-avatar;
@@ -1424,6 +1438,8 @@ export component AppWindow inherits Window {
                             telemetry <=> root.settings-telemetry;
                             send-install-id <=> root.settings-send-install-id;
                             auto-update <=> root.settings-auto-update;
+                            after-launch-labels: root.settings-after-launch-labels;
+                            after-launch-index <=> root.settings-after-launch-index;
                             account-login: root.account-login;
                             account-initial: root.account-initial;
                             account-avatar: root.account-avatar;

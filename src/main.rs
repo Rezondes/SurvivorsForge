@@ -1264,7 +1264,16 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
             Ok(mut child) => {
                 lock(&shared).notify("Azeroth Survivors is running.".into(), Kind::Info);
                 let repaint = shared.clone();
-                let _ = weak.upgrade_in_event_loop(move |ui| refresh(&ui, &repaint));
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    refresh(&ui, &repaint);
+                    let after = lock(&repaint).config.after_launch(ui.get_game_mode());
+                    match after {
+                        config::AfterLaunch::Nothing => {}
+                        config::AfterLaunch::Minimize => ui.window().set_minimized(true),
+                        // The usual way out: it saves the window and asks while work still runs.
+                        config::AfterLaunch::Close => ui.invoke_close_window(),
+                    }
+                });
                 match child.wait() {
                     Ok(status) if cfg!(target_os = "macos") && !status.success() => {
                         (format!("Azeroth Survivors exited with {status}."), Kind::Info)
@@ -1842,6 +1851,7 @@ fn on_settings_save(ui: &AppWindow, shared: &Shared) {
             telemetry: ui.get_settings_telemetry(),
             send_install_id: ui.get_settings_send_install_id(),
             auto_update_all: ui.get_settings_auto_update(),
+            after_launch: config::AfterLaunch::from_index(ui.get_settings_after_launch_index()),
         };
         // A bad field keeps its saved value and its text in the field; the others still save.
         let (config, field_errors, warning) = config::apply_settings(&core.config, input);
@@ -2108,6 +2118,7 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_telemetry(core.config.telemetry);
     ui.set_settings_send_install_id(core.config.send_install_id);
     ui.set_settings_auto_update(core.config.auto_update_all);
+    ui.set_settings_after_launch_index(core.config.after_launch.index());
     ui.set_installed_tiles(core.config.tiles("installed"));
     ui.set_browse_tiles(core.config.tiles("browse"));
     fill_game_versions(ui, &core);
@@ -2422,6 +2433,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     let labels = |list: &[&str]| ModelRc::new(VecModel::from(list.iter().map(|l| SharedString::from(*l)).collect::<Vec<_>>()));
     ui.set_safety_labels(labels(&controller::SAFETY_LABELS));
     ui.set_sort_labels(labels(&controller::SORT_LABELS));
+    ui.set_settings_after_launch_labels(labels(&config::AfterLaunch::LABELS));
     ui.set_self_update_in_place(self_update::can_replace_self());
 
     ui.set_game_mode(game_mode);
@@ -3813,6 +3825,8 @@ mod layout_tests {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();
             ui.set_page(2);
+            // Tall enough for the whole page: rows scrolled out of view are not found.
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2000.0));
             ui.show().unwrap();
             let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
             if find("Installed (0)").is_none() {
@@ -3834,6 +3848,8 @@ mod layout_tests {
             let ui = crate::AppWindow::new().unwrap();
             ui.set_page(2);
             ui.set_settings_api_error("\"x\" is not a web address (http:// or https://)".into());
+            // Tall enough for the whole page: rows scrolled out of view are not found.
+            ui.window().set_size(slint::LogicalSize::new(1180.0, 2000.0));
             ui.show().unwrap();
             if ElementHandle::find_by_accessible_label(&ui, "Installed (0)").next().is_none() {
                 eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
@@ -3907,6 +3923,25 @@ mod layout_tests {
             assert!(at.x + size.width > window.width / 2.0 && at.y + size.height > window.height / 2.0, "bottom right: {at:?} in {window:?}");
             ElementHandle::find_by_accessible_label(&ui, "Close message").next().unwrap().mock_single_click(PointerEventButton::Left);
             assert_eq!(closed.get(), 7, "the X closes it");
+        }
+
+        #[test]
+        fn after_launch_is_a_choice_outside_game_mode() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let labels: Vec<slint::SharedString> = crate::config::AfterLaunch::LABELS.iter().map(|l| (*l).into()).collect();
+            ui.set_settings_after_launch_labels(slint::ModelRc::new(slint::VecModel::from(labels)));
+            ui.set_settings_after_launch_index(1);
+            ui.set_page(2);
+            ui.show().unwrap();
+            let find = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).next();
+            let Some(choice) = ElementHandle::find_by_accessible_label(&ui, "After launching the game").find(|e| e.accessible_role() == Some(AccessibleRole::Combobox)) else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            assert_eq!(choice.accessible_value().as_deref(), Some("Minimize"));
+            ui.set_game_mode(true);
+            assert!(find("After launching the game").is_none(), "Game Mode stays open");
         }
 
         #[test]
