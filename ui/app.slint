@@ -216,6 +216,9 @@ component SettingsView inherits VerticalLayout {
     in property <string> web-default;
     // Anonymous counts for the platform's statistics; the ID only while they are on.
     in-out property <bool> telemetry;
+    // The random installation ID, shown to copy; and whether it was just copied.
+    in property <string> install-id;
+    property <bool> install-id-copied;
     in-out property <bool> send-install-id;
     // Install checked updates of every addon on their own.
     in-out property <bool> auto-update;
@@ -820,6 +823,41 @@ component SettingsView inherits VerticalLayout {
                     }
                 }
             }
+            // The ID itself, to look up or to name in a request to delete it; selectable and copyable.
+            if root.install-id != "" : HorizontalLayout {
+                spacing: 10px;
+                padding-left: (Theme.touch ? 44px : 24px) + 10px;
+                alignment: start;
+                Text {
+                    text: "Your installation ID:";
+                    font-size: Theme.meta;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+                install-id-text := TextInput {
+                    text: root.install-id;
+                    read-only: true;
+                    single-line: true;
+                    font-size: Theme.meta;
+                    color: Theme.text;
+                    selection-background-color: #8A6C3A;
+                    vertical-alignment: center;
+                    accessible-label: "Installation ID " + root.install-id;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    ActionButton {
+                        text: root.install-id-copied ? "Copied" : "Copy";
+                        accessible-label: root.install-id-copied ? "Installation ID copied" : "Copy the installation ID";
+                        clicked => {
+                            install-id-text.select-all();
+                            install-id-text.copy();
+                            install-id-text.clear-selection();
+                            root.install-id-copied = true;
+                        }
+                    }
+                }
+            }
             // What the two boxes send, in the words of telemetry.rs and /stats: one point a line,
             // folded away behind a link; read once, it need not push the page down every time.
             HorizontalLayout {
@@ -1176,6 +1214,7 @@ export component AppWindow inherits Window {
     in property <string> settings-web-default;
     in-out property <bool> settings-telemetry;
     in-out property <bool> settings-send-install-id;
+    in property <string> settings-install-id;
     in-out property <bool> settings-auto-update;
     in property <[string]> settings-after-launch-labels;
     in-out property <int> settings-after-launch-index;
@@ -1830,6 +1869,7 @@ export component AppWindow inherits Window {
                             web-default: root.settings-web-default;
                             telemetry <=> root.settings-telemetry;
                             send-install-id <=> root.settings-send-install-id;
+                            install-id: root.settings-install-id;
                             auto-update <=> root.settings-auto-update;
                             after-launch-labels: root.settings-after-launch-labels;
                             after-launch-index <=> root.settings-after-launch-index;

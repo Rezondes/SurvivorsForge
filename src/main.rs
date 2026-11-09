@@ -2504,6 +2504,7 @@ fn fill_settings(ui: &AppWindow, shared: &Shared) {
     ui.set_settings_web_default(registry::web_url(None).into());
     ui.set_settings_telemetry(core.config.telemetry);
     ui.set_settings_send_install_id(core.config.send_install_id);
+    ui.set_settings_install_id(core.config.install_id.clone().unwrap_or_default().into());
     ui.set_settings_auto_update(core.config.auto_update_all);
     ui.set_settings_after_launch_index(core.config.after_launch.index());
     ui.set_settings_periodic_check(core.config.periodic_check);
@@ -5326,6 +5327,11 @@ mod layout_tests {
             }
             assert!(find("Never sent: your name or file contents. No IP address is stored.").is_none(), "folded away at first");
             find("What is sent?").expect("a way to the points").invoke_accessible_default_action();
+            assert!(find("Copy the installation ID").is_none(), "no ID yet: nothing to show");
+            ui.set_settings_install_id("3f2a9c1e-77b0-4d3c-9a51-0b6c2e8f1d47".into());
+            assert!(find("Installation ID 3f2a9c1e-77b0-4d3c-9a51-0b6c2e8f1d47").is_some(), "the ID shows");
+            find("Copy the installation ID").expect("and can be copied").invoke_accessible_default_action();
+            assert!(find("Installation ID copied").is_some(), "it says so");
             for line in [
                 "Sent after an install, update or rollback of a verified addon: the addon and version, whether it worked (a fixed code if not), the launcher version and the operating system.",
                 "Never sent: your name or file contents. No IP address is stored.",
@@ -5445,6 +5451,8 @@ mod shots {
         ui.set_settings_backups_kept_index(0);
         ui.set_settings_after_launch_labels(labels(&["Stay open", "Minimize", "Close"]));
         ui.set_account_login("Rezondes".into());
+        ui.set_settings_telemetry(true);
+        ui.set_settings_install_id("3f2a9c1e-77b0-4d3c-9a51-0b6c2e8f1d47".into());
         let line = |name: &str, active: bool, modified: bool| crate::ProfileLine { name: name.into(), count: "4 of 5 addons on".into(), active, modified };
         ui.set_settings_profiles(slint::ModelRc::new(slint::VecModel::from(vec![line("Raid", true, true), line("Questing with a long name", false, false)])));
         let backup = |when: &str| crate::BackupLine { when: when.into(), size: "0.2 MB".into() };

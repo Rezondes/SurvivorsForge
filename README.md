@@ -341,7 +341,7 @@ platform (`POST /v1/telemetry/events`): the kind (`install`, `update`, or `insta
 version, the launcher version and the operating system. No paths, names or error texts leave
 the computer. The platform shows the totals on its `/stats` page.
 
-With it comes a random installation ID (`install_id` in `config.json`), made on the first start.
+With it comes a random installation ID (`install_id` in `config.json`), made on the first start. *Settings > Statistics* shows it with a *Copy* button.
 It is sent as `X-SurvivorsForge-Install` with requests to the platform API, never to GitHub, and
 helps to find the requests of one installation when something goes wrong. *Settings, Statistics*
 turns off the events (and with them the ID) or only the ID.
