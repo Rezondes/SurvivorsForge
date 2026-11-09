@@ -4135,6 +4135,51 @@ mod layout_tests {
         }
 
         #[test]
+        fn ctrl_digits_open_the_pages_ctrl_u_updates_and_delete_removes() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let (updates, removes) = (Rc::new(Cell::new(0)), Rc::new(std::cell::RefCell::new(String::new())));
+            let (u, r) = (updates.clone(), removes.clone());
+            ui.on_update_all(move || u.set(u.get() + 1));
+            ui.on_row_remove(move |id| *r.borrow_mut() = id.to_string());
+            let rows = vec![crate::AddonRow { id: "lucky".into(), name: "Lucky".into(), can_remove: true, ..Default::default() }];
+            ui.set_installed_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            ui.show().unwrap();
+            let Some(row) = ElementHandle::find_by_accessible_label(&ui, "Details of Lucky").next() else {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            };
+            let with_ctrl = |key: &str| {
+                let control: slint::SharedString = Key::Control.into();
+                ui.window().dispatch_event(WindowEvent::KeyPressed { text: control.clone() });
+                press(&ui, key);
+                ui.window().dispatch_event(WindowEvent::KeyReleased { text: control });
+            };
+            with_ctrl("u");
+            assert_eq!(updates.get(), 0, "nothing to update");
+            ui.set_update_count(2);
+            with_ctrl("u");
+            assert_eq!(updates.get(), 1, "Ctrl+U updates all");
+            with_ctrl("2");
+            assert_eq!(ui.get_page(), 1, "Ctrl+2 opens Browse");
+            with_ctrl("3");
+            assert_eq!(ui.get_page(), 2);
+            with_ctrl("1");
+            assert_eq!(ui.get_page(), 0);
+            row.mock_single_click(PointerEventButton::Left);
+            ui.set_detail_page(-1);
+            // Tab reaches the row, Delete asks to remove it.
+            for _ in 0..40 {
+                press(&ui, &slint::SharedString::from(Key::Tab));
+                press(&ui, &slint::SharedString::from(Key::Delete));
+                if !removes.borrow().is_empty() {
+                    break;
+                }
+            }
+            assert_eq!(removes.borrow().as_str(), "lucky", "Delete on the row removes it");
+        }
+
+        #[test]
         fn the_addons_folder_opens_from_the_bottom_line() {
             i_slint_backend_testing::init_no_event_loop();
             let ui = crate::AppWindow::new().unwrap();

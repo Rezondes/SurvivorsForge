@@ -1020,6 +1020,17 @@ export component AppWindow inherits Window {
                 root.check-updates();
                 return accept;
             }
+            // Ctrl+1, 2, 3 open Installed, Browse, Settings; Ctrl+U updates all.
+            if (event.modifiers.control && (event.text == "1" || event.text == "2" || event.text == "3") && root.keys-free) {
+                root.open-page(event.text == "1" ? 0 : event.text == "2" ? 1 : 2);
+                return accept;
+            }
+            if (event.modifiers.control && (event.text == "u" || event.text == "U") && root.keys-free) {
+                if (root.update-count > 0 && !root.addons-busy) {
+                    root.update-all();
+                }
+                return accept;
+            }
             if (event.modifiers.control && (event.text == "f" || event.text == "F") && root.keys-free && root.page != 2 && !root.showing-detail) {
                 root.search-focus += 1;
                 return accept;

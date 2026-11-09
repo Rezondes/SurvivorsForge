@@ -36,6 +36,11 @@ export component AddonRowView inherits Rectangle {
         width: 0;
         height: 0;
         key-pressed(event) => {
+            // Delete removes it, asking first as the bin does.
+            if (event.text == Key.Delete && root.addon.can-remove && !root.addon.busy) {
+                root.remove();
+                return accept;
+            }
             if (event.text == " " || event.text == Key.Return) {
                 root.details();
                 return accept;
@@ -200,6 +205,11 @@ export component AddonTileView inherits Rectangle {
         width: 0;
         height: 0;
         key-pressed(event) => {
+            // Delete removes it, asking first as the bin does.
+            if (event.text == Key.Delete && root.addon.can-remove && !root.addon.busy) {
+                root.remove();
+                return accept;
+            }
             if (event.text == " " || event.text == Key.Return) {
                 root.details();
                 return accept;
