@@ -17,6 +17,8 @@ export component AddonRowView inherits Rectangle {
 
     // Touch: room for the 44px action button and 44px links stacked in the last column.
     height: Theme.touch ? 104px : 84px;
+    // Disabled: the whole card greyed; its power button says "Enable".
+    opacity: root.addon.disabled ? 0.55 : 1;
     border-radius: Theme.radius;
     accessible-role: button;
     accessible-label: "Details of " + root.addon.name;
@@ -191,6 +193,8 @@ export component AddonTileView inherits Rectangle {
     // Below the icon: name, author, two lines of summary, badge and state, the main button, the rest.
     out property <length> body-height: Theme.touch ? 256px : 212px;
 
+    // Disabled: the whole card greyed; its power button says "Enable".
+    opacity: root.addon.disabled ? 0.55 : 1;
     border-radius: Theme.radius;
     accessible-role: button;
     accessible-label: "Details of " + root.addon.name;

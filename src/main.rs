@@ -485,8 +485,6 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         _ if row.out_of_date => "Interface is not 11200: enable \"Load out of date AddOns\" in the game".into(),
         _ => String::new(),
     };
-    // Disabled says so first; an update still shows, it installs where the addon waits.
-    let (status, kind) = if row.disabled { (format!("Disabled. {status}"), if kind == 2 { 2 } else { 0 }) } else { (status, kind) };
     let (status, kind, progress) = row_progress(core, &row.id).unwrap_or((status, kind, -1.0));
     AddonRow {
         id: row.id.clone().into(),
@@ -4899,7 +4897,7 @@ mod layout_tests {
             ui.on_row_toggle(move |id| t.borrow_mut().push(id.to_string()));
             let rows = vec![
                 crate::AddonRow { id: "lucky".into(), name: "Lucky".into(), can_toggle: true, can_remove: true, ..Default::default() },
-                crate::AddonRow { id: "plates".into(), name: "Plates".into(), can_toggle: true, disabled: true, status: "Disabled. Up to date".into(), ..Default::default() },
+                crate::AddonRow { id: "plates".into(), name: "Plates".into(), can_toggle: true, disabled: true, status: "Up to date".into(), ..Default::default() },
             ];
             ui.set_installed_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
             for tiles in [false, true] {
@@ -4910,6 +4908,9 @@ mod layout_tests {
                     eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
                     return;
                 }
+                let card = |name: &str| find(&format!("Details of {name}")).expect("the card").computed_opacity();
+                assert_eq!(card("Lucky"), 1.0);
+                assert!(card("Plates") < 0.7, "a disabled card is greyed (tiles: {tiles})");
                 find("Disable Lucky").expect("an enabled addon can be disabled").mock_single_click(PointerEventButton::Left);
                 find("Enable Plates").expect("a disabled one enabled").mock_single_click(PointerEventButton::Left);
             }
@@ -5371,5 +5372,28 @@ mod shots {
         save(&window, "settings", width, height);
         ui.set_settings_periodic_check(false);
         save(&window, "settings-check-off", width, height);
+        let row = |id: &str, name: &str, disabled: bool| crate::AddonRow {
+            id: id.into(),
+            name: name.into(),
+            initial: name[..1].into(),
+            author: "Rezondes".into(),
+            version: "1.2".into(),
+            badge: "Verified".into(),
+            description: "An addon for the shot.".into(),
+            status: "Up to date".into(),
+            status_kind: 1,
+            can_remove: true,
+            can_toggle: true,
+            disabled,
+            ..Default::default()
+        };
+        let rows = vec![row("lucky", "LuckyOdds", false), row("dragon", "SurvivorsDragonUi", true)];
+        ui.set_installed_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ui.set_page(0);
+        ui.set_installed_tiles(false);
+        window.set_size(slint::PhysicalSize::new(width, 800));
+        save(&window, "installed-rows", width, 800);
+        ui.set_installed_tiles(true);
+        save(&window, "installed-tiles", width, 800);
     }
 }
