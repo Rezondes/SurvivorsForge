@@ -1006,7 +1006,47 @@ fn run_bg(
     });
 }
 
+/// Runs the last of a quick run of calls once, `delay` after it: ticking box after box saves the
+/// settings once. `flush` runs a waiting call at once (the launcher closes).
+type Waiting = std::rc::Rc<RefCell<Option<Box<dyn FnOnce()>>>>;
+
+struct Debounce {
+    timer: slint::Timer,
+    pending: Waiting,
+    delay: std::time::Duration,
+}
+
+impl Debounce {
+    fn new(delay: std::time::Duration) -> Debounce {
+        Debounce { timer: slint::Timer::default(), pending: Default::default(), delay }
+    }
+
+    fn call(&self, f: impl FnOnce() + 'static) {
+        *self.pending.borrow_mut() = Some(Box::new(f));
+        let pending = self.pending.clone();
+        self.timer.start(slint::TimerMode::SingleShot, self.delay, move || {
+            let f = pending.borrow_mut().take();
+            if let Some(f) = f {
+                f();
+            }
+        });
+    }
+
+    fn flush(&self) {
+        self.timer.stop();
+        let f = self.pending.borrow_mut().take();
+        if let Some(f) = f {
+            f();
+        }
+    }
+}
+
+/// How long the settings wait after the last change before they are saved.
+const SETTINGS_SAVE_DELAY: std::time::Duration = std::time::Duration::from_millis(400);
+
 thread_local! {
+    /// The settings save waiting for the end of a quick run of changes.
+    static SETTINGS_SAVE: Debounce = Debounce::new(SETTINGS_SAVE_DELAY);
     /// The action behind the open confirmation dialog. Lives on the UI thread only.
     static PENDING: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
     /// The action behind its third button, when it has one.
@@ -3259,10 +3299,23 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     on!(on_settings_browse, |ui, shared| {
         if let Some(p) = pick_folder(&ui.get_settings_path()) {
             ui.set_settings_path(p.into());
+            SETTINGS_SAVE.with(Debounce::flush);
             on_settings_save(&ui, shared);
         }
     });
-    on!(on_settings_save, |ui, shared| on_settings_save(&ui, shared));
+    {
+        let (weak, shared) = (ui.as_weak(), shared.clone());
+        ui.on_settings_save(move || {
+            let (weak, shared) = (weak.clone(), shared.clone());
+            SETTINGS_SAVE.with(|d| {
+                d.call(move || {
+                    if let Some(ui) = weak.upgrade() {
+                        on_settings_save(&ui, &shared);
+                    }
+                })
+            });
+        });
+    }
     on!(on_login, |ui, shared| on_login(&ui, shared));
     on!(on_update_result_fix, |ui, shared, id| on_update_result_fix(&ui, shared, id.to_string()));
     on!(on_update_results_close, |ui, shared| close_update_results(&ui, shared));
@@ -3393,7 +3446,9 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     });
     // Quitting the loop instead of hiding: a hidden fullscreen window kept the app running.
     on!(on_close_window, |ui, shared| {
-        // A field typed into without Enter still counts, as when the page is left.
+        // A change still waiting is saved now; a field typed into without Enter still counts, as
+        // when the page is left.
+        SETTINGS_SAVE.with(Debounce::flush);
         if ui.get_page() == 2 {
             on_settings_save(&ui, shared);
         }
@@ -4059,6 +4114,31 @@ fn open_link(ui: &AppWindow, shared: &Shared, id: String) {
 #[cfg(test)]
 mod card_tests {
     use super::*;
+
+    #[test]
+    fn a_quick_run_of_changes_saves_once_after_the_last() {
+        i_slint_backend_testing::init_no_event_loop();
+        let saves = std::rc::Rc::new(std::cell::Cell::new(0));
+        let debounce = Debounce::new(std::time::Duration::from_millis(400));
+        for _ in 0..3 {
+            let s = saves.clone();
+            debounce.call(move || s.set(s.get() + 1));
+            i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(100));
+            slint::platform::update_timers_and_animations();
+        }
+        assert_eq!(saves.get(), 0, "still changing: nothing saved yet");
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(400));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(saves.get(), 1, "once, after the last change");
+        let s = saves.clone();
+        debounce.call(move || s.set(s.get() + 1));
+        debounce.flush();
+        assert_eq!(saves.get(), 2, "closing saves a waiting change at once");
+        debounce.flush();
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(500));
+        slint::platform::update_timers_and_animations();
+        assert_eq!(saves.get(), 2, "and only once");
+    }
 
     #[test]
     fn a_new_issue_frame_replaces_what_was_stored() {
