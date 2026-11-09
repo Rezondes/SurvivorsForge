@@ -9,7 +9,8 @@
 //!   .with_library_paths([("toast".into(), slint_toast::UI_DIR.into())].into()))`, with this crate as a
 //!   build dependency without features.
 //! - Slint: `import { Toast, ToastStack } from "@toast/toast.slint";`, export `Toast`, place a
-//!   `ToastStack` and forward its `dismiss(id)` to [`Toasts::dismiss`].
+//!   `ToastStack` and forward its `dismiss(id)` to [`Toasts::dismiss_by_user`] (or to
+//!   [`Toasts::dismiss`] with `busy-closable: true`, so running work can be closed too).
 //! - Rust (feature `slint`): keep one `VecModel` of the generated `Toast` and call [`sync`] after
 //!   each change.
 
@@ -116,9 +117,14 @@ impl Toasts {
         }
     }
 
-    /// Closes a toast: its X, the end of an info or success toast's time, or the app.
+    /// Closes a toast: the end of an info or success toast's time, or the app.
     pub fn dismiss(&mut self, id: i32) {
         self.items.retain(|t| t.id != id);
+    }
+
+    /// Closes a toast for its X: running work stays until it has a result.
+    pub fn dismiss_by_user(&mut self, id: i32) {
+        self.items.retain(|t| t.id != id || t.kind == Kind::Busy);
     }
 }
 
@@ -191,6 +197,19 @@ mod tests {
             toasts.success(format!("Done {n}"));
         }
         assert_eq!(texts(&toasts), ["Checking for updates...", "Done 2", "Done 3"]);
+    }
+
+    #[test]
+    fn the_user_cannot_close_running_work() {
+        let mut toasts = Toasts::default();
+        let busy = toasts.busy("Checking for updates...");
+        let info = toasts.info("Opening the browser...");
+        toasts.dismiss_by_user(busy);
+        toasts.dismiss_by_user(info);
+        assert_eq!(texts(&toasts), ["Checking for updates..."]);
+        toasts.finish(busy, "All addons are up to date", Kind::Success);
+        toasts.dismiss_by_user(busy);
+        assert!(toasts.items().is_empty(), "its result can be closed");
     }
 
     #[cfg(feature = "slint")]

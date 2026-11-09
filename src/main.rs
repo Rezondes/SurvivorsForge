@@ -2545,7 +2545,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     });
     on!(on_logout, |ui, shared| on_logout(&ui, shared));
     on!(on_toast_dismiss, |ui, shared, id| {
-        lock(shared).toasts.dismiss(id);
+        lock(shared).toasts.dismiss_by_user(id);
         refresh(&ui, shared);
     });
     on!(on_category_changed, |ui, shared, index| {
@@ -3833,7 +3833,7 @@ mod layout_tests {
             let closed = Rc::new(Cell::new(0));
             let counter = closed.clone();
             ui.on_toast_dismiss(move |id| counter.set(id));
-            let toast = crate::Toast { id: 7, text: "Lucky installed".into(), kind: slint_toast::Kind::Busy as i32 };
+            let toast = crate::Toast { id: 7, text: "Lucky installed".into(), kind: slint_toast::Kind::Success as i32 };
             ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(vec![toast])));
             ui.show().unwrap();
             let Some(card) = ElementHandle::find_by_accessible_label(&ui, "Lucky installed").next() else {
@@ -3846,6 +3846,21 @@ mod layout_tests {
             assert!(at.x + size.width > window.width / 2.0 && at.y + size.height > window.height / 2.0, "bottom right: {at:?} in {window:?}");
             ElementHandle::find_by_accessible_label(&ui, "Close message").next().unwrap().mock_single_click(PointerEventButton::Left);
             assert_eq!(closed.get(), 7, "the X closes it");
+        }
+
+        #[test]
+        fn a_status_toast_has_no_close_button() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let toast = crate::Toast { id: 3, text: "Checking for updates...".into(), kind: slint_toast::Kind::Busy as i32 };
+            ui.set_toasts(slint::ModelRc::new(slint::VecModel::from(vec![toast])));
+            ui.show().unwrap();
+            if ElementHandle::find_by_accessible_label(&ui, "Checking for updates...").next().is_none() {
+                eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                return;
+            }
+            let closes = ElementHandle::find_by_accessible_label(&ui, "Close message").count();
+            assert_eq!(closes, 0, "running work cannot be closed in the launcher");
         }
 
         #[test]

@@ -72,14 +72,17 @@ component ToastCard inherits Rectangle {
     in property <Toast> toast;
     in property <ToastStyle> style;
     in property <duration> done-time;
+    in property <bool> busy-closable;
     callback dismiss(int);
 
+    property <bool> closable: root.toast.kind != 4 || root.busy-closable;
+    property <length> close-room: root.closable ? root.style.close-size : 0px;
     property <color> accent: [root.style.info, root.style.success, root.style.warning, root.style.error, root.style.busy][root.toast.kind];
 
     accessible-role: text;
     accessible-label: root.toast.text;
     // Not a HorizontalLayout: Slint measures wrapping text there as one line.
-    height: max(message.preferred-height, close.height) + 20px;
+    height: max(message.preferred-height, root.style.close-size) + 20px;
     border-radius: root.style.radius;
     border-width: 1px;
     border-color: root.toast.kind == 2 || root.toast.kind == 3 ? root.accent : root.style.border;
@@ -105,14 +108,14 @@ component ToastCard inherits Rectangle {
     message := Text {
         x: 20px;
         y: (parent.height - self.height) / 2;
-        width: parent.width - self.x - close.width - 20px;
+        width: parent.width - self.x - root.close-room - 20px;
         height: self.preferred-height;
         text: root.toast.text;
         font-size: root.style.font-size;
         color: root.style.text;
         wrap: word-wrap;
     }
-    close := CloseButton {
+    if root.closable : CloseButton {
         x: parent.width - self.width - 10px;
         y: (parent.height - self.height) / 2;
         glyph: root.style.muted;
@@ -149,6 +152,8 @@ export component ToastStack inherits VerticalLayout {
         close-size: 26px,
     };
     in property <duration> done-time: 4s;
+    // False: a busy toast has no X, so running work cannot be closed.
+    in property <bool> busy-closable: true;
     callback dismiss(int);
 
     spacing: 8px;
@@ -157,6 +162,7 @@ export component ToastStack inherits VerticalLayout {
         toast: toast;
         style: root.style;
         done-time: root.done-time;
+        busy-closable: root.busy-closable;
         dismiss(id) => { root.dismiss(id); }
     }
 }
