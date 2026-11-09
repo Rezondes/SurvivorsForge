@@ -1346,9 +1346,14 @@ fn on_launch_game(ui: &AppWindow, shared: &Shared) {
         (core.addons_dir().to_path_buf(), core.data_dir.clone())
     };
     refresh(ui, shared);
+    // The addons on here are on in the game too: one switched off in its AddOns window comes back.
+    let active: Vec<String> = lock(shared).scan.iter().filter(|a| !a.disabled).map(|a| a.folder.clone()).collect();
 
     let (weak, shared) = (ui.as_weak(), shared.clone());
     std::thread::spawn(move || {
+        if let Err(e) = survivorsforge::game_addon_state::enable(&addons, &active) {
+            lock(&shared).notify(format!("Could not switch the addons on in the game's account.txt: {e}"), Kind::Warning);
+        }
         let started = config::game_executable(&addons, USE_WINDOWS_GAME)
             .ok_or_else(|| "The game was not found next to the AddOns folder.".to_string())
             .and_then(|exe| start_game(&exe, &data_dir).map_err(|e| format!("Could not start the game: {e}")));

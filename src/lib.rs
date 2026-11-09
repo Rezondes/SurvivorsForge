@@ -5,6 +5,7 @@ pub mod controller;
 pub mod deep_link;
 pub mod device_login;
 pub mod gamepad;
+pub mod game_addon_state;
 pub mod game_update;
 pub mod github;
 pub mod install;
