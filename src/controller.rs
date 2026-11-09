@@ -1039,6 +1039,12 @@ pub fn without_waiting(updates: Vec<String>, disabled: &[String], update_disable
     updates.into_iter().filter(|id| !disabled.contains(id)).collect()
 }
 
+/// Whether the platform addon `id` is new since the launcher last closed: not among `seen`. On the
+/// first start nothing was seen, and nothing is new.
+pub fn is_new(id: &str, seen: &[String]) -> bool {
+    !seen.is_empty() && !seen.iter().any(|s| s == id)
+}
+
 /// How many of the updates `after` a check were not there `before` it.
 pub fn new_updates(before: &[String], after: &[String]) -> usize {
     after.iter().filter(|id| !before.contains(id)).count()
@@ -1172,6 +1178,14 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn new_is_what_was_not_there_at_the_last_close() {
+        let seen = vec!["lucky".to_string(), "plates".to_string()];
+        assert!(is_new("dragon", &seen));
+        assert!(!is_new("lucky", &seen));
+        assert!(!is_new("dragon", &[]), "nothing is new on the first start");
+    }
 
     #[test]
     fn updates_of_disabled_addons_wait_when_switched_off() {

@@ -89,6 +89,10 @@ export component AddonRowView inherits Rectangle {
                     alignment: center;
                     Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
                 }
+                if root.addon.new : VerticalLayout {
+                    alignment: center;
+                    Pill { text: "New"; tone: 1; }
+                }
                 Rectangle { horizontal-stretch: 1; }
             }
             Text {
@@ -272,6 +276,10 @@ export component AddonTileView inherits Rectangle {
             if root.addon.badge != "" : VerticalLayout {
                 alignment: center;
                 Pill { text: root.addon.badge; tone: root.addon.badge-tone; }
+            }
+            if root.addon.new : VerticalLayout {
+                alignment: center;
+                Pill { text: "New"; tone: 1; }
             }
             // One line: a long failure is cut short, and its whole text is the tooltip, as in a row.
             Rectangle {

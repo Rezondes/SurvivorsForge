@@ -27,6 +27,8 @@ export struct AddonRow {
     // It waits in AddOns.disabled, so the game does not load it; and it can be switched.
     disabled: bool,
     can-toggle: bool,
+    // Browse only: in the list since the launcher last closed.
+    new: bool,
 }
 
 // One block of a description: 0 paragraph, 1 heading, 2 list item, 3 code, 4 quote, 5 image.

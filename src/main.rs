@@ -506,6 +506,7 @@ fn installed_row(row: &Row, core: &Core) -> AddonRow {
         picked: false,
         disabled: row.disabled,
         can_toggle: row.state != RowState::Missing,
+        new: false,
     }
 }
 
@@ -535,7 +536,7 @@ fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
     let can_pick = core.registry.get(&b.id).is_some_and(controller::packable);
     let picked = core.picked.contains(&b.id);
     if let Some(row) = rows.iter().find(|r| r.id == b.id) {
-        return AddonRow { can_pick, picked, ..installed_row(row, core) };
+        return AddonRow { can_pick, picked, new: controller::is_new(&b.id, &core.config.seen_addons), ..installed_row(row, core) };
     }
     let (status, status_kind) = match (b.installed, b.installable) {
         (true, _) => ("Installed".to_string(), 1),
@@ -565,6 +566,7 @@ fn browse_row(b: controller::BrowseRow, core: &Core, rows: &[Row]) -> AddonRow {
         warning: SharedString::new(),
         disabled: false,
         can_toggle: false,
+        new: controller::is_new(&b.id, &core.config.seen_addons),
     }
 }
 
@@ -3088,7 +3090,16 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
                 if let Some(ui) = weak.upgrade() {
                     remember_window(&ui, &shared);
                 }
-                lock(&shared).flush_parked();
+                {
+                    let mut core = lock(&shared);
+                    // What is in the list now is not new at the next start. Offline the list may
+                    // be old: the last one stays.
+                    if !core.offline && !core.registry.addons.is_empty() {
+                        core.config.seen_addons = core.registry.addons.iter().map(|a| a.id.clone()).collect();
+                        let _ = core.config.save(&core.data_dir);
+                    }
+                    core.flush_parked();
+                }
                 let _ = slint::quit_event_loop();
             }
         };
@@ -4177,6 +4188,29 @@ mod layout_tests {
                 }
             }
             assert_eq!(removes.borrow().as_str(), "lucky", "Delete on the row removes it");
+        }
+
+        #[test]
+        fn a_new_addon_says_so_in_browse() {
+            i_slint_backend_testing::init_no_event_loop();
+            let ui = crate::AppWindow::new().unwrap();
+            let rows = vec![
+                crate::AddonRow { id: "dragon".into(), name: "Dragon".into(), badge: "Verified".into(), new: true, ..Default::default() },
+                crate::AddonRow { id: "lucky".into(), name: "Lucky".into(), badge: "Verified".into(), ..Default::default() },
+            ];
+            ui.set_browse_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            ui.set_page(1);
+            for tiles in [false, true] {
+                ui.set_browse_tiles(tiles);
+                ui.show().unwrap();
+                let count = |label: &str| ElementHandle::find_by_accessible_label(&ui, label).count();
+                if count("Details of Dragon") == 0 {
+                    eprintln!("skipped: build with SLINT_EMIT_DEBUG_INFO=1 to find elements");
+                    return;
+                }
+                assert_eq!(count("New"), 1, "only the new one, beside its badge (tiles: {tiles})");
+                assert_eq!(count("Verified"), 2);
+            }
         }
 
         #[test]

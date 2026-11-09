@@ -59,6 +59,9 @@ pub struct Config {
     /// addon is enabled again.
     #[serde(default = "yes")]
     pub update_disabled: bool,
+    /// The platform addons known when the launcher last closed; the others are new in Browse.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seen_addons: Vec<String>,
 }
 
 fn default_backups_kept() -> u8 {
@@ -178,6 +181,7 @@ impl Default for Config {
             check_minutes: default_check_minutes(),
             backups_kept: default_backups_kept(),
             update_disabled: true,
+            seen_addons: Vec::new(),
         }
     }
 }
