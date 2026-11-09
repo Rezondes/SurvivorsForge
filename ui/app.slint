@@ -4,7 +4,7 @@ import {
     Overlay, Panel, DialogCard, TitleBar, ResizeEdges, LinkButton, ProgressBar, Dropdown, AddonDetail, DetailView, PickBox, TickLabel,
     AboutBlock, Shot, PictureViewer, ViewToggle, AddonTiles, CommentRow, CommentsView, GlyphButton, TipState, TooltipLayer,
     IssueLine, IssueReplyRow, IssuesView, VersionLine, VersionsView, AddonIcon, TextArea,
-    UpdateResult, UpdateResultsDialog, BackupLine, ProfileLine
+    UpdateResult, UpdateResultsDialog, BackupLine, ProfileLine, RemoveButton
 } from "components.slint";
 import { Toast, ToastStack } from "@toast/toast.slint";
 
@@ -458,19 +458,26 @@ component SettingsView inherits VerticalLayout {
                     color: Theme.text-muted;
                     vertical-alignment: center;
                 }
-                LinkButton {
-                    text: "Apply";
-                    accessible-label: "Apply the profile " + line.name;
-                    clicked => { root.profile-apply(index); }
+                // Apply is what a profile is for; Copy string next to it; Delete is the bin, as on
+                // the addon cards.
+                VerticalLayout {
+                    alignment: center;
+                    ActionButton {
+                        text: "Apply";
+                        accessible-label: "Apply the profile " + line.name;
+                        clicked => { root.profile-apply(index); }
+                    }
                 }
-                LinkButton {
-                    text: "Copy string";
-                    accessible-label: "Copy the string of the profile " + line.name;
-                    clicked => { root.profile-copy(index); }
+                VerticalLayout {
+                    alignment: center;
+                    LinkButton {
+                        text: "Copy string";
+                        accessible-label: "Copy the string of the profile " + line.name;
+                        clicked => { root.profile-copy(index); }
+                    }
                 }
-                LinkButton {
-                    text: "Delete";
-                    accessible-label: "Delete the profile " + line.name;
+                RemoveButton {
+                    label: "Delete the profile " + line.name;
                     clicked => { root.profile-delete(index); }
                 }
             }

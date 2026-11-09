@@ -4990,7 +4990,7 @@ mod layout_tests {
             assert!(column("Profile string") > 400.0, "the fields take the width of the page, not of a word: {}", column("Profile string"));
             find("Save as profile").expect("a way to save").invoke_accessible_default_action();
             find("Apply the profile Solo").expect("apply").invoke_accessible_default_action();
-            find("Delete the profile Raid").expect("delete").invoke_accessible_default_action();
+            find("Delete the profile Raid").expect("delete").mock_single_click(PointerEventButton::Left);
             assert_eq!(*calls.borrow(), ["save", "apply 1", "delete 0"]);
             let (d, e, f) = (calls.clone(), calls.clone(), calls.clone());
             ui.on_profile_string(move |i| {
