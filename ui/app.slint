@@ -612,10 +612,13 @@ component SettingsView inherits VerticalLayout {
                     color: Theme.text-muted;
                     vertical-alignment: center;
                 }
-                LinkButton {
-                    text: "Restore";
-                    accessible-label: "Restore the backup of " + line.when;
-                    clicked => { root.backup-restore(index); }
+                VerticalLayout {
+                    alignment: center;
+                    ActionButton {
+                        text: "Restore";
+                        accessible-label: "Restore the backup of " + line.when;
+                        clicked => { root.backup-restore(index); }
+                    }
                 }
             }
             if root.backups.length > 0 : Text {
