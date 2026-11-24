@@ -138,6 +138,16 @@ pub struct Screen {
 }
 
 impl WindowPlace {
+    /// Smallest saved side that is a real window; a window closed while minimized reports the
+    /// taskbar button (160 x 28 on Windows).
+    const MIN_SIDE: u32 = 200;
+
+    /// Whether the window can open at this place: a real size, and on one of `screens` when the
+    /// system named any.
+    pub fn usable(&self, screens: &[Screen]) -> bool {
+        self.width >= Self::MIN_SIDE && self.height >= Self::MIN_SIDE && (screens.is_empty() || self.on_a_screen(screens))
+    }
+
     /// Whether enough of the window's top shows on one of `screens` to grab it there: a screen
     /// unplugged since, and the window would open where no one sees it.
     pub fn on_a_screen(&self, screens: &[Screen]) -> bool {
@@ -711,6 +721,16 @@ mod tests {
         assert!(!at(-2500, 100).on_a_screen(&screens), "a screen that is gone");
         assert!(!at(100, 1070).on_a_screen(&screens), "only its last pixels show");
         assert!(!at(100, 100).on_a_screen(&[]));
+    }
+
+    #[test]
+    fn a_place_saved_while_minimized_or_on_a_gone_screen_is_not_used() {
+        let screens = [Screen { x: 0, y: 0, width: 1920, height: 1080 }];
+        let minimized = WindowPlace { x: -32000, y: -32000, width: 160, height: 28, maximized: false };
+        assert!(!minimized.usable(&screens));
+        assert!(!minimized.usable(&[]), "without a screen list the size still tells");
+        assert!(!WindowPlace { x: -2500, y: 100, width: 1180, height: 800, maximized: false }.usable(&screens));
+        assert!(WindowPlace { x: 100, y: 100, width: 1180, height: 800, maximized: true }.usable(&screens));
     }
 
     #[test]

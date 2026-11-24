@@ -3034,10 +3034,15 @@ fn main() -> Result<(), slint::PlatformError> {
     let started: std::rc::Rc<RefCell<Option<Result<AppWindow, slint::PlatformError>>>> = Default::default();
     let holder = started.clone();
     slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
-        let result = start(loading, link, game_mode);
+        // The screens come from the splash: the main window gets its system window only after show().
+        let screens = splash.window().with_winit_window(|w| {
+            w.available_monitors()
+                .map(|m| config::Screen { x: m.position().x, y: m.position().y, width: m.size().width, height: m.size().height })
+                .collect::<Vec<_>>()
+        });
+        let result = start(loading, link, game_mode, &screens.unwrap_or_default());
         if let Ok(ui) = &result {
             let _ = ui.show();
-            keep_window_on_screen(ui);
         }
         let _ = splash.hide();
         if result.is_err() {
@@ -3053,34 +3058,15 @@ fn main() -> Result<(), slint::PlatformError> {
 }
 
 /// Puts the window and the page back where they were at the last close (before the window shows).
-fn restore_window(ui: &AppWindow, config: &Config) {
-    if let Some(place) = config.window {
+/// A place that would not show on `screens` (a screen unplugged since, a place saved while
+/// minimized) is left out: the window opens in the middle of the main screen.
+fn restore_window(ui: &AppWindow, config: &Config, screens: &[config::Screen]) {
+    if let Some(place) = config.window.filter(|p| p.usable(screens)) {
         ui.window().set_size(slint::PhysicalSize::new(place.width, place.height));
         ui.window().set_position(slint::PhysicalPosition::new(place.x, place.y));
         ui.window().set_maximized(place.maximized);
     }
     ui.set_page(i32::from(config.last_page.min(2)));
-}
-
-/// A window saved on a screen that is gone since opens in the middle of the main screen.
-fn keep_window_on_screen(ui: &AppWindow) {
-    ui.window().with_winit_window(|w| {
-        let (Ok(at), size) = (w.outer_position(), w.outer_size()) else { return };
-        let place = config::WindowPlace { x: at.x, y: at.y, width: size.width, height: size.height, maximized: false };
-        let screens: Vec<config::Screen> = w
-            .available_monitors()
-            .map(|m| config::Screen { x: m.position().x, y: m.position().y, width: m.size().width, height: m.size().height })
-            .collect();
-        if screens.is_empty() || place.on_a_screen(&screens) {
-            return;
-        }
-        if let Some(main) = w.primary_monitor().or_else(|| w.available_monitors().next()) {
-            let (m, ms) = (main.position(), main.size());
-            let x = m.x + (ms.width.saturating_sub(size.width) / 2) as i32;
-            let y = m.y + (ms.height.saturating_sub(size.height) / 2) as i32;
-            w.set_outer_position(slint::winit_030::winit::dpi::PhysicalPosition::new(x, y));
-        }
-    });
 }
 
 /// Saves where the window is and the open page, for the next start. Not in Game Mode or setup.
@@ -3092,20 +3078,23 @@ fn remember_window(ui: &AppWindow, shared: &Shared) {
     let maximized = ui.window().is_maximized();
     let before = core.config.window;
     let place = match (maximized, before) {
+        // Minimized, the system reports a place off every screen (-32000 on Windows) and the
+        // size of the taskbar button: the place from before stays.
+        _ if ui.window().is_minimized() => before,
         // The system reports the maximized size; the one to come back to is the one from before.
-        (true, Some(before)) => config::WindowPlace { maximized: true, ..before },
+        (true, Some(before)) => Some(config::WindowPlace { maximized: true, ..before }),
         _ => {
             let (at, size) = (ui.window().position(), ui.window().size());
-            config::WindowPlace { x: at.x, y: at.y, width: size.width, height: size.height, maximized }
+            Some(config::WindowPlace { x: at.x, y: at.y, width: size.width, height: size.height, maximized })
         }
     };
-    core.config.window = Some(place);
+    core.config.window = place;
     core.config.last_page = ui.get_page().clamp(0, 2) as u8;
     let _ = core.config.save(&core.data_dir);
 }
 
 /// Builds the window and wires it up while the splash shows; `loading` brings the Core.
-fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, game_mode: bool) -> Result<AppWindow, slint::PlatformError> {
+fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, game_mode: bool, screens: &[config::Screen]) -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
     let (core, needs_setup) = loading.join().map_err(|_| slint::PlatformError::Other("loading the launcher failed".into()))?;
     let shared: Shared = Arc::new(Mutex::new(core));
@@ -3492,7 +3481,7 @@ fn start(loading: std::thread::JoinHandle<(Core, bool)>, link: Option<String>, g
     }
 
     if !game_mode && !needs_setup {
-        restore_window(&ui, &lock(&shared).config);
+        restore_window(&ui, &lock(&shared).config, screens);
     }
     refresh(&ui, &shared);
     if !needs_setup {
